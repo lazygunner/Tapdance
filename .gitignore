@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+tmp/
+docs/UIDemo
+skills/
+local_asset_library/
+local_data/
+public/portraits/

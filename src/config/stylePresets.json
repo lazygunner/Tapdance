@@ -1,0 +1,134 @@
+{
+  "styles": [
+    {
+      "id": "guochuang-3d",
+      "name": "3D国创",
+      "description": "东方玄幻 3D 电影质感，冷色雾景与金属细节",
+      "reversePrompt": "Epic Chinese fantasy hero, cinematic 3D render, realistic fabric and armor micro-details, volumetric mist, cold blue-gray palette, dramatic rim light, temple architecture, clean silhouette, high contrast, ultra detailed.",
+      "keywords": ["国风", "国创", "仙侠", "武侠", "玄幻", "古风", "修仙", "3d", "侠客", "江湖"],
+      "tags": ["东方", "电影感", "写实3D"],
+      "swatch": "linear-gradient(135deg, #0f172a, #312e81, #1d4ed8)",
+      "previewImage": "/style-previews/guochuang-3d.png"
+    },
+    {
+      "id": "romance-2d",
+      "name": "2D漫剧",
+      "description": "柔和月夜、线条细腻、少女漫叙事氛围",
+      "reversePrompt": "2D romantic manhua illustration, gentle moonlight, thin clean linework, pastel blue and lavender palette, delicate costume folds, soft bloom, poetic atmosphere, subtle depth layers.",
+      "keywords": ["2d", "漫剧", "少女", "月夜", "恋爱", "古装", "轻柔", "言情", "甜"],
+      "tags": ["二次元", "柔光", "抒情"],
+      "swatch": "linear-gradient(135deg, #1e3a8a, #334155, #71717a)",
+      "previewImage": "/style-previews/romance-2d.png"
+    },
+    {
+      "id": "urban-romance",
+      "name": "都市言情",
+      "description": "夜景暖光与时装角色，现代情绪叙事",
+      "reversePrompt": "Modern urban romance illustration, fashionable character portrait, warm city bokeh lights, cinematic night scene, refined facial features, clean composition, subtle emotional storytelling.",
+      "keywords": ["都市", "言情", "现代", "职场", "夜景", "恋爱", "情感", "西装", "都市剧"],
+      "tags": ["现代", "暖光", "人物特写"],
+      "swatch": "linear-gradient(135deg, #18181b, #92400e, #3f3f46)",
+      "previewImage": "/style-previews/urban-romance.png"
+    },
+    {
+      "id": "retro-80s",
+      "name": "80s年代",
+      "description": "复古赛璐璐动画感与颗粒噪点",
+      "reversePrompt": "1980s retro anime frame, cel-shading, thick ink lines, slightly desaturated colors, CRT grain and texture noise, cockpit or vintage sci-fi setting, expressive character design.",
+      "keywords": ["80s", "复古", "怀旧", "赛璐璐", "老动画", "胶片", "年代感"],
+      "tags": ["复古", "粗线条", "颗粒感"],
+      "swatch": "linear-gradient(135deg, #0f172a, #4c1d95, #c2410c)",
+      "previewImage": "/style-previews/retro-80s.png"
+    },
+    {
+      "id": "ghibli",
+      "name": "吉卜力",
+      "description": "温暖自然光、手绘背景与治愈叙事",
+      "reversePrompt": "Warm hand-painted animation background, ghibli-inspired pastoral scene, watercolor textures, sun rays through clouds, tender storytelling mood, soft brush strokes, natural greens.",
+      "keywords": ["吉卜力", "治愈", "自然", "田园", "手绘", "动画电影", "童话"],
+      "tags": ["手绘", "自然光", "治愈"],
+      "swatch": "linear-gradient(135deg, #064e3b, #4d7c0f, #fbbf24)",
+      "previewImage": "/style-previews/ghibli.png"
+    },
+    {
+      "id": "fresh-watercolor-inkline",
+      "name": "清新水彩墨线",
+      "description": "轻透水彩与墨线勾勒，青春日常感",
+      "reversePrompt": "Fresh watercolor illustration with ink outlines, light pastel palette, paper texture, airy highlights, youthful daily-life mood, clean silhouette, spring atmosphere.",
+      "keywords": ["水彩", "墨线", "清新", "春天", "校园", "青春", "插画", "治愈"],
+      "tags": ["水彩", "轻盈", "日常"],
+      "swatch": "linear-gradient(135deg, #0e7490, #10b981, #f9a8d4)",
+      "previewImage": "/style-previews/fresh-watercolor-inkline.png"
+    },
+    {
+      "id": "clay-toy",
+      "name": "粘土玩具",
+      "description": "黏土手作体块与柔暖布光",
+      "reversePrompt": "Clay toy style miniature scene, handmade sculpting marks, soft studio sunlight, shallow depth of field, warm neutral palette, tactile material realism, cozy tabletop composition.",
+      "keywords": ["粘土", "黏土", "玩具", "手作", "模型", "微缩", "治愈系"],
+      "tags": ["材质感", "微缩", "手作"],
+      "swatch": "linear-gradient(135deg, #78350f, #ea580c, #84cc16)",
+      "previewImage": "/style-previews/clay-toy.png"
+    },
+    {
+      "id": "trendy-urban",
+      "name": "潮流都市",
+      "description": "高饱和霓虹街头与潮流插画",
+      "reversePrompt": "Trendy urban street art illustration, high-saturation neon palette, bold graphic blocks, graffiti wall, dynamic character pose, sharp contrast, modern youth fashion.",
+      "keywords": ["潮流", "街头", "都市", "霓虹", "嘻哈", "涂鸦", "时尚", "年轻"],
+      "tags": ["高饱和", "街头", "潮酷"],
+      "swatch": "linear-gradient(135deg, #1e40af, #06b6d4, #facc15)",
+      "previewImage": "/style-previews/trendy-urban.png"
+    },
+    {
+      "id": "eastern-lightwash",
+      "name": "东方淡彩",
+      "description": "东方古意与低饱和淡彩",
+      "reversePrompt": "Elegant eastern light-wash illustration, low saturation palette, soft peach and jade tones, flowing traditional robes, delicate floral framing, clean background haze, poetic calm mood.",
+      "keywords": ["东方", "淡彩", "古风", "雅致", "文人", "古典", "轻国风"],
+      "tags": ["东方", "低饱和", "诗意"],
+      "swatch": "linear-gradient(135deg, #fecdd3, #e7e5e4, #cbd5e1)",
+      "previewImage": "/style-previews/eastern-lightwash.png"
+    },
+    {
+      "id": "high-energy-cartoon",
+      "name": "高能动漫卡通",
+      "description": "夸张动效线与漫画拟声词冲击",
+      "reversePrompt": "High-energy comic cartoon style, explosive action pose, bold outlines, vibrant color clash, dynamic speed lines, onomatopoeia text effects, playful exaggeration, crisp vector-like finish.",
+      "keywords": ["卡通", "高能", "动感", "漫画", "夸张", "拟声词", "热血", "动漫"],
+      "tags": ["高对比", "爆发力", "漫画感"],
+      "swatch": "linear-gradient(135deg, #a3e635, #fde047, #ef4444)",
+      "previewImage": "/style-previews/high-energy-cartoon.png"
+    },
+    {
+      "id": "american-3d",
+      "name": "美式3D",
+      "description": "动画电影角色塑形与暖色电影灯光",
+      "reversePrompt": "Stylized American 3D animation character, cinematic warm lighting, expressive face, subsurface skin look, cozy interior depth, polished rendering, family-film quality.",
+      "keywords": ["美式", "3d", "动画电影", "皮克斯", "卡通3d", "角色"],
+      "tags": ["动画电影", "暖光", "角色中心"],
+      "swatch": "linear-gradient(135deg, #b45309, #f97316, #fde047)",
+      "previewImage": "/style-previews/american-3d.png"
+    },
+    {
+      "id": "plush-toy",
+      "name": "毛绒玩具质感",
+      "description": "针织与布偶材质细节，柔焦亲和感",
+      "reversePrompt": "Plush toy texture style, knitted fabric fibers, stitched seams, soft daylight, cozy nursery set, muted warm palette, cute handcrafted character, tactile close-up feel.",
+      "keywords": ["毛绒", "布偶", "玩具", "针织", "可爱", "亲子", "温馨"],
+      "tags": ["布料材质", "温柔", "可爱"],
+      "swatch": "linear-gradient(135deg, #fde68a, #fed7aa, #d9f99d)",
+      "previewImage": "/style-previews/plush-toy.png"
+    },
+    {
+      "id": "complex-line-urban-manga",
+      "name": "复杂线条都市漫",
+      "description": "密线稿与克制配色的都市漫画场景",
+      "reversePrompt": "Detailed line-art urban manga, dense but clean strokes, restrained neutral palette, contemporary interior scene, subtle shading, cinematic framing, calm slice-of-life mood.",
+      "keywords": ["线稿", "复杂线条", "都市漫", "漫画", "日常", "写实漫", "室内", "青年"],
+      "tags": ["线条", "都市", "克制"],
+      "swatch": "linear-gradient(135deg, #3f3f46, #78716c, #cbd5e1)",
+      "previewImage": "/style-previews/complex-line-urban-manga.png"
+    }
+  ]
+}

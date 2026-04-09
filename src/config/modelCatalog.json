@@ -1,0 +1,140 @@
+{
+  "pricingConfig": {
+    "usdToCnyRate": 7.2
+  },
+  "providers": {
+    "gemini": {
+      "label": "Google AI Studio",
+      "promptLanguage": {
+        "default": "en",
+        "supported": ["zh", "en"]
+      },
+      "models": {
+        "text": [
+          {
+            "name": "Gemini 3 Flash Preview",
+            "modelId": "gemini-3-flash-preview"
+          },
+          {
+            "name": "Gemini 2.5 Pro",
+            "modelId": "gemini-2.5-pro"
+          }
+        ],
+        "image": [
+          {
+            "name": "Gemini 2.5 Flash Image",
+            "modelId": "gemini-2.5-flash-image",
+            "pricing": {
+              "type": "per_image",
+              "unitPriceCny": 0.29,
+              "unitPriceUsd": 0.04
+            }
+          },
+          {
+            "name": "Gemini 3.1 Flash Image Preview",
+            "modelId": "gemini-3.1-flash-image-preview",
+            "pricing": {
+              "type": "per_image",
+              "unitPriceCny": 0.94
+            }
+          }
+        ],
+        "video": [
+          {
+            "name": "Veo 3.1 Fast Generate Preview",
+            "modelId": "veo-3.1-fast-generate-preview",
+            "pricing": {
+              "type": "per_million_tokens",
+              "unitPriceCny": 116.67
+            }
+          },
+          {
+            "name": "Veo 3.1 Generate Preview",
+            "modelId": "veo-3.1-generate-preview",
+            "pricing": {
+              "type": "per_million_tokens",
+              "unitPriceUsd": 23.15
+            }
+          }
+        ]
+      }
+    },
+    "volcengine": {
+      "label": "火山引擎 Ark",
+      "promptLanguage": {
+        "default": "zh",
+        "supported": ["zh", "en"]
+      },
+      "models": {
+        "text": [
+          {
+            "name": "Doubao Seed 1.6",
+            "modelId": "Doubao-Seed-1.6"
+          },
+          {
+            "name": "Doubao 1.5 Thinking Pro",
+            "modelId": "Doubao-1.5-thinking-pro"
+          },
+          {
+            "name": "Doubao 1.5 Thinking Vision Pro",
+            "modelId": "Doubao-1.5-thinking-vision-pro"
+          }
+        ],
+        "image": [
+          {
+            "name": "Seedream 5.0",
+            "modelId": "doubao-seedream-5-0-260128",
+            "aliases": [
+              "Seedream-5.0-lite"
+            ],
+            "pricing": {
+              "type": "per_image",
+              "unitPriceCny": 0.22
+            }
+          },
+          {
+            "name": "Seedream 4.0",
+            "modelId": "Seedream-4.0"
+          },
+          {
+            "name": "Seedream 3.0",
+            "modelId": "Seedream-3.0"
+          },
+          {
+            "name": "Seededit 3.0",
+            "modelId": "Seededit-3.0"
+          }
+        ],
+        "video": [
+          {
+            "name": "Doubao Seedance 2.0",
+            "modelId": "Doubao-Seedance-2.0"
+          },
+          {
+            "name": "Seedance 1.5 Pro",
+            "modelId": "doubao-seedance-1-5-pro-251215",
+            "aliases": [
+              "Seedance-1.5-pro"
+            ],
+            "pricing": {
+              "type": "per_million_tokens",
+              "unitPriceCny": 16
+            }
+          },
+          {
+            "name": "Seedance 1.0 Pro",
+            "modelId": "Seedance-1.0-pro"
+          },
+          {
+            "name": "Seedance 1.0 Pro Fast",
+            "modelId": "Seedance-1.0-pro-fast"
+          },
+          {
+            "name": "Seedance 1.0 Lite",
+            "modelId": "Seedance-1.0-lite"
+          }
+        ]
+      }
+    }
+  }
+}

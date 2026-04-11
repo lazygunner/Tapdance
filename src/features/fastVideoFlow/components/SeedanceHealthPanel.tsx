@@ -26,7 +26,7 @@ export function SeedanceHealthPanel({
         disabled={isRefreshingSeedanceHealth}
         className={`rounded-xl border px-4 py-2 text-sm transition-colors ${isRefreshingSeedanceHealth ? 'border-zinc-800 text-zinc-600 cursor-not-allowed' : 'border-zinc-700 text-white hover:bg-zinc-800'}`}
       >
-        {isRefreshingSeedanceHealth ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />检查中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />重新检查</span>}
+        {isRefreshingSeedanceHealth ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />检查中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />重新检查</span>}
       </button>
     </div>
   );

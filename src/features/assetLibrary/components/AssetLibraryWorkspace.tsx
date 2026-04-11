@@ -149,7 +149,7 @@ export function AssetLibraryWorkspace({
               disabled={isSavingAssetLibraryConfig}
               className="studio-button studio-button-primary px-4"
             >
-              {isSavingAssetLibraryConfig ? <img src="/assets/loading.gif" alt="" className="h-4 w-4" /> : <Upload className="h-4 w-4 rotate-180" />}
+              {isSavingAssetLibraryConfig ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Upload className="h-4 w-4 rotate-180" />}
               保存路径
             </button>
             <button
@@ -272,7 +272,7 @@ export function AssetLibraryWorkspace({
                                   disabled={isSaving}
                                   className="studio-button studio-button-secondary px-3 py-2 text-xs"
                                 >
-                                  {isSaving ? <img src="/assets/loading.gif" alt="" className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5 rotate-180" />}
+                                  {isSaving ? <img src="./assets/loading.gif" alt="" className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5 rotate-180" />}
                                   {item.savedToLibrary ? '重新保存' : '保存到资产库'}
                                 </button>
                               </div>

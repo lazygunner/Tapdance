@@ -214,7 +214,7 @@ export function StudioSidebar({
               </div>
             </div>
             <div className="flex h-[52px] w-[52px] items-center justify-center rounded-2xl border border-white/10 bg-white/5 shadow-[0_14px_32px_rgba(15,23,42,0.25)] overflow-hidden">
-              <img src="/assets/tapdance_logo.png" alt="Tapdance Logo" className="h-12 w-12 object-contain scale-[1.5]" />
+              <img src="./assets/tapdance_logo.png" alt="Tapdance Logo" className="h-12 w-12 object-contain scale-[1.5]" />
             </div>
           </div>
         </StudioPanel>

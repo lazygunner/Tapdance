@@ -458,6 +458,14 @@ export default function App() {
 
   useEffect(() => {
     const checkKey = async () => {
+      // In Electron, we assume the user might have provided a key in config or env
+      // but we still let the UI decide if it wants to show the block.
+      // For now, if it's Electron, we can be more lenient or check local storage.
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.isElectron) {
+        setHasKey(true);
+        return;
+      }
+      
       try {
         if ((window as any).aistudio && (window as any).aistudio.hasSelectedApiKey) {
           const has = await (window as any).aistudio.hasSelectedApiKey();
@@ -489,6 +497,11 @@ export default function App() {
   }, [isLoaded, apiSettings.seedance.bridgeUrl]);
 
   const handleSelectKey = async () => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.isElectron) {
+      setView('apiConfig');
+      return;
+    }
+
     try {
       if ((window as any).aistudio && (window as any).aistudio.openSelectKey) {
         await (window as any).aistudio.openSelectKey();
@@ -516,7 +529,7 @@ export default function App() {
     return (
       <>
         <div className={`theme-${themeMode} app-shell flex h-screen text-zinc-100 font-sans items-center justify-center`}>
-          <img src="/assets/loading.gif" alt="" className="w-20 h-20 opacity-80" />
+          <img src="./assets/loading.gif" alt="" className="w-20 h-20 opacity-80" />
         </div>
         {startupSplashOverlay}
       </>

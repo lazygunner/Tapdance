@@ -1,19 +1,27 @@
 {
   "name": "tapdance-ai-director-workbench",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "AI director workbench for planning storyboards, prompts, visual assets, and video generation tasks.",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/lazygunner/Tapdance.git"
   },
+  "author": "lazygunner",
+  "main": "out/main/index.js",
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite --port=3001 --host=0.0.0.0",
     "dev:bridge": "node server/seedanceBridge.mjs",
     "dev:bridge:watch": "node --watch server/seedanceBridge.mjs",
+    "dev:electron": "electron-vite dev",
     "build": "vite build",
+    "build:electron": "electron-vite build",
+    "pack:mac": "electron-vite build && electron-builder --mac",
+    "pack:win": "electron-vite build && electron-builder --win",
+    "pack:all": "electron-vite build && electron-builder --mac --win",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
     "preview": "vite preview",
     "test": "node --experimental-transform-types --test tests/*.test.ts",
     "test:e2e": "playwright test",
@@ -35,13 +43,68 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@electron/rebuild": "^4.0.3",
     "@playwright/test": "^1.59.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "electron": "^34.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^3.1.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "build": {
+    "appId": "com.tapdance.ai-director",
+    "productName": "Tapdance",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "out/**/*",
+      "server/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/bindings/**/*",
+      "node_modules/file-uri-to-path/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build-resources/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build-resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "npmRebuild": true
   }
 }

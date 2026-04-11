@@ -64,7 +64,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch('/portrait_lib_raw.json');
+        const res = await fetch('./portrait_lib_raw.json');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const parsed = await res.json();
         if (isMounted) {
@@ -246,7 +246,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
              {Array.from({ length: 15 }).map((_, i) => (
                 <div key={i} className={`aspect-[3/4] rounded-2xl border ${skeletonClass} overflow-hidden flex items-center justify-center relative`}>
-                   <img src="/assets/loading.gif" alt="" className="studio-loading-gif !w-1/2 !h-1/2 opacity-30" />
+                   <img src="./assets/loading.gif" alt="" className="studio-loading-gif !w-1/2 !h-1/2 opacity-30" />
                 </div>
              ))}
           </div>

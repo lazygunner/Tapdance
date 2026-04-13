@@ -1,14 +1,25 @@
 import express from 'express'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, resolve, sep } from 'node:path'
+import { constants } from 'node:fs'
+import { access, cp, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { basename, delimiter, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import crypto from 'node:crypto'
 import { app as electronApp } from 'electron'
 import { createAppStateStore } from '../../server/appStateStore.mjs'
 
 const execFileAsync = promisify(execFile)
+const COMMON_CLI_PATH_ENTRIES = [
+  '/opt/homebrew/bin',
+  '/opt/homebrew/sbin',
+  '/usr/local/bin',
+  '/usr/local/sbin',
+  '/usr/bin',
+  '/bin',
+  '/usr/sbin',
+  '/sbin',
+]
 
 export async function startBridge(port = 3210) {
   const app = express()
@@ -37,6 +48,15 @@ export async function startBridge(port = 3210) {
   
   const allowedVideoExtensions = new Set(['.mp4', '.mov', '.webm', '.mkv', '.avi'])
   const supportedModelVersions = ['seedance2.0', 'seedance2.0fast', 'seedance2.0_vip', 'seedance2.0fast_vip']
+  const homeDir = String(process.env.HOME || '').trim()
+  const preferredCliPathEntries = [
+    homeDir ? join(homeDir, '.local', 'bin') : '',
+    homeDir ? join(homeDir, '.bun', 'bin') : '',
+    homeDir ? join(homeDir, '.volta', 'bin') : '',
+    ...COMMON_CLI_PATH_ENTRIES,
+  ]
+  let cachedCliEnv: NodeJS.ProcessEnv | null = null
+  let cachedResolvedCliBin = ''
 
   app.use(express.json({ limit: '100mb' }))
   app.use((request, response, next) => {
@@ -72,7 +92,95 @@ export async function startBridge(port = 3210) {
     }
   }
 
+  function mergePathEntries(...pathValues: Array<string | undefined>) {
+    const entries = pathValues
+      .flatMap((value) => String(value || '').split(delimiter))
+      .map((value) => value.trim())
+      .filter(Boolean)
+
+    return Array.from(new Set(entries)).join(delimiter)
+  }
+
+  async function getLoginShellPath() {
+    if (process.platform === 'win32') {
+      return ''
+    }
+
+    for (const shellPath of ['/bin/zsh', '/bin/bash']) {
+      try {
+        const { stdout } = await execFileAsync(shellPath, ['-lc', 'printf %s "$PATH"'], {
+          env: process.env,
+          maxBuffer: 1024 * 1024,
+        })
+        const resolvedPath = String(stdout || '').trim()
+        if (resolvedPath) {
+          return resolvedPath
+        }
+      } catch {
+        // Ignore login shell lookup failures and fall back to the current process env.
+      }
+    }
+
+    return ''
+  }
+
+  async function getCliEnv() {
+    if (cachedCliEnv) {
+      return cachedCliEnv
+    }
+
+    const loginShellPath = await getLoginShellPath()
+    cachedCliEnv = {
+      ...process.env,
+      PATH: mergePathEntries(process.env.PATH, loginShellPath, preferredCliPathEntries.join(delimiter)),
+    }
+    return cachedCliEnv
+  }
+
+  async function isExecutableFile(filePath: string) {
+    try {
+      await access(filePath, constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function resolveCliCommand() {
+    if (cachedResolvedCliBin) {
+      return cachedResolvedCliBin
+    }
+
+    if (isAbsolute(cliBin) || /[\\/]/u.test(cliBin)) {
+      cachedResolvedCliBin = cliBin
+      return cachedResolvedCliBin
+    }
+
+    const cliEnv = await getCliEnv()
+    const pathEntries = String(cliEnv.PATH || '')
+      .split(delimiter)
+      .map((value) => value.trim())
+      .filter(Boolean)
+
+    for (const pathEntry of pathEntries) {
+      const candidatePath = join(pathEntry, cliBin)
+      if (await isExecutableFile(candidatePath)) {
+        cachedResolvedCliBin = candidatePath
+        console.log(`[Bridge] Resolved ${cliBin} to ${candidatePath}`)
+        return cachedResolvedCliBin
+      }
+    }
+
+    return cliBin
+  }
+
   function normalizeErrorMessage(error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      return `未检测到 ${cliBin} 命令。请确认 dreamina 已安装，或通过 SEEDANCE_CLI_BIN 指向可执行文件。`
+    }
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'EACCES') {
+      return `${cliBin} 无执行权限。请检查可执行文件权限，或通过 SEEDANCE_CLI_BIN 指向正确的 CLI。`
+    }
     if (error instanceof Error) return error.message
     return String(error || 'Unknown error')
   }
@@ -102,9 +210,13 @@ export async function startBridge(port = 3210) {
   }
 
   async function runDreaminaJson(args) {
+    const cliCommand = await resolveCliCommand()
+    const cliEnv = await getCliEnv()
+
     try {
-      const { stdout, stderr } = await execFileAsync(cliBin, args, {
+      const { stdout, stderr } = await execFileAsync(cliCommand, args, {
         cwd: bridgeRoot,
+        env: cliEnv,
         maxBuffer: 20 * 1024 * 1024
       })
       return {
@@ -126,8 +238,15 @@ export async function startBridge(port = 3210) {
   }
 
   async function commandSucceeds(args) {
+    const cliCommand = await resolveCliCommand()
+    const cliEnv = await getCliEnv()
+
     try {
-      await execFileAsync(cliBin, args, { cwd: bridgeRoot, maxBuffer: 2 * 1024 * 1024 })
+      await execFileAsync(cliCommand, args, {
+        cwd: bridgeRoot,
+        env: cliEnv,
+        maxBuffer: 2 * 1024 * 1024,
+      })
       return true
     } catch {
       return false

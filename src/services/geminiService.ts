@@ -20,10 +20,25 @@ function getGeminiConfig() {
   return loadApiSettings().gemini;
 }
 
+function getRuntimeEnv() {
+  const viteEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env || {};
+  const processEnv = typeof globalThis !== 'undefined' && 'process' in globalThis
+    ? ((globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env || {})
+    : {};
+
+  return {
+    ...processEnv,
+    ...viteEnv,
+  };
+}
+
 function resolveGeminiApiKey(): string {
   const geminiConfig = getGeminiConfig();
-  const env = (process.env as any) || {};
-  const apiKey = geminiConfig.apiKey.trim() || env.API_KEY || env.GEMINI_API_KEY;
+  const env = getRuntimeEnv();
+  const apiKey = geminiConfig.apiKey.trim()
+    || env.VITE_GEMINI_API_KEY
+    || env.GEMINI_API_KEY
+    || env.API_KEY;
   return typeof apiKey === 'string' ? apiKey.trim() : '';
 }
 

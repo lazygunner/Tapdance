@@ -5,6 +5,7 @@ import { getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { fetchSeedanceTask } from '../../fastVideoFlow/services/seedanceBridgeClient.ts';
 import { mapRemoteSeedanceStatus } from '../../fastVideoFlow/utils/fastVideoTask.ts';
 import type { Project } from '../../../types.ts';
+import { getMockVideoUrl } from '../../../services/mockMedia.ts';
 import { getShotVideoOperationKey, getTransitionVideoOperationKey } from '../utils/creativeFlowHelpers.ts';
 
 type PersistedMedia = {
@@ -51,6 +52,14 @@ async function pollSeedanceOperation(operation: any, seedanceBridgeUrl: string):
   const provider: 'ark' | 'cli' = operation?.provider || 'ark';
   const taskId = (operation?.taskId || '').trim();
   const submitId = (operation?.submitId || '').trim();
+  const isMockOperation = taskId.startsWith('mock-') || submitId.startsWith('mock-');
+
+  if (isMockOperation) {
+    return {
+      done: true,
+      videoUrl: await getMockVideoUrl(),
+    };
+  }
 
   if (provider === 'cli' && submitId) {
     try {

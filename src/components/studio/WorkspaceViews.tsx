@@ -242,10 +242,8 @@ type StudioSidebarProps = {
   projectCount: number;
   mediaCount: number;
   themeMode: WorkspaceThemeMode;
-  useMockMode: boolean;
   onNavigate: (view: 'home' | 'assetLibrary' | 'portraitLibrary') => void;
   onThemeModeChange: (mode: WorkspaceThemeMode) => void;
-  onUseMockModeChange: (checked: boolean) => void;
   onOpenApiConfig: () => void;
 };
 
@@ -254,10 +252,8 @@ export function StudioSidebar({
   projectCount,
   mediaCount,
   themeMode,
-  useMockMode,
   onNavigate,
   onThemeModeChange,
-  onUseMockModeChange,
   onOpenApiConfig,
 }: StudioSidebarProps) {
   const activePrimaryView: 'home' | 'assetLibrary' | 'portraitLibrary' =
@@ -394,22 +390,6 @@ export function StudioSidebar({
               Dark
             </button>
           </div>
-
-          <label className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-sm font-semibold text-[var(--studio-text)]">Mock 模式</div>
-              <div className="mt-1 text-xs leading-5 text-[var(--studio-dim)]">用于安全预览和样式调试。</div>
-            </div>
-            <div className={cx('studio-switch', useMockMode && 'active')}>
-              <input
-                type="checkbox"
-                className="sr-only"
-                checked={useMockMode}
-                onChange={(event) => onUseMockModeChange(event.target.checked)}
-              />
-              <span className="studio-switch-thumb" />
-            </div>
-          </label>
 
           <button type="button" onClick={onOpenApiConfig} className="studio-button studio-button-secondary w-full justify-between">
             <span>API 配置</span>

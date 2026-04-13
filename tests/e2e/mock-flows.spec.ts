@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const STARTUP_SPLASH_SESSION_KEY = 'tapdance-startup-dismissed';
+const MOCK_MODE_SESSION_KEY = 'tapdance-use-mock-mode';
+
 function trackDialogs(page: Page) {
   const messages: string[] = [];
   page.on('dialog', async (dialog) => {
@@ -9,24 +12,24 @@ function trackDialogs(page: Page) {
   return messages;
 }
 
-async function openWorkspace(page: Page) {
-  await page.addInitScript(() => {
-    window.sessionStorage.setItem('tapdance-startup-dismissed', '1');
-  });
+async function openWorkspace(page: Page, options?: { useMockMode?: boolean }) {
+  await page.addInitScript(
+    ({ useMockMode, startupSplashSessionKey, mockModeSessionKey }) => {
+      window.sessionStorage.setItem(startupSplashSessionKey, '1');
+      if (useMockMode) {
+        window.sessionStorage.setItem(mockModeSessionKey, '1');
+        return;
+      }
+      window.sessionStorage.removeItem(mockModeSessionKey);
+    },
+    {
+      useMockMode: options?.useMockMode ?? false,
+      startupSplashSessionKey: STARTUP_SPLASH_SESSION_KEY,
+      mockModeSessionKey: MOCK_MODE_SESSION_KEY,
+    },
+  );
   await page.goto('/');
   await expect(page.getByRole('heading', { name: '视频制作' })).toBeVisible();
-}
-
-async function enableMockMode(page: Page) {
-  const mockToggleLabel = page
-    .locator('label')
-    .filter({ hasText: 'Mock 模式' });
-  const mockToggle = mockToggleLabel.locator('input[type="checkbox"]');
-
-  if (!(await mockToggle.isChecked())) {
-    await mockToggleLabel.click();
-  }
-  await expect(mockToggle).toBeChecked();
 }
 
 async function createProject(page: Page, cardPattern: RegExp) {
@@ -39,8 +42,7 @@ test.describe('mock browser flows', () => {
     test.setTimeout(60_000);
     const dialogs = trackDialogs(page);
 
-    await openWorkspace(page);
-    await enableMockMode(page);
+    await openWorkspace(page, { useMockMode: true });
     await createProject(page, /故事、资产、分镜与生成/);
 
     await expect(page.getByPlaceholder('例如：在一个赛博朋克世界里，落魄调酒师发现自己被追杀，逃进雨夜霓虹街道，最后在天台举枪反抗。')).toBeVisible();
@@ -87,8 +89,7 @@ test.describe('mock browser flows', () => {
     test.setTimeout(45_000);
     const dialogs = trackDialogs(page);
 
-    await openWorkspace(page);
-    await enableMockMode(page);
+    await openWorkspace(page, { useMockMode: true });
     await createProject(page, /一句提示词全能参考视频生成/);
 
     await expect(page.getByPlaceholder('例如：一间临海日式客房从黄昏缓慢过渡到深夜，房间布局保持一致，最后出现静坐的少女，电影感、克制、写实。')).toBeVisible();
@@ -118,8 +119,7 @@ test.describe('mock browser flows', () => {
   test('opens fast video generation directly without creating storyboard images', async ({ page }) => {
     const dialogs = trackDialogs(page);
 
-    await openWorkspace(page);
-    await enableMockMode(page);
+    await openWorkspace(page, { useMockMode: true });
     await createProject(page, /一句提示词全能参考视频生成/);
 
     const promptInput = page.getByPlaceholder('例如：一间临海日式客房从黄昏缓慢过渡到深夜，房间布局保持一致，最后出现静坐的少女，电影感、克制、写实。');

@@ -96,6 +96,7 @@ const EMPTY_PROJECT_GROUP_IMAGE_ASSETS: ProjectGroupImageAsset[] = [];
 const PROJECT_LIST_SYNC_DELAY_MS = 240;
 const PROJECT_PERSIST_DELAY_MS = 800;
 const STARTUP_SPLASH_SESSION_KEY = 'tapdance-startup-dismissed';
+const MOCK_MODE_SESSION_KEY = 'tapdance-use-mock-mode';
 
 const PROMPT_LANGUAGE_LABELS: Record<PromptLanguage, string> = {
   zh: '中文',
@@ -112,6 +113,19 @@ const isNonEmptyText = (value?: string | null) => Boolean(value && value.trim())
 function getProjectTypeLabel(projectType: ProjectType): string {
   return PROJECT_TYPE_LABELS[projectType];
 }
+
+function shouldStartInMockMode(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.sessionStorage.getItem(MOCK_MODE_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [showStartupSplash, setShowStartupSplash] = useState(() => {
@@ -125,7 +139,7 @@ export default function App() {
       return true;
     }
   });
-  const [useMockMode, setUseMockMode] = useState(false);
+  const [useMockMode] = useState(shouldStartInMockMode);
   const [view, setView] = useState<View>('home');
   const { themeMode, setThemeMode, isThemeModeLoaded } = useThemeModeStorage('dark');
   const { apiSettings, setApiSettings } = useApiSettingsStorage();
@@ -763,6 +777,207 @@ export default function App() {
 
   const { draftIssues } = getFastVideoDraftState(project);
   const currentSurfaceMeta = getWorkspaceSurfaceMeta(view, project);
+  const currentWorkspace = view === 'apiConfig'
+    ? (
+      <ApiConfigWorkspace
+        apiSettings={apiSettings}
+        setApiSettings={setApiSettings}
+        seedanceHealth={seedanceHealth}
+        isRefreshingSeedanceHealth={isRefreshingSeedanceHealth}
+        onRefreshSeedanceHealth={() => void refreshSeedanceHealth()}
+        usdToCnyRate={usdToCnyRate}
+        modelInvocationLogs={modelInvocationLogs}
+        onRestoreDefaults={() => {
+          setApiSettings(defaultApiSettings);
+          resetFlowModelOverrides();
+        }}
+        getSourceProviderKey={getSourceProviderKey}
+        getGeminiRoleModelOptions={(role) => getGeminiRoleModelOptions(apiSettings, role)}
+        getVolcengineRoleModelOptions={(role) => getVolcengineRoleModelOptions(apiSettings, role)}
+        getProviderRoleCatalogOptions={(providerId, role, configuredValue) => getProviderRoleCatalogOptions(providerId, role, configuredValue)}
+        updateGeminiRoleModel={updateGeminiRoleModel}
+      />
+    )
+    : view === 'fastInput' || view === 'fastStoryboard' || view === 'fastVideo'
+      ? (
+        <FastFlowWorkspace
+          view={view}
+          project={project}
+          themeMode={themeMode}
+          tosConfig={apiSettings.tos}
+          seedanceHealth={seedanceHealth}
+          isRefreshingSeedanceHealth={isRefreshingSeedanceHealth}
+          isGeneratingFastPlan={isGeneratingFastPlan}
+          generatingFastSceneImages={generatingFastSceneImages}
+          isSubmittingFastVideo={isSubmittingFastVideo}
+          isRefreshingFastVideoTask={isRefreshingFastVideoTask}
+          isCancellingFastVideoTask={isCancellingFastVideoTask}
+          isRegeneratingFastVideoPrompt={isRegeneratingFastVideoPrompt}
+          operationPanel={renderOperationModelPanel('fast-plan', 'text')}
+          renderImageModelPanel={(sceneId) => renderCompactOperationModelPanel(`fast-scene-image-${sceneId}`, 'image')}
+          onRefreshSeedanceHealth={() => void refreshSeedanceHealth()}
+          onChangeFastInput={handleFastInputChange}
+          onGenerateFastPlan={() => void handleGenerateFastPlan()}
+          onGoFastVideo={() => setView('fastVideo')}
+          onOpenApiConfig={() => setView('apiConfig')}
+          onAddReferenceImage={handleAddFastReferenceImage}
+          onUploadReferenceImage={handleUploadFastReferenceImage}
+          onPasteReferenceImage={handlePasteFastReferenceImage}
+          onUpdateReferenceImage={handleUpdateFastReferenceImage}
+          onRemoveReferenceImage={handleRemoveFastReferenceImage}
+          onAddReferenceVideo={handleAddFastReferenceVideo}
+          onUpdateReferenceVideo={handleUpdateFastReferenceVideo}
+          onRemoveReferenceVideo={handleRemoveFastReferenceVideo}
+          onToggleReferenceVideoSelection={handleToggleFastReferenceVideoSelection}
+          onUpdateScene={handleUpdateFastScene}
+          onGenerateSceneImage={handleGenerateFastSceneImage}
+          onToggleSceneLock={handleToggleFastSceneLock}
+          onUploadSceneImage={handleUploadFastSceneImage}
+          onPreviewImage={setPreviewImage}
+          onSkipStoryboard={handleSkipFastStoryboard}
+          onUpdatePrompt={handleUpdateFastVideoPrompt}
+          onUpdateDraft={handleUpdateFastSeedanceDraft}
+          onUpdateExecutionConfig={handleUpdateFastExecutionConfig}
+          onRegeneratePrompt={handleRegenerateFastVideoPrompt}
+          onSubmit={handleSubmitFastVideo}
+          onRefreshStatus={() => void handleRefreshFastVideoTask()}
+          onCancelTask={() => void handleCancelFastVideoTask()}
+          onToggleReferenceSelection={handleToggleFastReferenceSelection}
+          onToggleSceneSelection={handleToggleFastSceneSelection}
+        />
+      )
+      : view === 'home' || view === 'groupDetail' || view === 'assetLibrary' || view === 'portraitLibrary'
+        ? (
+          <ProjectOverviewWorkspace
+            view={view}
+            themeMode={themeMode}
+            projects={projects}
+            projectGroups={projectGroups}
+            homeViewMode={homeViewMode}
+            setHomeViewMode={setHomeViewMode}
+            createProjectDraft={createProjectDraft}
+            setCreateProjectDraft={setCreateProjectDraft}
+            startNewProject={startNewProject}
+            confirmCreateProject={confirmCreateProject}
+            selectedGroupId={selectedGroupId}
+            onOpenGroupDetail={(groupId) => {
+              setSelectedGroupId(groupId);
+              setView('groupDetail');
+            }}
+            onBackFromGroupDetail={() => {
+              setHomeViewMode('groups');
+              setSelectedGroupId(null);
+              setView('home');
+            }}
+            onUpdateGroupName={updateGroupName}
+            onPreviewImage={setPreviewImage}
+            onOpenProject={openProject}
+            onDeleteProject={handleDeleteProject}
+            getProjectTypeLabel={getProjectTypeLabel}
+            assetLibraryItems={assetLibraryItems}
+            libraryImageCount={libraryImageItems.length}
+            libraryVideoCount={libraryVideoItems.length}
+            savedAssetLibraryCount={savedAssetLibraryCount}
+            unsavedAssetLibraryCount={unsavedAssetLibraryCount}
+            assetLibraryConfig={assetLibraryConfig}
+            assetLibraryRootDraft={assetLibraryRootDraft}
+            isRefreshingAssetLibraryConfig={isRefreshingAssetLibraryConfig}
+            isSavingAssetLibraryConfig={isSavingAssetLibraryConfig}
+            isSyncingAssetLibrary={isSyncingAssetLibrary}
+            savingAssetLibraryItems={savingAssetLibraryItems}
+            onAssetLibraryRootDraftChange={setAssetLibraryRootDraft}
+            onRefreshAssetLibrarySettings={() => void refreshAssetLibrarySettings()}
+            onApplyAssetLibraryRoot={(rootPath) => void handleApplyAssetLibraryRoot(rootPath)}
+            onSyncAssetLibrary={() => void handleSyncAssetLibrary()}
+            onPersistAssetLibraryItem={(item) => void persistAssetLibraryItem(item)}
+            onOpenProjectById={(projectId) => {
+              const linkedProject = projects.find((candidate) => candidate.id === projectId);
+              if (linkedProject) {
+                void openProject(linkedProject);
+              }
+            }}
+          />
+        )
+        : (
+          <CreativeFlowWorkspace
+            view={view}
+            project={project}
+            idea={idea}
+            inputAspectRatio={inputAspectRatio}
+            themeMode={themeMode}
+            activeStylePreset={activeStylePreset}
+            stylePresets={stylePresets}
+            newAsset={newAsset}
+            isGeneratingBrief={isGeneratingBrief}
+            isAddingAsset={isAddingAsset}
+            isGeneratingShots={isGeneratingShots}
+            generatingAssetImages={generatingAssetImages}
+            generatingAssetPrompts={generatingAssetPrompts}
+            currentGroupImageAssets={currentGroupImageAssets}
+            dragOverShotId={dragOverShotId}
+            draggingShotId={draggingShotId}
+            generatingPrompts={generatingPrompts}
+            generatingImages={generatingImages}
+            translatingPrompts={translatingPrompts}
+            frameEditPrompts={frameEditPrompts}
+            videoSectionRefs={videoSectionRefs}
+            transitionSectionRefs={transitionSectionRefs}
+            setProject={setProject}
+            setPreviewImage={setPreviewImage}
+            setNewAsset={setNewAsset}
+            setIsAddingAsset={setIsAddingAsset}
+            setDragOverShotId={setDragOverShotId}
+            setDraggingShotId={setDraggingShotId}
+            setFrameEditPrompts={setFrameEditPrompts}
+            setHistoryMaterialPicker={setHistoryMaterialPicker}
+            renderOperationModelPanel={renderOperationModelPanel}
+            renderTimelineStrip={renderTimelineStrip}
+            getTransitionVideoConfig={getTransitionVideoConfig}
+            getVideoCostUnits={getVideoCostUnits}
+            getOperationSourceId={getOperationSourceId}
+            getPromptLanguageBySourceId={(sourceId) => getPromptLanguageBySourceId(apiSettings, sourceId)}
+            isOperationCancelPending={isOperationCancelPending}
+            scrollToVideoSection={scrollToVideoSection}
+            scrollToTransitionSection={scrollToTransitionSection}
+            onIdeaChange={setIdea}
+            onGenerateBrief={() => void handleGenerateBrief()}
+            onInputAspectRatioChange={(value) => setProject((prev) => ({ ...prev, inputAspectRatio: value }))}
+            onClearStyle={() => setProject((prev) => ({ ...prev, selectedStyleId: '', customStyleDescription: '', styleSelectionMode: 'auto' }))}
+            onCustomStyleDescriptionChange={(value) => setProject((prev) => ({
+              ...prev,
+              customStyleDescription: value,
+              styleSelectionMode: value.trim() ? 'custom' : (prev.selectedStyleId ? 'manual' : 'auto'),
+            }))}
+            onSelectStylePreset={(styleId) => setProject((prev) => ({ ...prev, selectedStyleId: styleId, customStyleDescription: '', styleSelectionMode: 'manual' }))}
+            onGenerateShots={handleGenerateShots}
+            onGenerateAssetPrompt={handleGenerateAssetPrompt}
+            onGenerateAssetImage={handleGenerateAssetImage}
+            onFileUpload={handleFileUpload}
+            onAddAsset={handleAddAsset}
+            onUpdateNewAssetCharacterDetail={updateNewAssetCharacterDetail}
+            onUpdateAssetCharacterDetail={updateAssetCharacterDetail}
+            onUpdateNewAssetSceneDetail={updateNewAssetSceneDetail}
+            onUpdateAssetSceneDetail={updateAssetSceneDetail}
+            onUpdateNewAssetProductDetail={updateNewAssetProductDetail}
+            onUpdateAssetProductDetail={updateAssetProductDetail}
+            onReorderShots={handleReorderShots}
+            onGeneratePrompts={handleGeneratePrompts}
+            onGenerateTransitionPrompt={handleGenerateTransitionPrompt}
+            onGenerateFirstFrame={handleGenerateFirstFrame}
+            onGenerateLastFrame={handleGenerateLastFrame}
+            onUploadFirstFrame={handleUploadFirstFrame}
+            onUploadLastFrame={handleUploadLastFrame}
+            onTranslatePrompts={handleTranslatePrompts}
+            onToggleShotGroupReferenceImage={toggleShotGroupReferenceImage}
+            onModifyFrameFromCurrentImage={handleModifyFrameFromCurrentImage}
+            onProceedToVideos={() => setView('videos')}
+            onGenerateVideo={handleGenerateVideo}
+            onCancelVideo={handleCancelVideo}
+            onRegenerateVideoPrompts={handleRegenerateVideoPrompts}
+            onGenerateTransitionVideo={handleGenerateTransitionVideo}
+            onCancelTransitionVideo={handleCancelTransitionVideo}
+          />
+        );
 
   return (
     <div className={`theme-${themeMode} app-shell flex h-screen flex-col text-zinc-100 font-sans overflow-hidden`}>
@@ -778,10 +993,8 @@ export default function App() {
           projectCount={projects.length}
           mediaCount={projectMediaCounts.total}
           themeMode={themeMode}
-          useMockMode={useMockMode}
           onNavigate={handleNavigatePrimaryView}
           onThemeModeChange={setThemeMode}
-          onUseMockModeChange={setUseMockMode}
           onOpenApiConfig={() => setView('apiConfig')}
         />
         <main className="app-main flex-1 overflow-y-auto">
@@ -818,198 +1031,15 @@ export default function App() {
               </div>
             ) : null}
             <AnimatePresence mode="wait">
-            <ProjectOverviewWorkspace
-              view={view}
-              themeMode={themeMode}
-              projects={projects}
-              projectGroups={projectGroups}
-              homeViewMode={homeViewMode}
-              setHomeViewMode={setHomeViewMode}
-              createProjectDraft={createProjectDraft}
-              setCreateProjectDraft={setCreateProjectDraft}
-              startNewProject={startNewProject}
-              confirmCreateProject={confirmCreateProject}
-              selectedGroupId={selectedGroupId}
-              onOpenGroupDetail={(groupId) => {
-                setSelectedGroupId(groupId);
-                setView('groupDetail');
-              }}
-              onBackFromGroupDetail={() => {
-                setHomeViewMode('groups');
-                setSelectedGroupId(null);
-                setView('home');
-              }}
-              onUpdateGroupName={updateGroupName}
-              onPreviewImage={setPreviewImage}
-              onOpenProject={openProject}
-              onDeleteProject={handleDeleteProject}
-              getProjectTypeLabel={getProjectTypeLabel}
-              assetLibraryItems={assetLibraryItems}
-              libraryImageCount={libraryImageItems.length}
-              libraryVideoCount={libraryVideoItems.length}
-              savedAssetLibraryCount={savedAssetLibraryCount}
-              unsavedAssetLibraryCount={unsavedAssetLibraryCount}
-              assetLibraryConfig={assetLibraryConfig}
-              assetLibraryRootDraft={assetLibraryRootDraft}
-              isRefreshingAssetLibraryConfig={isRefreshingAssetLibraryConfig}
-              isSavingAssetLibraryConfig={isSavingAssetLibraryConfig}
-              isSyncingAssetLibrary={isSyncingAssetLibrary}
-              savingAssetLibraryItems={savingAssetLibraryItems}
-              onAssetLibraryRootDraftChange={setAssetLibraryRootDraft}
-              onRefreshAssetLibrarySettings={() => void refreshAssetLibrarySettings()}
-              onApplyAssetLibraryRoot={(rootPath) => void handleApplyAssetLibraryRoot(rootPath)}
-              onSyncAssetLibrary={() => void handleSyncAssetLibrary()}
-              onPersistAssetLibraryItem={(item) => void persistAssetLibraryItem(item)}
-              onOpenProjectById={(projectId) => {
-                const linkedProject = projects.find((candidate) => candidate.id === projectId);
-                if (linkedProject) {
-                  void openProject(linkedProject);
-                }
-              }}
-            />
-            <CreativeFlowWorkspace
-              view={view}
-              project={project}
-              idea={idea}
-              inputAspectRatio={inputAspectRatio}
-              themeMode={themeMode}
-              activeStylePreset={activeStylePreset}
-              stylePresets={stylePresets}
-              newAsset={newAsset}
-              isGeneratingBrief={isGeneratingBrief}
-              isAddingAsset={isAddingAsset}
-              isGeneratingShots={isGeneratingShots}
-              generatingAssetImages={generatingAssetImages}
-              generatingAssetPrompts={generatingAssetPrompts}
-              currentGroupImageAssets={currentGroupImageAssets}
-              dragOverShotId={dragOverShotId}
-              draggingShotId={draggingShotId}
-              generatingPrompts={generatingPrompts}
-              generatingImages={generatingImages}
-              translatingPrompts={translatingPrompts}
-              frameEditPrompts={frameEditPrompts}
-              videoSectionRefs={videoSectionRefs}
-              transitionSectionRefs={transitionSectionRefs}
-              setProject={setProject}
-              setPreviewImage={setPreviewImage}
-              setNewAsset={setNewAsset}
-              setIsAddingAsset={setIsAddingAsset}
-              setDragOverShotId={setDragOverShotId}
-              setDraggingShotId={setDraggingShotId}
-              setFrameEditPrompts={setFrameEditPrompts}
-              setHistoryMaterialPicker={setHistoryMaterialPicker}
-              renderOperationModelPanel={renderOperationModelPanel}
-              renderTimelineStrip={renderTimelineStrip}
-              getTransitionVideoConfig={getTransitionVideoConfig}
-              getVideoCostUnits={getVideoCostUnits}
-              getOperationSourceId={getOperationSourceId}
-              getPromptLanguageBySourceId={(sourceId) => getPromptLanguageBySourceId(apiSettings, sourceId)}
-              isOperationCancelPending={isOperationCancelPending}
-              scrollToVideoSection={scrollToVideoSection}
-              scrollToTransitionSection={scrollToTransitionSection}
-              onIdeaChange={setIdea}
-              onGenerateBrief={() => void handleGenerateBrief()}
-              onInputAspectRatioChange={(value) => setProject((prev) => ({ ...prev, inputAspectRatio: value }))}
-              onClearStyle={() => setProject((prev) => ({ ...prev, selectedStyleId: '', customStyleDescription: '', styleSelectionMode: 'auto' }))}
-              onCustomStyleDescriptionChange={(value) => setProject((prev) => ({
-                ...prev,
-                customStyleDescription: value,
-                styleSelectionMode: value.trim() ? 'custom' : (prev.selectedStyleId ? 'manual' : 'auto'),
-              }))}
-              onSelectStylePreset={(styleId) => setProject((prev) => ({ ...prev, selectedStyleId: styleId, customStyleDescription: '', styleSelectionMode: 'manual' }))}
-              onGenerateShots={handleGenerateShots}
-              onGenerateAssetPrompt={handleGenerateAssetPrompt}
-              onGenerateAssetImage={handleGenerateAssetImage}
-              onFileUpload={handleFileUpload}
-              onAddAsset={handleAddAsset}
-              onUpdateNewAssetCharacterDetail={updateNewAssetCharacterDetail}
-              onUpdateAssetCharacterDetail={updateAssetCharacterDetail}
-              onUpdateNewAssetSceneDetail={updateNewAssetSceneDetail}
-              onUpdateAssetSceneDetail={updateAssetSceneDetail}
-              onUpdateNewAssetProductDetail={updateNewAssetProductDetail}
-              onUpdateAssetProductDetail={updateAssetProductDetail}
-              onReorderShots={handleReorderShots}
-              onGeneratePrompts={handleGeneratePrompts}
-              onGenerateTransitionPrompt={handleGenerateTransitionPrompt}
-              onGenerateFirstFrame={handleGenerateFirstFrame}
-              onGenerateLastFrame={handleGenerateLastFrame}
-              onUploadFirstFrame={handleUploadFirstFrame}
-              onUploadLastFrame={handleUploadLastFrame}
-              onTranslatePrompts={handleTranslatePrompts}
-              onToggleShotGroupReferenceImage={toggleShotGroupReferenceImage}
-              onModifyFrameFromCurrentImage={handleModifyFrameFromCurrentImage}
-              onProceedToVideos={() => setView('videos')}
-              onGenerateVideo={handleGenerateVideo}
-              onCancelVideo={handleCancelVideo}
-              onRegenerateVideoPrompts={handleRegenerateVideoPrompts}
-              onGenerateTransitionVideo={handleGenerateTransitionVideo}
-              onCancelTransitionVideo={handleCancelTransitionVideo}
-            />
-            {view === 'apiConfig' && (
-              <ApiConfigWorkspace
-                apiSettings={apiSettings}
-                setApiSettings={setApiSettings}
-                seedanceHealth={seedanceHealth}
-                isRefreshingSeedanceHealth={isRefreshingSeedanceHealth}
-                onRefreshSeedanceHealth={() => void refreshSeedanceHealth()}
-                usdToCnyRate={usdToCnyRate}
-                modelInvocationLogs={modelInvocationLogs}
-                onRestoreDefaults={() => {
-                  setApiSettings(defaultApiSettings);
-                  resetFlowModelOverrides();
-                }}
-                getSourceProviderKey={getSourceProviderKey}
-                getGeminiRoleModelOptions={(role) => getGeminiRoleModelOptions(apiSettings, role)}
-                getVolcengineRoleModelOptions={(role) => getVolcengineRoleModelOptions(apiSettings, role)}
-                getProviderRoleCatalogOptions={(providerId, role, configuredValue) => getProviderRoleCatalogOptions(providerId, role, configuredValue)}
-                updateGeminiRoleModel={updateGeminiRoleModel}
-              />
-            )}
-            <FastFlowWorkspace
-              view={view}
-              project={project}
-              themeMode={themeMode}
-              tosConfig={apiSettings.tos}
-              seedanceHealth={seedanceHealth}
-              isRefreshingSeedanceHealth={isRefreshingSeedanceHealth}
-              isGeneratingFastPlan={isGeneratingFastPlan}
-              generatingFastSceneImages={generatingFastSceneImages}
-              isSubmittingFastVideo={isSubmittingFastVideo}
-              isRefreshingFastVideoTask={isRefreshingFastVideoTask}
-              isCancellingFastVideoTask={isCancellingFastVideoTask}
-              isRegeneratingFastVideoPrompt={isRegeneratingFastVideoPrompt}
-              operationPanel={renderOperationModelPanel('fast-plan', 'text')}
-              renderImageModelPanel={(sceneId) => renderCompactOperationModelPanel(`fast-scene-image-${sceneId}`, 'image')}
-              onRefreshSeedanceHealth={() => void refreshSeedanceHealth()}
-              onChangeFastInput={handleFastInputChange}
-              onGenerateFastPlan={() => void handleGenerateFastPlan()}
-              onGoFastVideo={() => setView('fastVideo')}
-              onOpenApiConfig={() => setView('apiConfig')}
-              onAddReferenceImage={handleAddFastReferenceImage}
-              onUploadReferenceImage={handleUploadFastReferenceImage}
-              onPasteReferenceImage={handlePasteFastReferenceImage}
-              onUpdateReferenceImage={handleUpdateFastReferenceImage}
-              onRemoveReferenceImage={handleRemoveFastReferenceImage}
-              onAddReferenceVideo={handleAddFastReferenceVideo}
-              onUpdateReferenceVideo={handleUpdateFastReferenceVideo}
-              onRemoveReferenceVideo={handleRemoveFastReferenceVideo}
-              onToggleReferenceVideoSelection={handleToggleFastReferenceVideoSelection}
-              onUpdateScene={handleUpdateFastScene}
-              onGenerateSceneImage={handleGenerateFastSceneImage}
-              onToggleSceneLock={handleToggleFastSceneLock}
-              onUploadSceneImage={handleUploadFastSceneImage}
-              onPreviewImage={setPreviewImage}
-              onSkipStoryboard={handleSkipFastStoryboard}
-              onUpdatePrompt={handleUpdateFastVideoPrompt}
-              onUpdateDraft={handleUpdateFastSeedanceDraft}
-              onUpdateExecutionConfig={handleUpdateFastExecutionConfig}
-              onRegeneratePrompt={handleRegenerateFastVideoPrompt}
-              onSubmit={handleSubmitFastVideo}
-              onRefreshStatus={() => void handleRefreshFastVideoTask()}
-              onCancelTask={() => void handleCancelFastVideoTask()}
-              onToggleReferenceSelection={handleToggleFastReferenceSelection}
-              onToggleSceneSelection={handleToggleFastSceneSelection}
-            />
+              <motion.div
+                key={view}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+              >
+                {currentWorkspace}
+              </motion.div>
             </AnimatePresence>
           </div>
         </main>

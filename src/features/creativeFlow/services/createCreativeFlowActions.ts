@@ -619,12 +619,6 @@ export function createCreativeFlowActions({
         },
       });
 
-      const draft = await buildShotSeedanceDraft(styledShot, project.brief.aspectRatio, referenceAssets);
-
-      if (!useMockMode) {
-        await refreshSeedanceHealth();
-      }
-
       if (useMockMode) {
         const mockOp = { provider: executor, taskId: `mock-shot-${shotId}-${Date.now()}`, submitId: executor === 'cli' ? `mock-shot-${shotId}-${Date.now()}` : '' };
         setOperationRecord(operationKey, mockOp);
@@ -634,6 +628,9 @@ export function createCreativeFlowActions({
         }));
         return;
       }
+
+      const draft = await buildShotSeedanceDraft(styledShot, project.brief.aspectRatio, referenceAssets);
+      await refreshSeedanceHealth();
 
       let operation: any;
       if (executor === 'ark') {
@@ -875,18 +872,6 @@ export function createCreativeFlowActions({
       const prompt = withStyledPrompt(getTransitionPromptBySource(apiSettings, currentShot, transitionVideoSourceId));
       const transitionConfig = getTransitionVideoConfig(currentShot);
 
-      const draft = await buildTransitionSeedanceDraft(
-        currentShot.lastFrameImageUrl,
-        nextShot.imageUrl,
-        transitionConfig.aspectRatio,
-        prompt,
-        transitionConfig.duration,
-      );
-
-      if (!useMockMode) {
-        await refreshSeedanceHealth();
-      }
-
       if (useMockMode) {
         const mockOp = { provider: executor, taskId: `mock-transition-${currentShotId}-${Date.now()}`, submitId: executor === 'cli' ? `mock-transition-${currentShotId}-${Date.now()}` : '' };
         setOperationRecord(operationKey, mockOp);
@@ -896,6 +881,15 @@ export function createCreativeFlowActions({
         }));
         return;
       }
+
+      const draft = await buildTransitionSeedanceDraft(
+        currentShot.lastFrameImageUrl,
+        nextShot.imageUrl,
+        transitionConfig.aspectRatio,
+        prompt,
+        transitionConfig.duration,
+      );
+      await refreshSeedanceHealth();
 
       let operation: any;
       if (executor === 'ark') {

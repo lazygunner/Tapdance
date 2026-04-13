@@ -155,7 +155,7 @@ export const defaultApiSettings: ApiSettings = {
   seedance: {
     enabled: true,
     apiModel: 'doubao-seedance-2-0-260128',
-    fastApiModel: '',
+    fastApiModel: 'doubao-seedance-2-0-fast-260128',
     defaultExecutor: 'ark',
     cliModelVersion: 'seedance2.0',
     pollIntervalSec: 15,

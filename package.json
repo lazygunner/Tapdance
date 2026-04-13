@@ -113,6 +113,13 @@
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false
     },
-    "npmRebuild": true
+    "npmRebuild": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "lazygunner",
+        "repo": "Tapdance"
+      }
+    ]
   }
 }

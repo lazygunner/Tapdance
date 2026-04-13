@@ -19,10 +19,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Install Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22 # Use LTS or current, better-sqlite3 supports >=18
           cache: 'npm'
@@ -40,33 +40,66 @@ jobs:
 
       - name: Build & Package (Mac)
         if: matrix.os == 'macos-latest'
-        run: npm run pack:mac -- --publish always
+        run: npm run pack:mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & Package (Windows)
         if: matrix.os == 'windows-latest'
-        run: npm run pack:win -- --publish always
+        run: npm run pack:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Artifacts (Mac)
         if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: tapdance-mac-app
           path: |
             release/*.dmg
             release/*.zip
             release/*.blockmap
+            release/*.yml
+            release/*.json
           retention-days: 7
 
       - name: Upload Artifacts (Windows)
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: tapdance-windows-app
           path: |
             release/*.exe
             release/*.blockmap
+            release/*.yml
+            release/*.json
           retention-days: 7
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Mac Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tapdance-mac-app
+          path: release-artifacts/mac
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tapdance-windows-app
+          path: release-artifacts/windows
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release-artifacts/mac/*
+            release-artifacts/windows/*

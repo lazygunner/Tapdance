@@ -266,7 +266,7 @@ export function CreativeShotsPage({
                   className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
                   title="生成提示词"
                 >
-                  {generatingPrompts[shot.id] ? <img src="/assets/loading.gif" alt="" className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                  {generatingPrompts[shot.id] ? <img src="./assets/loading.gif" alt="" className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={() => setProject((prev) => ({ ...prev, shots: resequenceShots(prev.shots.filter((item) => item.id !== shot.id)) }))}
@@ -448,7 +448,7 @@ export function CreativeShotsPage({
                         className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded flex items-center gap-1 transition-colors disabled:opacity-50"
                         title="基于中文重新生成英文提示词"
                       >
-                        {translatingPrompts[shot.id] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <Languages className="w-3 h-3" />}
+                        {translatingPrompts[shot.id] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <Languages className="w-3 h-3" />}
                         中译英
                       </button>
                     </div>
@@ -572,7 +572,7 @@ export function CreativeShotsPage({
                             data-testid={`shot-generate-first-frame-${shot.id}`}
                             className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
                           >
-                            {generatingImages[`${shot.id}_first`] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
+                            {generatingImages[`${shot.id}_first`] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
                             重新生成
                           </button>
                           <label className="bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer">
@@ -584,7 +584,7 @@ export function CreativeShotsPage({
                       </div>
                       {generatingImages[`${shot.id}_first`] && (
                         <div className="studio-loading-overlay text-[var(--studio-text)]">
-                          <img src="/assets/loading.gif" alt="" className="studio-loading-gif" />
+                          <img src="./assets/loading.gif" alt="" className="studio-loading-gif" />
                           <div className="studio-loading-content">
                             <span className="text-xs font-medium">首帧重新生成中...</span>
                           </div>
@@ -603,7 +603,7 @@ export function CreativeShotsPage({
                             data-testid={`shot-generate-first-frame-${shot.id}`}
                             className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
                           >
-                            {generatingImages[`${shot.id}_first`] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
+                            {generatingImages[`${shot.id}_first`] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
                             生成
                           </button>
                         )}
@@ -666,7 +666,7 @@ export function CreativeShotsPage({
                       className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"
                     >
                       {generatingImages[`${shot.id}_first_edit`]
-                        ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />修改中</span>
+                        ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />修改中</span>
                         : '基于当前首帧修改'}
                     </button>
                   </div>
@@ -709,7 +709,7 @@ export function CreativeShotsPage({
                             data-testid={`shot-generate-last-frame-${shot.id}`}
                             className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
                           >
-                            {generatingImages[`${shot.id}_last`] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
+                            {generatingImages[`${shot.id}_last`] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
                             重新生成
                           </button>
                           <label className="bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer">
@@ -721,7 +721,7 @@ export function CreativeShotsPage({
                       </div>
                       {generatingImages[`${shot.id}_last`] && (
                         <div className="studio-loading-overlay text-[var(--studio-text)]">
-                          <img src="/assets/loading.gif" alt="" className="studio-loading-gif" />
+                          <img src="./assets/loading.gif" alt="" className="studio-loading-gif" />
                           <div className="studio-loading-content">
                             <span className="text-xs font-medium">尾帧重新生成中...</span>
                           </div>
@@ -741,7 +741,7 @@ export function CreativeShotsPage({
                             className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-50"
                             title={!shot.imageUrl ? '请先生成或上传首帧' : ''}
                           >
-                            {generatingImages[`${shot.id}_last`] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
+                            {generatingImages[`${shot.id}_last`] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
                             生成
                           </button>
                         )}
@@ -804,7 +804,7 @@ export function CreativeShotsPage({
                       className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"
                     >
                       {generatingImages[`${shot.id}_last_edit`]
-                        ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />修改中</span>
+                        ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />修改中</span>
                         : '基于当前尾帧修改'}
                     </button>
                   </div>

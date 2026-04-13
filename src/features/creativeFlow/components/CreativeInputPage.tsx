@@ -85,7 +85,7 @@ export function CreativeInputPage({
                 disabled={isGeneratingBrief || !idea.trim()}
                 className="studio-button studio-button-primary"
               >
-                {isGeneratingBrief ? <img src="/assets/loading.gif" alt="" className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                {isGeneratingBrief ? <img src="./assets/loading.gif" alt="" className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                 生成简报
               </button>
             </div>

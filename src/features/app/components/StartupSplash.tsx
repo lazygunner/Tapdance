@@ -158,7 +158,7 @@ export function StartupSplash({ onEnter }: StartupSplashProps) {
       <video
         ref={videoRef}
         className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
-        src="/assets/temp.mp4"
+        src="./assets/temp.mp4"
         autoPlay
         loop
         muted={isMuted}

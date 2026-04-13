@@ -66,6 +66,25 @@ function getWorkspaceProjectType(projectType: ProjectType): SupportedWorkspacePr
   return PROJECT_UI_TYPE_BY_PROJECT_TYPE[projectType];
 }
 
+function buildProjectContextLabel(project: Project, fallback: string): string {
+  const projectName = project.name.trim();
+  const groupName = (project.groupName || '').trim();
+
+  if (projectName && groupName) {
+    return `${projectName} / ${groupName}`;
+  }
+
+  if (projectName) {
+    return projectName;
+  }
+
+  if (groupName) {
+    return groupName;
+  }
+
+  return fallback;
+}
+
 const PROJECT_META: Record<SupportedWorkspaceProjectType, {
   label: string;
   subtitle: string;
@@ -128,6 +147,79 @@ const HOME_ENTRY_COPY: Record<SupportedWorkspaceProjectType, { title: string; de
     cornerBadge: 'New',
   },
 };
+
+export type WorkspaceSurfaceMeta = {
+  eyebrow: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  chipClassName: string;
+  badgeLabel: string;
+};
+
+export function getWorkspaceSurfaceMeta(view: WorkspaceView, project: Project): WorkspaceSurfaceMeta {
+  switch (view) {
+    case 'home':
+      return {
+        eyebrow: 'Workspace',
+        title: '视频制作',
+        description: '项目、分组与双工作流调度',
+        icon: Clapperboard,
+        chipClassName: 'studio-accent-chip-sky',
+        badgeLabel: 'Workspace',
+      };
+    case 'assetLibrary':
+      return {
+        eyebrow: 'Library',
+        title: '资产库',
+        description: '统一管理图片、视频和可复用素材',
+        icon: ImageIcon,
+        chipClassName: 'studio-accent-chip-cyan',
+        badgeLabel: 'Assets',
+      };
+    case 'portraitLibrary':
+      return {
+        eyebrow: 'Library',
+        title: '虚拟人像库',
+        description: '浏览官方人像资产与预设素材',
+        icon: Users,
+        chipClassName: 'studio-accent-chip-amber',
+        badgeLabel: 'Portraits',
+      };
+    case 'groupDetail':
+      return {
+        eyebrow: 'Collection',
+        title: '项目分组',
+        description: '按系列查看和整理关联项目',
+        icon: Table2,
+        chipClassName: 'studio-accent-chip-amber',
+        badgeLabel: 'Groups',
+      };
+    case 'apiConfig':
+      return {
+        eyebrow: 'System',
+        title: 'API 配置',
+        description: '同步模型、密钥和调用环境',
+        icon: Settings2,
+        chipClassName: 'studio-accent-chip-indigo',
+        badgeLabel: 'Config',
+      };
+    default: {
+      const workspaceProjectType = getWorkspaceProjectType(project.projectType);
+      const projectMeta = PROJECT_META[workspaceProjectType];
+      const navItem = NAV_ITEMS_BY_PROJECT[workspaceProjectType].find((item) => item.view === view);
+
+      return {
+        eyebrow: projectMeta.eyebrow,
+        title: navItem?.label || projectMeta.label,
+        description: buildProjectContextLabel(project, projectMeta.subtitle),
+        icon: navItem?.icon || projectMeta.icon,
+        chipClassName: projectMeta.chipClassName,
+        badgeLabel: projectMeta.label,
+      };
+    }
+  }
+}
 
 function isNavItemDisabled(project: Project, view: WorkspaceView) {
   if (view === 'brief' || view === 'shots') {
@@ -214,7 +306,7 @@ export function StudioSidebar({
               </div>
             </div>
             <div className="flex h-[52px] w-[52px] items-center justify-center rounded-2xl border border-white/10 bg-white/5 shadow-[0_14px_32px_rgba(15,23,42,0.25)] overflow-hidden">
-              <img src="/assets/tapdance_logo.png" alt="Tapdance Logo" className="h-12 w-12 object-contain scale-[1.5]" />
+              <img src="./assets/tapdance_logo.png" alt="Tapdance Logo" className="h-12 w-12 object-contain scale-[1.5]" />
             </div>
           </div>
         </StudioPanel>
@@ -326,6 +418,21 @@ export function StudioSidebar({
         </StudioPanel>
       </div>
     </aside>
+  );
+}
+
+type AppChromeBarProps = {
+  version: string;
+};
+
+export function AppChromeBar({ version }: AppChromeBarProps) {
+  return (
+    <header className="app-chrome shrink-0">
+      <div className="app-chrome__title-wrap">
+        <span className="app-chrome__title">Tapdance</span>
+        <span className="app-chrome__version">{version}</span>
+      </div>
+    </header>
   );
 }
 

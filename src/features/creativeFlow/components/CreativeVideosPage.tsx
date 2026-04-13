@@ -142,7 +142,7 @@ export function CreativeVideosPage({
 
                   {shot.videoStatus === 'generating' && (
                     <div className="studio-loading-overlay text-[var(--studio-text)] z-10">
-                      <img src="/assets/loading.gif" alt="" className="studio-loading-gif" />
+                      <img src="./assets/loading.gif" alt="" className="studio-loading-gif" />
                       <div className="studio-loading-content">
                         <span className="text-xs font-medium bg-indigo-500/20 px-3 py-1 rounded-full border border-indigo-500/30">
                           生成中 (预计 1-2 分钟)...
@@ -181,7 +181,7 @@ export function CreativeVideosPage({
                         className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
                       >
                         {shot.videoStatus === 'generating' ? (
-                          <><img src="/assets/loading.gif" alt="" className="w-4 h-4" /> 生成中</>
+                          <><img src="./assets/loading.gif" alt="" className="w-4 h-4" /> 生成中</>
                         ) : shot.videoUrl ? (
                           <><RefreshCw className="w-4 h-4" /> 重新生成</>
                         ) : (
@@ -196,7 +196,7 @@ export function CreativeVideosPage({
                         >
                           {videoCancelPending ? (
                             <>
-                              <img src="/assets/loading.gif" alt="" className="w-4 h-4" />
+                              <img src="./assets/loading.gif" alt="" className="w-4 h-4" />
                               取消中
                             </>
                           ) : (
@@ -222,7 +222,7 @@ export function CreativeVideosPage({
                         className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded flex items-center gap-1 transition-colors disabled:opacity-50"
                         title="重新生成视频提示词"
                       >
-                        {generatingPrompts[videoPromptRegenKey] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
+                        {generatingPrompts[videoPromptRegenKey] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
                         重新生成
                       </button>
                     </div>
@@ -470,7 +470,7 @@ export function CreativeVideosPage({
                           disabled={generatingPrompts[`${shot.id}_transition`]}
                           className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded flex items-center gap-1 transition-colors disabled:opacity-50"
                         >
-                          {generatingPrompts[`${shot.id}_transition`] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
+                          {generatingPrompts[`${shot.id}_transition`] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
                           重新生成
                         </button>
                       </div>
@@ -540,7 +540,7 @@ export function CreativeVideosPage({
                     ) : shot.transitionVideoStatus === 'generating' ? (
                       <div className={`w-full ${transitionAspectClass} relative rounded border border-[var(--studio-border)] overflow-hidden`}>
                         <div className="studio-loading-overlay text-[var(--studio-text)]">
-                          <img src="/assets/loading.gif" alt="" className="studio-loading-gif" />
+                          <img src="./assets/loading.gif" alt="" className="studio-loading-gif" />
                           <div className="studio-loading-content">
                             <span className="text-xs font-medium">生成转场中...</span>
                           </div>
@@ -570,7 +570,7 @@ export function CreativeVideosPage({
                         className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
                       >
                         {shot.transitionVideoStatus === 'generating' ? (
-                          <><img src="/assets/loading.gif" alt="" className="w-3 h-3" /> 生成中</>
+                          <><img src="./assets/loading.gif" alt="" className="w-3 h-3" /> 生成中</>
                         ) : shot.transitionVideoUrl ? (
                           <><RefreshCw className="w-3 h-3" /> 重新生成转场</>
                         ) : (
@@ -585,7 +585,7 @@ export function CreativeVideosPage({
                         >
                           {transitionCancelPending ? (
                             <>
-                              <img src="/assets/loading.gif" alt="" className="w-3 h-3" />
+                              <img src="./assets/loading.gif" alt="" className="w-3 h-3" />
                               取消中
                             </>
                           ) : (

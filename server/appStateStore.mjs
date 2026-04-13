@@ -1,6 +1,10 @@
 import Database from 'better-sqlite3';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import {
+  getBetterSqlite3ElectronCachePath,
+  getBetterSqlite3NodeCachePath,
+} from './betterSqlite3NativePaths.mjs';
 
 function normalizeStateKey(key) {
   const normalized = String(key || '').trim();
@@ -14,7 +18,10 @@ export function createAppStateStore(dbPath) {
   const resolvedPath = resolve(String(dbPath || 'app-state.sqlite'));
   mkdirSync(dirname(resolvedPath), { recursive: true });
 
-  const database = new Database(resolvedPath);
+  const nativeBinding = resolveNativeBinding();
+  const database = nativeBinding
+    ? new Database(resolvedPath, { nativeBinding })
+    : new Database(resolvedPath);
   database.pragma('journal_mode = WAL');
   database.exec(`
     CREATE TABLE IF NOT EXISTS app_state (
@@ -76,4 +83,21 @@ export function createAppStateStore(dbPath) {
       database.close();
     },
   };
+}
+
+function resolveNativeBinding() {
+  if (process.versions.electron) {
+    const electronBindingPath = getBetterSqlite3ElectronCachePath();
+    return existsSync(electronBindingPath) ? electronBindingPath : null;
+  }
+
+  const nodeBindingPath = getBetterSqlite3NodeCachePath();
+  if (!existsSync(nodeBindingPath)) {
+    throw new Error(
+      `Missing Node better-sqlite3 binary for ABI ${process.versions.modules} at ${nodeBindingPath}. `
+      + 'Run the bridge through npm so the preflight can build the runtime-specific binary.'
+    );
+  }
+
+  return nodeBindingPath;
 }

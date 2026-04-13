@@ -1,0 +1,67 @@
+name: Build Electron App
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags (e.g., v0.1.0)
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22 # Use LTS or current, better-sqlite3 supports >=18
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Version Tag
+        run: npm run version:check-tag -- ${{ github.ref_name }}
+
+      - name: Rebuild native dependencies (better-sqlite3)
+        run: npm run rebuild
+
+      - name: Build & Package (Mac)
+        if: matrix.os == 'macos-latest'
+        run: npm run pack:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Package (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run pack:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifacts (Mac)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tapdance-mac-app
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+          retention-days: 7
+
+      - name: Upload Artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tapdance-windows-app
+          path: |
+            release/*.exe
+            release/*.blockmap
+          retention-days: 7

@@ -123,6 +123,7 @@ RENREN_APP_DATA_DIR="./local_data"
 ## 文档
 
 - [维护者架构文档](docs/CORE.md)
+- [发布流程](docs/RELEASE.md)
 - [虚拟人像库集成](docs/PORTRAIT_LIBRARY.md)
 - [Seedance 极速成片设计](docs/seedance-fast-video-design.md)
 - [视频参考素材设计](docs/video-reference-design.md)
@@ -132,4 +133,3 @@ RENREN_APP_DATA_DIR="./local_data"
 如有问题可以进群讨论：
 
 ![Tapdance 交流群二维码](public/QRCode.JPG)
-

@@ -888,7 +888,7 @@ export function FastVideoView({
               disabled={!canSubmit}
               className={`rounded-xl px-4 py-2 text-sm transition-colors ${canSubmit ? 'bg-sky-500 hover:bg-sky-400 text-zinc-950' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}
             >
-              {generateActionBusy ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Play className="w-4 h-4" />生成视频</span>}
+              {generateActionBusy ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Play className="w-4 h-4" />生成视频</span>}
             </button>
             {canCancelTask ? (
               <button
@@ -898,7 +898,7 @@ export function FastVideoView({
                 className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-200 transition-colors hover:bg-red-500/14 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isCancellingTask
-                  ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />取消中</span>
+                  ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />取消中</span>
                   : <span className="inline-flex items-center gap-2"><X className="w-4 h-4" />取消生成任务</span>}
               </button>
             ) : null}
@@ -1032,7 +1032,7 @@ export function FastVideoView({
                 disabled={isRegeneratingPrompt}
                 className={`rounded-xl border px-3 py-2 text-sm transition-colors ${isRegeneratingPrompt ? 'border-zinc-800 text-zinc-500 cursor-not-allowed' : 'border-zinc-700 text-white hover:bg-zinc-800'}`}
               >
-                {isRegeneratingPrompt ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />重新生成中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />重新生成提示词</span>}
+                {isRegeneratingPrompt ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />重新生成中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />重新生成提示词</span>}
               </button>
             </div>
             <div className="mt-2 text-xs text-zinc-500">
@@ -1275,7 +1275,7 @@ export function FastVideoView({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className={taskTone.accentClass}>
-                  {!hasSubmittedTask ? <Clock3 className="w-4 h-4" /> : normalizedRemoteStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : normalizedRemoteStatus === 'fail' || normalizedRemoteStatus === 'failed' ? <AlertTriangle className="w-4 h-4" /> : normalizedRemoteStatus === 'querying' ? <img src="/assets/loading.gif" alt="" className="w-4 h-4" /> : <Clock3 className="w-4 h-4" />}
+                  {!hasSubmittedTask ? <Clock3 className="w-4 h-4" /> : normalizedRemoteStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : normalizedRemoteStatus === 'fail' || normalizedRemoteStatus === 'failed' ? <AlertTriangle className="w-4 h-4" /> : normalizedRemoteStatus === 'querying' ? <img src="./assets/loading.gif" alt="" className="w-4 h-4" /> : <Clock3 className="w-4 h-4" />}
                 </span>
                 <div className="font-semibold text-[var(--studio-text)]">任务状态</div>
               </div>
@@ -1286,7 +1286,7 @@ export function FastVideoView({
                   disabled={!canRefreshStatus}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${canRefreshStatus ? 'border-zinc-700 text-zinc-100 hover:bg-zinc-900/70' : 'border-zinc-800 text-zinc-600 cursor-not-allowed'}`}
                 >
-                  {isRefreshingStatus ? <img src="/assets/loading.gif" alt="" className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  {isRefreshingStatus ? <img src="./assets/loading.gif" alt="" className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
                   <span>{isRefreshingStatus ? '查询中' : '查询状态'}</span>
                 </button>
                 <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs ${taskTone.badgeClass}`}>

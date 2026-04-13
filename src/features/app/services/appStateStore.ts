@@ -7,7 +7,10 @@ export type PersistedAppStateEntry<T> = {
 };
 
 async function requestJson<T>(path: string, init?: RequestInit, explicitBaseUrl?: string): Promise<T> {
-  const response = await fetch(buildSeedanceBridgeRequestUrl(path, explicitBaseUrl), {
+  const url = buildSeedanceBridgeRequestUrl(path, explicitBaseUrl);
+  console.log(`[AppStateStore] ${init?.method || 'GET'} ${url}`);
+
+  const response = await fetch(url, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -25,6 +28,7 @@ async function requestJson<T>(path: string, init?: RequestInit, explicitBaseUrl?
   }
 
   if (!response.ok) {
+    console.error(`[AppStateStore] Error: ${response.status} for ${url}`, payload);
     throw new Error(payload?.error || payload?.message || `HTTP ${response.status}`);
   }
 

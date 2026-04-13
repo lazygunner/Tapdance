@@ -30,6 +30,11 @@ export function getSeedanceBridgeBaseUrl(explicitBaseUrl?: string) {
     return normalizedExplicitBaseUrl;
   }
 
+  // Electron environment support
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.isElectron) {
+    return (window as any).__ELECTRON_BRIDGE_URL__ || DEFAULT_BRIDGE_BASE_URL;
+  }
+
   const envBaseUrl = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_SEEDANCE_BRIDGE_URL;
   const normalized = (envBaseUrl || '').trim();
   return normalized || DEFAULT_BRIDGE_BASE_URL;

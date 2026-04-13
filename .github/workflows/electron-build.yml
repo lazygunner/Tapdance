@@ -6,6 +6,9 @@ on:
       - 'v*' # Trigger on version tags (e.g., v0.1.0)
   workflow_dispatch: # Allow manual triggering
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -35,13 +38,13 @@ jobs:
 
       - name: Build & Package (Mac)
         if: matrix.os == 'macos-latest'
-        run: npm run pack:mac
+        run: npm run pack:mac -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & Package (Windows)
         if: matrix.os == 'windows-latest'
-        run: npm run pack:win
+        run: npm run pack:win -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

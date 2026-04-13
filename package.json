@@ -24,7 +24,7 @@
     "pack:mac": "electron-vite build && electron-builder --mac",
     "pack:win": "electron-vite build && electron-builder --win",
     "pack:all": "electron-vite build && electron-builder --mac --win",
-    "postinstall": "node scripts/ensure-electron-native-modules.mjs",
+    "postinstall": "node scripts/postinstall.mjs",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "preview": "vite preview",
     "test": "node --experimental-transform-types --test tests/*.test.ts",

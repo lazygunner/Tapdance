@@ -85,6 +85,7 @@
       "node_modules/better-sqlite3/**/*"
     ],
     "mac": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build-resources/entitlements.mac.plist",
@@ -112,6 +113,7 @@
       "icon": "build-resources/icon.ico"
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

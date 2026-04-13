@@ -30,8 +30,8 @@ jobs:
       - name: Verify Version Tag
         run: npm run version:check-tag -- ${{ github.ref_name }}
 
-      - name: Rebuild native dependencies (better-sqlite3)
-        run: npm run rebuild
+      - name: Ensure Electron native dependencies
+        run: node scripts/ensure-electron-native-modules.mjs
 
       - name: Build & Package (Mac)
         if: matrix.os == 'macos-latest'

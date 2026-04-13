@@ -12,6 +12,7 @@ import {
 const require = createRequire(import.meta.url)
 const projectRoot = getProjectRoot()
 const betterSqliteBinary = getBetterSqlite3BuildBinaryPath()
+const electronRebuildCli = join(projectRoot, 'node_modules', '@electron', 'rebuild', 'lib', 'cli.js')
 const electronVersion = require('electron/package.json').version
 const electronAbi = getAbi(electronVersion, 'electron')
 const cachedElectronBinary = getBetterSqlite3ElectronCachePath({
@@ -26,20 +27,6 @@ function run(command, args, options = {}) {
     stdio: options.stdio ?? 'pipe',
     env: options.env ?? process.env
   })
-}
-
-function runNpm(args) {
-  if (process.platform === 'win32') {
-    const npmBinary = join(dirname(process.execPath), 'npm.cmd')
-    return run(existsSync(npmBinary) ? npmBinary : 'npm.cmd', args, { stdio: 'inherit' })
-  }
-
-  const npmBinary = join(dirname(process.execPath), 'npm')
-  if (existsSync(npmBinary)) {
-    return run(process.execPath, [npmBinary, ...args], { stdio: 'inherit' })
-  }
-
-  return run('npm', args, { stdio: 'inherit' })
 }
 
 function checkBetterSqliteInElectron(binaryPath) {
@@ -87,7 +74,11 @@ function checkBetterSqliteInElectron(binaryPath) {
 }
 
 function rebuildBetterSqlite() {
-  const rebuild = runNpm(['run', 'rebuild'])
+  const rebuild = run(
+    process.execPath,
+    [electronRebuildCli, '-f', '-w', 'better-sqlite3'],
+    { stdio: 'inherit' }
+  )
   if (rebuild.status !== 0) {
     process.exit(rebuild.status ?? 1)
   }

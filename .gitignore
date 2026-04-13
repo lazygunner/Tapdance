@@ -12,3 +12,5 @@ skills/
 local_asset_library/
 local_data/
 public/portraits/
+out/
+release/

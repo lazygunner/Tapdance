@@ -144,7 +144,7 @@ export function FastInputView({
                 disabled={isGenerating || !input.prompt.trim()}
                 className="studio-button studio-button-fast-plan"
               >
-                {isGenerating ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4" />先生成分镜图</span>}
+                {isGenerating ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4" />先生成分镜图</span>}
               </button>
               <button
                 type="button"
@@ -465,7 +465,7 @@ export function FastInputView({
                             ) : (
                               <label className={`studio-button studio-button-secondary shrink-0 ${uploadingVideoIds[reference.id] ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                                 {uploadingVideoIds[reference.id] ? (
-                                  <img src="/assets/loading.gif" alt="" className="w-4 h-4" />
+                                  <img src="./assets/loading.gif" alt="" className="w-4 h-4" />
                                 ) : (
                                   <Upload className="w-4 h-4" />
                                 )}

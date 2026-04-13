@@ -48,7 +48,7 @@ export function ProjectDetailPageActions({
           disabled={!canGenerate}
           className="studio-button studio-button-fast-plan px-4 py-2"
         >
-          {isGeneratingFastPlan ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4" />先生成分镜图</span>}
+          {isGeneratingFastPlan ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4" />先生成分镜图</span>}
         </button>
         <button
           type="button"
@@ -112,7 +112,7 @@ export function ProjectDetailPageActions({
           className="studio-button studio-button-primary"
         >
           {primaryActionBusy
-            ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />生成中</span>
+            ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span>
             : <span className="inline-flex items-center gap-2"><Play className="w-4 h-4" />生成视频</span>}
         </button>
         {showCancelTaskAction ? (
@@ -123,7 +123,7 @@ export function ProjectDetailPageActions({
             className="studio-button studio-button-secondary border-[var(--studio-accent-red-border)] bg-[var(--studio-accent-red-bg)] text-[var(--studio-accent-red-text)]"
           >
             {isCancellingFastVideoTask
-              ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />取消中</span>
+              ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />取消中</span>
               : <span className="inline-flex items-center gap-2"><X className="w-4 h-4" />取消生成任务</span>}
           </button>
         ) : null}

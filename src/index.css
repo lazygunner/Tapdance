@@ -36,6 +36,11 @@
   --studio-select-option-selected-text: #f8fbff;
   --studio-shadow: 0 30px 80px rgba(2, 8, 23, 0.42);
   --studio-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 22px 48px rgba(2, 8, 23, 0.24);
+  --studio-chrome-bg: rgba(7, 15, 28, 0.76);
+  --studio-chrome-border: rgba(148, 163, 184, 0.14);
+  --studio-chrome-divider: rgba(148, 163, 184, 0.22);
+  --studio-chrome-highlight: rgba(125, 211, 252, 0.28);
+  --studio-chrome-pill-bg: rgba(255, 255, 255, 0.04);
   --studio-accent-cyan-text: #a5f3fc;
   --studio-accent-cyan-bg: rgba(34, 211, 238, 0.1);
   --studio-accent-cyan-border: rgba(34, 211, 238, 0.2);
@@ -89,6 +94,11 @@
   --studio-select-option-selected-text: #142235;
   --studio-shadow: 0 24px 56px rgba(123, 132, 148, 0.14);
   --studio-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 16px 34px rgba(129, 138, 153, 0.12);
+  --studio-chrome-bg: rgba(255, 250, 243, 0.82);
+  --studio-chrome-border: rgba(110, 124, 145, 0.16);
+  --studio-chrome-divider: rgba(110, 124, 145, 0.22);
+  --studio-chrome-highlight: rgba(14, 165, 233, 0.18);
+  --studio-chrome-pill-bg: rgba(255, 255, 255, 0.62);
   --studio-accent-cyan-text: #0d766e;
   --studio-accent-cyan-bg: rgba(20, 184, 166, 0.12);
   --studio-accent-cyan-border: rgba(20, 184, 166, 0.24);
@@ -135,6 +145,7 @@ body {
 .app-shell {
   position: relative;
   min-height: 100vh;
+  min-height: 100svh;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
     linear-gradient(135deg, rgba(8, 15, 29, 0.92), rgba(4, 10, 21, 0.98));
@@ -177,6 +188,62 @@ body {
 
 .theme-light .studio-orb {
   opacity: 0.12;
+}
+
+.app-workspace {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.app-chrome {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0.3rem 1rem 0.4rem;
+  border-bottom: 1px solid var(--studio-chrome-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 58%),
+    var(--studio-chrome-bg);
+  box-shadow: 0 18px 44px rgba(2, 8, 23, 0.16);
+  backdrop-filter: blur(24px);
+  -webkit-app-region: drag;
+}
+
+.app-chrome::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--studio-chrome-highlight), transparent);
+  opacity: 0.8;
+}
+
+.app-chrome__title {
+  color: var(--studio-text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: none;
+}
+
+.app-chrome__title-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.app-chrome__version {
+  color: var(--studio-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
 }
 
 .studio-backdrop {
@@ -236,7 +303,10 @@ body {
 
 .app-main {
   position: relative;
-  background: transparent;
+  min-width: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    transparent;
 }
 
 .studio-page {
@@ -1246,6 +1316,10 @@ body {
     display: block;
   }
 
+  .app-workspace {
+    display: block;
+  }
+
   .app-sidebar {
     width: 100%;
     height: auto;
@@ -1256,5 +1330,21 @@ body {
   .studio-page,
   .studio-page-wide {
     width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-chrome {
+    min-height: 2rem;
+    padding-top: 0.28rem;
+    padding-bottom: 0.34rem;
+  }
+
+  .app-chrome__title {
+    font-size: 0.88rem;
+  }
+
+  .app-chrome__version {
+    font-size: 0.68rem;
   }
 }

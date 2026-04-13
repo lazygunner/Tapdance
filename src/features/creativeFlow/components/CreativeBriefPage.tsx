@@ -127,7 +127,7 @@ export function CreativeBriefPage({
               data-testid={`asset-generate-${asset.id}`}
               className="text-[11px] bg-indigo-600 text-white px-2 py-1.5 rounded hover:bg-indigo-500 disabled:opacity-50 flex items-center justify-center gap-1 min-w-0"
             >
-              {generatingAssetImages[asset.id] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3 shrink-0" /> : <ImageIcon className="w-3 h-3 shrink-0" />}
+              {generatingAssetImages[asset.id] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3 shrink-0" /> : <ImageIcon className="w-3 h-3 shrink-0" />}
               <span className="truncate">生成</span>
             </button>
             <label className="text-[11px] bg-zinc-700 text-white px-2 py-1.5 rounded hover:bg-zinc-600 cursor-pointer flex items-center justify-center gap-1 min-w-0">
@@ -139,7 +139,7 @@ export function CreativeBriefPage({
         </div>
         {generatingAssetImages[asset.id] && (
           <div className="studio-loading-overlay text-[var(--studio-text)]">
-            <img src="/assets/loading.gif" alt="" className="studio-loading-gif" />
+            <img src="./assets/loading.gif" alt="" className="studio-loading-gif" />
             <div className="studio-loading-content">
               <span className="text-[10px] font-medium">生成中...</span>
             </div>
@@ -257,7 +257,7 @@ export function CreativeBriefPage({
               disabled={generatingAssetPrompts[asset.id]}
               className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
             >
-              {generatingAssetPrompts[asset.id] ? <img src="/assets/loading.gif" alt="" className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+              {generatingAssetPrompts[asset.id] ? <img src="./assets/loading.gif" alt="" className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
               生成/翻译提示词
             </button>
           </div>
@@ -292,7 +292,7 @@ export function CreativeBriefPage({
           className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
           title={hasMissingAssetImages ? '请先为所有资产生成或上传图片' : ''}
         >
-          {isGeneratingShots ? <img src="/assets/loading.gif" alt="" className="w-4 h-4" /> : <Film className="w-4 h-4" />}
+          {isGeneratingShots ? <img src="./assets/loading.gif" alt="" className="w-4 h-4" /> : <Film className="w-4 h-4" />}
           生成分镜列表
         </button>
       </div>
@@ -632,7 +632,7 @@ export function CreativeBriefPage({
           className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
           title={hasMissingAssetImages ? '请先为所有资产生成或上传图片' : ''}
         >
-          {isGeneratingShots ? <img src="/assets/loading.gif" alt="" className="w-4 h-4" /> : <Film className="w-4 h-4" />}
+          {isGeneratingShots ? <img src="./assets/loading.gif" alt="" className="w-4 h-4" /> : <Film className="w-4 h-4" />}
           生成分镜列表
         </button>
       </div>

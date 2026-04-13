@@ -187,7 +187,7 @@ export function FastStoryboardView({
                   <div className={`${emptyImageShellClass} px-6 py-4 relative overflow-hidden`}>
                     {isGenerating ? (
                       <div className="studio-loading-overlay text-[var(--studio-text)]">
-                        <img src="/assets/loading.gif" alt="" className="studio-loading-gif" />
+                        <img src="./assets/loading.gif" alt="" className="studio-loading-gif" />
                         <div className="studio-loading-content">
                           <span className="text-sm font-medium">正在生成分镜图</span>
                         </div>
@@ -264,7 +264,7 @@ export function FastStoryboardView({
                           disabled={isGenerating || !scene.imagePrompt.trim()}
                           className={`h-11 w-full rounded-xl px-4 text-sm transition-colors ${isGenerating || !scene.imagePrompt.trim() ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-violet-500 hover:bg-violet-400 text-white'}`}
                         >
-                          {isGenerating ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />生成分镜图</span>}
+                          {isGenerating ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />生成分镜图</span>}
                         </button>
                         <label className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 px-4 text-sm text-white hover:bg-zinc-800 transition-colors cursor-pointer">
                           <Upload className="w-4 h-4" />
@@ -287,7 +287,7 @@ export function FastStoryboardView({
                           disabled={isGenerating || !scene.imagePrompt.trim()}
                           className={`h-11 rounded-xl px-4 text-sm transition-colors ${isGenerating || !scene.imagePrompt.trim() ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : 'bg-violet-500 hover:bg-violet-400 text-white'}`}
                         >
-                          {isGenerating ? <span className="inline-flex items-center gap-2"><img src="/assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />生成分镜图</span>}
+                          {isGenerating ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />生成分镜图</span>}
                         </button>
                         <label className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-700 px-4 text-sm text-white hover:bg-zinc-800 transition-colors cursor-pointer">
                           <Upload className="w-4 h-4" />

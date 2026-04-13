@@ -814,7 +814,7 @@ app.delete('/api/seedance/file/:submitId/:filename', async (request, response) =
 
 async function start() {
   await ensureDir(bridgeRoot);
-  app.listen(port, () => {
+  app.listen(port, '127.0.0.1', () => {
     console.log(`Seedance bridge listening on http://127.0.0.1:${port}`);
   });
 }

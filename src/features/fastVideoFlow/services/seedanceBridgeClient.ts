@@ -1,5 +1,5 @@
-import type { AspectRatio } from '../../../types.ts';
 import type { SeedanceHealth } from '../types/fastTypes.ts';
+import type { FastVideoInput } from '../types/fastTypes.ts';
 import type { SeedanceModelVersion } from '../../seedance/types.ts';
 import { buildSeedanceBridgeRequestUrl, resolveSeedanceBridgeUrl } from '../../../services/seedanceBridgeUrl.ts';
 
@@ -189,7 +189,7 @@ export async function submitSeedanceTask(params: {
   imageSources: string[];
   options: {
     modelVersion: SeedanceModelVersion;
-    ratio: AspectRatio;
+    ratio: FastVideoInput['aspectRatio'];
     duration: number;
     videoResolution: '480p' | '720p';
   };

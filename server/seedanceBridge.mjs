@@ -6,6 +6,7 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import crypto from 'node:crypto';
 import { createAppStateStore } from './appStateStore.mjs';
+import { buildAssetLibraryFileName } from './assetLibraryNaming.mjs';
 
 const execFileAsync = promisify(execFile);
 const app = express();
@@ -317,12 +318,6 @@ function detectContentType(fileName) {
   return 'application/octet-stream';
 }
 
-function createAssetBaseName(assetId, title) {
-  const titleSlug = sanitizePathSegment(title, 'asset').replace(/\s+/gu, '-');
-  const hash = crypto.createHash('sha1').update(String(assetId || titleSlug)).digest('hex').slice(0, 8);
-  return `${titleSlug}-${hash}`.slice(0, 120);
-}
-
 function extractBase64Payload(body, kind) {
   const dataUrl = String(body?.dataUrl || '').trim();
   if (dataUrl) {
@@ -438,15 +433,17 @@ function buildAssetLibraryRelativePath(body, mimeType) {
   const groupFolder = sanitizePathSegment(body?.groupName, '未分组');
   const projectFolder = sanitizePathSegment(body?.projectName, '未命名项目');
   const mediaFolder = kind === 'video' ? 'videos' : 'images';
-  const explicitFileName = sanitizePathSegment(body?.fileName, '');
-  const baseName = explicitFileName
-    ? explicitFileName.replace(/\.[^.]+$/u, '')
-    : createAssetBaseName(body?.assetId, body?.title);
-  const extension = explicitFileName && extname(explicitFileName)
-    ? extname(explicitFileName).replace(/^\./u, '')
-    : getMimeExtension(mimeType, kind);
+  const fileName = buildAssetLibraryFileName({
+    assetId: body?.assetId,
+    title: body?.title,
+    fileName: body?.fileName,
+    mimeType,
+    kind,
+    sanitizePathSegment,
+    getMimeExtension,
+  });
 
-  return `${groupFolder}/${projectFolder}/${mediaFolder}/${baseName}.${extension}`;
+  return `${groupFolder}/${projectFolder}/${mediaFolder}/${fileName}`;
 }
 
 async function listDownloadedFiles(submitId) {
@@ -484,6 +481,19 @@ app.get('/api/seedance/health', async (_request, response) => {
       loginStatus: 'error',
       modelVersions: supportedModelVersions,
       checkedAt: new Date().toISOString(),
+      error: normalizeErrorMessage(error),
+    });
+  }
+});
+
+app.post('/api/seedance/state/reset', (_request, response) => {
+  try {
+    response.json({
+      ok: true,
+      ...appStateStore.reset(),
+    });
+  } catch (error) {
+    response.status(500).json({
       error: normalizeErrorMessage(error),
     });
   }

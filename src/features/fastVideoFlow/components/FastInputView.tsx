@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type ClipboardEvent, type ReactNode } from 'react';
-import { Clapperboard, HelpCircle, Image as ImageIcon, Settings2, Sparkles, Upload, Users, Video, X } from 'lucide-react';
+import { AlertTriangle, Clapperboard, HelpCircle, Image as ImageIcon, Settings2, Sparkles, Upload, Users, Video, X } from 'lucide-react';
 
 import type { FastReferenceImage, FastVideoInput } from '../types/fastTypes.ts';
 import { ClickPopover } from '../../../components/studio/ClickPopover.tsx';
@@ -7,7 +7,7 @@ import { StudioPage, StudioPageHeader, StudioPanel, StudioSelect, StudioModal } 
 import { PortraitLibraryView } from '../../portraitLibrary/components/PortraitLibraryView.tsx';
 import { FAST_VIDEO_PROMPT_CONFIG } from '../../../config/fastVideoPrompts.ts';
 import { VideoUrlPreview, VIDEO_REFERENCE_CONSTRAINTS } from './VideoUrlPreview.tsx';
-import { uploadVideoToTos, isTosConfigComplete } from '../../../services/tosUploadService.ts';
+import { uploadVideoToTos, isLikelyTosCorsError, isTosConfigComplete } from '../../../services/tosUploadService.ts';
 
 const REFERENCE_TYPE_OPTIONS: Array<{ value: NonNullable<FastReferenceImage['referenceType']>; label: string }> = [
   { value: 'scene', label: '场景参考图' },
@@ -79,6 +79,8 @@ const ASPECT_RATIO_OPTIONS: Array<{ value: FastVideoInput['aspectRatio']; label:
   { value: '9:16', label: '竖屏 9:16' },
   { value: '1:1', label: '正方形 1:1' },
   { value: '4:3', label: '经典 4:3' },
+  { value: '3:4', label: '竖构图 3:4' },
+  { value: '21:9', label: '电影宽幅 21:9' },
 ];
 
 const SCENE_COUNT_OPTIONS: Array<{ value: FastVideoInput['preferredSceneCount']; label: string }> = [
@@ -110,7 +112,20 @@ export function FastInputView({
 }: Props) {
   const [portraitPickerTargetId, setPortraitPickerTargetId] = useState<string | null>(null);
   const [uploadingVideoIds, setUploadingVideoIds] = useState<Record<string, boolean>>({});
+  const [tosCorsModalState, setTosCorsModalState] = useState<{ origin: string; message: string } | null>(null);
   const canGoDirectToVideo = Boolean(input.prompt.trim() || hasPlan);
+
+  const openTosCorsSettings = async () => {
+    const url = 'https://console.volcengine.com/tos/bucket/setting';
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (window.electronAPI?.isElectron) {
+      await window.electronAPI.openExternal(url);
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const handleReferencePaste = (event: ClipboardEvent<HTMLDivElement>, referenceId: string) => {
     const clipboardItems = Array.from(event.clipboardData.items as ArrayLike<DataTransferItem>);
@@ -486,7 +501,14 @@ export function FastInputView({
                                         onUpdateReferenceVideo(reference.id, { videoUrl: url, videoMeta: null });
                                       } catch (err) {
                                         console.error(err);
-                                        alert('上传视频失败: ' + (err instanceof Error ? err.message : String(err)));
+                                        if (isLikelyTosCorsError(err)) {
+                                          setTosCorsModalState({
+                                            origin: typeof window !== 'undefined' ? window.location.origin : '',
+                                            message: err.message,
+                                          });
+                                        } else {
+                                          alert('上传视频失败: ' + (err instanceof Error ? err.message : String(err)));
+                                        }
                                       } finally {
                                         setUploadingVideoIds(prev => ({ ...prev, [reference.id]: false }));
                                         event.target.value = '';
@@ -542,6 +564,81 @@ export function FastInputView({
           </StudioPanel>
         </aside>
       </div>
+
+      <StudioModal
+        open={!!tosCorsModalState}
+        onClose={() => setTosCorsModalState(null)}
+        className="max-w-xl p-0"
+      >
+        {tosCorsModalState ? (
+          <div className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-500/20 bg-amber-500/10 text-amber-100">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200/80">TOS Bucket CORS</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">上传被浏览器跨域策略拦截</h3>
+                  <p className="mt-3 text-sm leading-6 text-zinc-400">
+                    当前页面无法直接 PUT 到 TOS。请到火山云 TOS 的 Bucket 跨域设置里，把当前应用域名加入允许来源。
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTosCorsModalState(null)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-800 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+                aria-label="关闭 TOS 跨域提示"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">当前需要放行的域名</p>
+              <p className="mt-2 break-all font-mono text-sm text-emerald-300">
+                {tosCorsModalState.origin || '当前应用域名'}
+              </p>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-sky-500/20 bg-sky-500/6 px-4 py-4 text-xs leading-6 text-zinc-300">
+              <p className="font-semibold text-sky-300">建议配置</p>
+              <p className="mt-2">火山云控制台 → 对象存储 → 对应 Bucket → 权限管理 → 跨域设置</p>
+              <div className="mt-3 space-y-1 font-mono text-[11px] text-zinc-300">
+                <div><span className="text-zinc-500">AllowedOrigin:</span> <span className="text-emerald-300">{tosCorsModalState.origin || '当前应用域名'}</span></div>
+                <div><span className="text-zinc-500">AllowedMethod:</span> <span className="text-emerald-300">PUT, GET, HEAD</span></div>
+                <div><span className="text-zinc-500">AllowedHeader:</span> <span className="text-emerald-300">*</span></div>
+                <div><span className="text-zinc-500">ExposeHeader:</span> <span className="text-emerald-300">ETag</span></div>
+                <div><span className="text-zinc-500">MaxAgeSeconds:</span> <span className="text-emerald-300">3600</span></div>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs leading-5 text-zinc-500">{tosCorsModalState.message}</p>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setTosCorsModalState(null)}
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
+              >
+                关闭
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTosCorsModalState(null);
+                  void openTosCorsSettings();
+                }}
+                className="inline-flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/14 px-4 py-2 text-sm font-medium text-sky-100 transition-colors hover:bg-sky-500/20"
+              >
+                <Settings2 className="h-4 w-4" />
+                去配置域名
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </StudioModal>
 
       <StudioModal
         open={!!portraitPickerTargetId}

@@ -1,4 +1,4 @@
-import type { Asset, AspectRatio, Brief, Shot } from '../types.ts';
+import type { Asset, AspectRatio, Brief, Shot, VisualAspectRatio } from '../types.ts';
 import type { FastVideoInput, FastVideoPlan } from '../features/fastVideoFlow/types/fastTypes.ts';
 import { createFallbackFastVideoPlan } from '../features/fastVideoFlow/services/fastFlowMappers.ts';
 import { buildFastVideoPlanPrompt, buildFastVideoPromptRegenerationPrompt, normalizeFastVideoExecutionPrompt } from '../features/fastVideoFlow/services/fastPromptBuilders.ts';
@@ -160,7 +160,7 @@ function supportsSeedreamReferenceImage(modelName: string): boolean {
   return !normalized.includes('seedream-3.0') && !normalized.includes('seedream-3-0');
 }
 
-function mapImageSize(aspectRatio: AspectRatio) {
+function mapImageSize(aspectRatio: VisualAspectRatio) {
   if (aspectRatio === '1:1') {
     return '1K';
   }
@@ -497,7 +497,7 @@ Return ONLY a JSON object with keys: prompt, promptZh.`);
   };
 }
 
-export async function generateStoryboardImage(prompt: string, aspectRatio: AspectRatio, modelName: string, referenceAssets: Asset[] = [], useMockMode: boolean = false, baseImageBase64?: string): Promise<string> {
+export async function generateStoryboardImage(prompt: string, aspectRatio: VisualAspectRatio, modelName: string, referenceAssets: Asset[] = [], useMockMode: boolean = false, baseImageBase64?: string): Promise<string> {
   if (useMockMode) {
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
   }

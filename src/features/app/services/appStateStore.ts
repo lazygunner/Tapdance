@@ -6,6 +6,11 @@ export type PersistedAppStateEntry<T> = {
   updatedAt: string | null;
 };
 
+export type ResetPersistedAppStateResult = {
+  ok: boolean;
+  resetAt: string;
+};
+
 async function requestJson<T>(path: string, init?: RequestInit, explicitBaseUrl?: string): Promise<T> {
   const url = buildSeedanceBridgeRequestUrl(path, explicitBaseUrl);
   console.log(`[AppStateStore] ${init?.method || 'GET'} ${url}`);
@@ -45,5 +50,11 @@ export function savePersistedAppState<T>(key: string, value: T, baseUrl?: string
   return requestJson<PersistedAppStateEntry<T>>(`/state/${encodeURIComponent(key)}`, {
     method: 'PUT',
     body: JSON.stringify({ value }),
+  }, baseUrl);
+}
+
+export function resetPersistedAppStateStore(baseUrl?: string) {
+  return requestJson<ResetPersistedAppStateResult>('/state/reset', {
+    method: 'POST',
   }, baseUrl);
 }

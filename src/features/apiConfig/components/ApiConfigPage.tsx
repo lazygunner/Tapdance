@@ -1,9 +1,9 @@
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import { useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 
-import { Clapperboard, MessageSquareText, Settings2, Upload, Video } from 'lucide-react';
+import { AlertTriangle, Clapperboard, Database, Loader2, MessageSquareText, Settings2, Upload, Video } from 'lucide-react';
 import { motion } from 'motion/react';
 
-import { StudioSelect } from '../../../components/studio/StudioPrimitives.tsx';
+import { StudioModal, StudioSelect } from '../../../components/studio/StudioPrimitives.tsx';
 import { SEEDANCE_MODEL_VERSIONS } from '../../seedance/modelVersions.ts';
 import type { ApiSettings, ModelSourceId } from '../../../types.ts';
 import {
@@ -37,6 +37,8 @@ type ApiConfigPageProps = {
   usdToCnyRate: number;
   modelInvocationLogs: ModelInvocationLogEntry[];
   onRestoreDefaults: () => void;
+  onInitializeDatabase: () => void | Promise<void>;
+  isInitializingDatabase: boolean;
   getSourceProviderKey: (sourceId: ModelSourceId) => ModelProviderId;
   getGeminiRoleModelOptions: (role: ModelRole) => Array<{ sourceId: ModelSourceId; modelName: string; label: string }>;
   getVolcengineRoleModelOptions: (role: ModelRole) => Array<{ value: string; label: string }>;
@@ -52,12 +54,17 @@ export function ApiConfigPage({
   usdToCnyRate,
   modelInvocationLogs,
   onRestoreDefaults,
+  onInitializeDatabase,
+  isInitializingDatabase,
   getSourceProviderKey,
   getGeminiRoleModelOptions,
   getVolcengineRoleModelOptions,
   getProviderRoleCatalogOptions,
   updateGeminiRoleModel,
 }: ApiConfigPageProps) {
+  const [isInitializeDatabaseModalOpen, setIsInitializeDatabaseModalOpen] = useState(false);
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-5xl mx-auto py-8">
       <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-8">
@@ -505,7 +512,7 @@ export function ApiConfigPage({
                 <input
                   value={apiSettings.tos?.endpoint || ''}
                   onChange={(event) => setApiSettings((prev) => ({ ...prev, tos: { ...prev.tos!, endpoint: event.target.value } }))}
-                  placeholder="例：https://tos-cn-beijing.volces.com"
+                  placeholder="例：https://tos-cn-beijing.volces.com（不要带 bucket 前缀）"
                   className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
                 />
               </label>
@@ -561,14 +568,20 @@ export function ApiConfigPage({
                 <p className="text-zinc-400 mb-3">
                   进入 <strong className="text-zinc-200">火山云控制台 → 对象存储 → 选择 Bucket → 权限管理 → 跨域设置</strong>，新增如下规则：
                 </p>
+                {currentOrigin ? (
+                  <div className="mb-3 rounded-lg border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] px-3 py-2">
+                    <div className="text-zinc-500 uppercase tracking-[0.2em] text-[10px]">当前应用域名</div>
+                    <div className="mt-1 break-all font-mono text-emerald-300">{currentOrigin}</div>
+                  </div>
+                ) : null}
                 <div className="space-y-1.5 text-zinc-300 font-mono bg-zinc-950/60 rounded-lg p-3">
-                  <div><span className="text-zinc-500">来源（AllowedOrigin）：</span><span className="text-emerald-300">*</span></div>
+                  <div><span className="text-zinc-500">来源（AllowedOrigin）：</span><span className="text-emerald-300">{currentOrigin || '当前应用域名'}</span></div>
                   <div><span className="text-zinc-500">方法（AllowedMethod）：</span><span className="text-emerald-300">PUT, GET, HEAD</span></div>
                   <div><span className="text-zinc-500">允许头（AllowedHeader）：</span><span className="text-emerald-300">*</span></div>
                   <div><span className="text-zinc-500">暴露头（ExposeHeader）：</span><span className="text-emerald-300">ETag</span></div>
                   <div><span className="text-zinc-500">缓存时间（MaxAgeSeconds）：</span><span className="text-emerald-300">3600</span></div>
                 </div>
-                <p className="text-zinc-500 mt-2">生产环境可将 AllowedOrigin 替换为具体域名。</p>
+                <p className="text-zinc-500 mt-2">开发调试也建议直接填写当前域名；只有临时排查时再把 AllowedOrigin 放宽为 <span className="font-mono">*</span>。</p>
               </div>
             </div>
           )}
@@ -666,6 +679,86 @@ export function ApiConfigPage({
           </div>
         )}
       </section>
+
+      <section className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/5 p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-red-200">
+              <Database className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-white">危险操作</h3>
+              <p className="mt-1 text-sm text-zinc-400">
+                重新初始化 app 本地数据库。会清空 API 设置、项目列表、主题偏好等持久化数据，完成后自动刷新应用。
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsInitializeDatabaseModalOpen(true)}
+            disabled={isInitializingDatabase}
+            className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/12 px-4 py-2 text-sm font-medium text-red-100 transition-colors hover:bg-red-500/18 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isInitializingDatabase ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+            初始化数据库
+          </button>
+        </div>
+      </section>
+
+      <StudioModal
+        open={isInitializeDatabaseModalOpen}
+        onClose={() => {
+          if (!isInitializingDatabase) {
+            setIsInitializeDatabaseModalOpen(false);
+          }
+        }}
+        closeOnOverlayClick={!isInitializingDatabase}
+        className="max-w-xl p-0"
+      >
+        <div className="p-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-red-200">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-red-200/80">二次确认</p>
+              <h3 className="mt-2 text-xl font-semibold text-white">确认重新初始化 app 数据库？</h3>
+              <p className="mt-3 text-sm leading-6 text-zinc-400">
+                该操作会清空当前 app 的本地持久化数据，包括 API 设置、项目列表、主题偏好，以及其他保存在 SQLite 数据库中的状态。
+              </p>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                确认后会立即执行初始化，并在完成后自动刷新应用。这个操作不可撤销。
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-xs leading-6 text-zinc-400">
+            若你只是想恢复模型或 API 字段默认值，使用上方“恢复默认值”即可；这里只有在需要彻底清空本地数据库时再执行。
+          </div>
+
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setIsInitializeDatabaseModalOpen(false)}
+              disabled={isInitializingDatabase}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void onInitializeDatabase();
+              }}
+              disabled={isInitializingDatabase}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/14 px-4 py-2 text-sm font-medium text-red-100 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isInitializingDatabase ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+              {isInitializingDatabase ? '初始化中...' : '确认初始化'}
+            </button>
+          </div>
+        </div>
+      </StudioModal>
     </motion.div>
   );
 }

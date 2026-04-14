@@ -1,4 +1,4 @@
-import type { AspectRatio } from '../../../types.ts';
+import type { VisualAspectRatio } from '../../../types.ts';
 import type { SeedanceApiModelKey, SeedanceDraft, SeedanceExecutorId, SeedanceModelVersion } from '../../seedance/types.ts';
 
 export type FastSceneCountPreference = 'auto' | 1 | 2;
@@ -37,7 +37,7 @@ export interface FastVideoInput {
   prompt: string;
   referenceImages: FastReferenceImage[];
   referenceVideos: FastReferenceVideo[];
-  aspectRatio: AspectRatio;
+  aspectRatio: VisualAspectRatio;
   durationSec: number;
   preferredSceneCount: FastSceneCountPreference;
   quickCutEnabled?: boolean;

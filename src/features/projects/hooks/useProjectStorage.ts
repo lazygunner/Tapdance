@@ -12,6 +12,7 @@ type UseProjectStorageArgs = {
   upsertProjectListEntry: (items: Project[], nextProject: Project) => Project[];
   projectListSyncDelayMs: number;
   projectPersistDelayMs: number;
+  suspendPersistence?: boolean;
 };
 
 const PROJECTS_STATE_KEY = 'projects';
@@ -25,6 +26,7 @@ export function useProjectStorage({
   upsertProjectListEntry,
   projectListSyncDelayMs,
   projectPersistDelayMs,
+  suspendPersistence = false,
 }: UseProjectStorageArgs) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -84,6 +86,10 @@ export function useProjectStorage({
       return;
     }
 
+    if (suspendPersistence) {
+      return;
+    }
+
     const timeoutId = window.setTimeout(() => {
       void (async () => {
         try {
@@ -96,10 +102,14 @@ export function useProjectStorage({
     }, projectPersistDelayMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [isLoaded, projectPersistDelayMs, projects]);
+  }, [isLoaded, projectPersistDelayMs, projects, suspendPersistence]);
 
   useEffect(() => {
     if (!project.id) {
+      return;
+    }
+
+    if (suspendPersistence) {
       return;
     }
 
@@ -113,7 +123,7 @@ export function useProjectStorage({
     }, projectListSyncDelayMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [project, projectListSyncDelayMs, view]);
+  }, [project, projectListSyncDelayMs, suspendPersistence, view]);
 
   return {
     projects,

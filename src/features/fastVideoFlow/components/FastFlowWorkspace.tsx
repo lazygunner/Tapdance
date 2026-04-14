@@ -180,6 +180,7 @@ export function FastFlowWorkspace({
         onToggleReferenceSelection={onToggleReferenceSelection}
         onToggleReferenceVideoSelection={onToggleReferenceVideoSelection}
         onToggleSceneSelection={onToggleSceneSelection}
+        themeMode={themeMode}
         healthPanel={(
           <SeedanceHealthPanel
             seedanceHealth={seedanceHealth}

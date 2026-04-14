@@ -1,3 +1,4 @@
+import type { TosConfig } from '../../src/types.ts'
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
@@ -9,6 +10,12 @@ const api = {
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
   setWindowAppearance: (themeMode: 'light' | 'dark') => ipcRenderer.invoke('window:setAppearance', themeMode),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  uploadVideoToTos: (payload: {
+    config: TosConfig
+    fileName: string
+    fileType?: string
+    data: ArrayBuffer
+  }) => ipcRenderer.invoke('tos:uploadVideo', payload),
   selectDirectory: (options?: { title?: string; defaultPath?: string }) => ipcRenderer.invoke('dialog:selectDirectory', options),
 }
 

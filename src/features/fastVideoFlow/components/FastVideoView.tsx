@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type LucideIcon, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type LucideIcon, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Circle, Clock3, Image as ImageIcon, Play, RefreshCw, Search, Video, Volume2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -23,6 +23,15 @@ const FAST_REFERENCE_TYPE_LABELS: Record<NonNullable<FastVideoInput['referenceIm
   other: '其他参考图',
 };
 
+const FAST_REFERENCE_VIDEO_TYPE_LABELS: Record<NonNullable<FastVideoInput['referenceVideos'][number]['referenceType']>, string> = {
+  motion: '动作参考视频',
+  camera: '运镜参考视频',
+  effect: '特效参考视频',
+  edit: '视频编辑参考',
+  extend: '视频延长参考',
+  other: '其他参考视频',
+};
+
 const FAST_OVERLAY_OPTIONS: Array<{
   id: SeedanceOverlayTemplateId;
   label: string;
@@ -35,6 +44,10 @@ const FAST_OVERLAY_OPTIONS: Array<{
 
 function getFastReferenceTypeLabel(referenceType?: FastVideoInput['referenceImages'][number]['referenceType']) {
   return FAST_REFERENCE_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_TYPE_LABELS.other;
+}
+
+function getFastReferenceVideoTypeLabel(referenceType?: FastVideoInput['referenceVideos'][number]['referenceType']) {
+  return FAST_REFERENCE_VIDEO_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_VIDEO_TYPE_LABELS.other;
 }
 
 function isSelectedForVideo(selectedForVideo?: boolean) {
@@ -52,12 +65,427 @@ function getVideoPromptReferenceToken(index: number) {
 type PromptVideoReferenceItem = {
   token: string;
   videoUrl: string;
+  title: string;
+  subtitle: string;
 };
 
 type PromptReferenceItem = {
   token: string;
   imageUrl: string;
+  title: string;
+  subtitle: string;
 };
+
+type PromptEditorSelection = {
+  start: number;
+  end: number;
+};
+
+type PromptEditorMentionMatch = {
+  query: string;
+  start: number;
+  end: number;
+};
+
+type PromptEditorMentionState = {
+  query: string;
+  activeIndex: number;
+  position: {
+    left: number;
+    top: number;
+  };
+};
+
+type PromptEditorSuggestionItem = {
+  token: string;
+  kind: 'image' | 'video';
+  title: string;
+  subtitle: string;
+  imageUrl?: string;
+  videoUrl?: string;
+};
+
+const PROMPT_REFERENCE_TOKEN_REGEX = /((?:图片|视频)\s*[0-9０-９]+)/gu;
+const PROMPT_EDITOR_PLACEHOLDER = '输入最终提交给 Seedance 的中文视频提示词；输入 @ 可直接插入图片 / 视频素材标签。';
+
+function splitPromptTextByReferenceToken(text: string) {
+  const segments: Array<{ type: 'text' | 'token'; value: string }> = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(PROMPT_REFERENCE_TOKEN_REGEX)) {
+    const token = match[0];
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      segments.push({ type: 'text', value: text.slice(lastIndex, start) });
+    }
+    segments.push({ type: 'token', value: token });
+    lastIndex = start + token.length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: 'text', value: text.slice(lastIndex) });
+  }
+
+  if (segments.length === 0) {
+    segments.push({ type: 'text', value: '' });
+  }
+
+  return segments;
+}
+
+function normalizePromptSearchText(text: string) {
+  return text
+    .replace(/\s+/gu, '')
+    .replace(/[０-９]/gu, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0))
+    .toLowerCase();
+}
+
+function isPromptMentionBoundary(character?: string) {
+  if (!character) {
+    return true;
+  }
+
+  return /[\s([{'"，。；：、！？（）【】《》“”‘’]/u.test(character);
+}
+
+function findPromptMentionMatch(text: string, caretOffset: number): PromptEditorMentionMatch | null {
+  const prefix = text.slice(0, caretOffset);
+  const atIndex = prefix.lastIndexOf('@');
+  if (atIndex < 0) {
+    return null;
+  }
+
+  const query = prefix.slice(atIndex + 1);
+  if (/[\s\n\r]/u.test(query)) {
+    return null;
+  }
+
+  const precedingCharacter = prefix[atIndex - 1];
+  if (!isPromptMentionBoundary(precedingCharacter)) {
+    return null;
+  }
+
+  return {
+    query,
+    start: atIndex,
+    end: caretOffset,
+  };
+}
+
+function serializePromptEditorNode(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent || '';
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+    return '';
+  }
+
+  if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+    return Array.from(node.childNodes).map((child) => serializePromptEditorNode(child)).join('');
+  }
+
+  const element = node as HTMLElement;
+  const token = element.dataset.promptToken;
+  if (token) {
+    return token;
+  }
+
+  if (element.tagName === 'BR') {
+    return '\n';
+  }
+
+  const children = Array.from(element.childNodes);
+  return children.map((child, index) => {
+    const serializedChild = serializePromptEditorNode(child);
+    if (
+      child instanceof HTMLElement
+      && (child.tagName === 'DIV' || child.tagName === 'P')
+      && index < children.length - 1
+      && !serializedChild.endsWith('\n')
+    ) {
+      return `${serializedChild}\n`;
+    }
+
+    return serializedChild;
+  }).join('');
+}
+
+function serializePromptEditorContent(root: HTMLElement) {
+  return serializePromptEditorNode(root).replace(/\u00A0/gu, ' ');
+}
+
+function createPromptTokenChip(root: HTMLElement, item: PromptEditorSuggestionItem) {
+  const documentRef = root.ownerDocument;
+  const chip = documentRef.createElement('span');
+  chip.className = `fast-prompt-chip ${item.kind === 'image' ? 'fast-prompt-image-tag' : 'fast-prompt-video-tag'}`;
+  chip.contentEditable = 'false';
+  chip.tabIndex = -1;
+  chip.dataset.promptToken = item.token;
+  chip.title = `${item.token} · ${item.title}`;
+
+  if (item.kind === 'image' && item.imageUrl) {
+    const preview = documentRef.createElement('img');
+    preview.src = item.imageUrl;
+    preview.alt = '';
+    preview.setAttribute('aria-hidden', 'true');
+    preview.className = 'h-[18px] w-[18px] shrink-0 rounded-[4px] object-cover ring-1 ring-white/10';
+    chip.append(preview);
+  }
+
+  if (item.kind === 'video' && item.videoUrl) {
+    const preview = documentRef.createElement('span');
+    preview.className = 'relative h-[18px] w-[26px] shrink-0 overflow-hidden rounded-[4px]';
+
+    const video = documentRef.createElement('video');
+    video.src = item.videoUrl;
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.setAttribute('aria-hidden', 'true');
+    video.className = 'h-full w-full object-cover';
+    preview.append(video);
+    chip.append(preview);
+  }
+
+  const label = documentRef.createElement('span');
+  label.className = 'text-[12px] font-semibold leading-6';
+  label.textContent = item.token;
+  chip.append(label);
+
+  return chip;
+}
+
+function renderPromptEditorContent(
+  root: HTMLElement,
+  text: string,
+  referenceItems: PromptReferenceItem[],
+  videoReferenceItems: PromptVideoReferenceItem[],
+) {
+  const fragment = root.ownerDocument.createDocumentFragment();
+
+  splitPromptTextByReferenceToken(text).forEach((segment) => {
+    if (segment.type === 'text') {
+      if (segment.value) {
+        fragment.append(root.ownerDocument.createTextNode(segment.value));
+      }
+      return;
+    }
+
+    const imageRef = getPromptReferenceByToken(referenceItems, segment.value);
+    if (imageRef) {
+      fragment.append(createPromptTokenChip(root, {
+        token: imageRef.token,
+        kind: 'image',
+        title: imageRef.title,
+        subtitle: imageRef.subtitle,
+        imageUrl: imageRef.imageUrl,
+      }));
+      return;
+    }
+
+    const videoRef = getVideoPromptReferenceByToken(videoReferenceItems, segment.value);
+    if (videoRef) {
+      fragment.append(createPromptTokenChip(root, {
+        token: videoRef.token,
+        kind: 'video',
+        title: videoRef.title,
+        subtitle: videoRef.subtitle,
+        videoUrl: videoRef.videoUrl,
+      }));
+      return;
+    }
+
+    fragment.append(root.ownerDocument.createTextNode(segment.value));
+  });
+
+  root.replaceChildren(fragment);
+}
+
+function getPromptEditorOffset(root: HTMLElement, container: Node, offset: number) {
+  const range = root.ownerDocument.createRange();
+  range.selectNodeContents(root);
+  range.setEnd(container, offset);
+  return serializePromptEditorNode(range.cloneContents()).length;
+}
+
+function capturePromptEditorSelection(root: HTMLElement): PromptEditorSelection | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) {
+    return null;
+  }
+
+  return {
+    start: getPromptEditorOffset(root, range.startContainer, range.startOffset),
+    end: getPromptEditorOffset(root, range.endContainer, range.endOffset),
+  };
+}
+
+function getPromptEditorChildIndex(node: Node) {
+  if (!node.parentNode) {
+    return 0;
+  }
+
+  return Array.from(node.parentNode.childNodes).findIndex((child) => child === node);
+}
+
+function locatePromptEditorBoundary(root: HTMLElement, offset: number): { container: Node; offset: number } {
+  const target = Math.max(0, offset);
+
+  const search = (node: Node, remaining: number): { found: boolean; container: Node; offset: number; remaining: number } => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent || '';
+      const boundedOffset = Math.min(remaining, text.length);
+      if (remaining <= text.length) {
+        return { found: true, container: node, offset: boundedOffset, remaining: 0 };
+      }
+      return { found: false, container: node, offset: text.length, remaining: remaining - text.length };
+    }
+
+    if (!(node instanceof HTMLElement)) {
+      return { found: false, container: root, offset: root.childNodes.length, remaining };
+    }
+
+    const token = node.dataset.promptToken;
+    if (token) {
+      const parent = node.parentNode || root;
+      const index = getPromptEditorChildIndex(node);
+      if (remaining <= 0) {
+        return { found: true, container: parent, offset: index, remaining: 0 };
+      }
+      if (remaining <= token.length) {
+        return { found: true, container: parent, offset: index + 1, remaining: 0 };
+      }
+      return { found: false, container: parent, offset: index + 1, remaining: remaining - token.length };
+    }
+
+    if (node.tagName === 'BR') {
+      const parent = node.parentNode || root;
+      const index = getPromptEditorChildIndex(node);
+      if (remaining <= 1) {
+        return { found: true, container: parent, offset: index + 1, remaining: 0 };
+      }
+      return { found: false, container: parent, offset: index + 1, remaining: remaining - 1 };
+    }
+
+    let nextRemaining = remaining;
+    const children = Array.from(node.childNodes);
+    for (let index = 0; index < children.length; index += 1) {
+      const child = children[index];
+      const result = search(child, nextRemaining);
+      if (result.found) {
+        return result;
+      }
+      nextRemaining = result.remaining;
+    }
+
+    return {
+      found: false,
+      container: node,
+      offset: node.childNodes.length,
+      remaining: nextRemaining,
+    };
+  };
+
+  const result = search(root, target);
+  if (result.found) {
+    return { container: result.container, offset: result.offset };
+  }
+
+  return {
+    container: root,
+    offset: root.childNodes.length,
+  };
+}
+
+function restorePromptEditorSelection(root: HTMLElement, selection: PromptEditorSelection) {
+  const browserSelection = window.getSelection();
+  if (!browserSelection) {
+    return;
+  }
+
+  const startBoundary = locatePromptEditorBoundary(root, selection.start);
+  const endBoundary = locatePromptEditorBoundary(root, selection.end);
+  const range = root.ownerDocument.createRange();
+  range.setStart(startBoundary.container, startBoundary.offset);
+  range.setEnd(endBoundary.container, endBoundary.offset);
+  browserSelection.removeAllRanges();
+  browserSelection.addRange(range);
+}
+
+function insertTextAtPromptSelection(root: HTMLElement, text: string) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) {
+    return;
+  }
+
+  range.deleteContents();
+  const textNode = root.ownerDocument.createTextNode(text);
+  range.insertNode(textNode);
+  range.setStart(textNode, textNode.textContent?.length || 0);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function getPromptEditorCaretRect(root: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return root.getBoundingClientRect();
+  }
+
+  const range = selection.getRangeAt(0).cloneRange();
+  range.collapse(true);
+  const rect = range.getBoundingClientRect();
+  if (rect.width || rect.height) {
+    return rect;
+  }
+
+  const firstRect = range.getClientRects()[0];
+  return firstRect || root.getBoundingClientRect();
+}
+
+function getAdjacentPromptTokenRange(
+  text: string,
+  offset: number,
+  direction: 'backward' | 'forward',
+  referenceItems: PromptReferenceItem[],
+  videoReferenceItems: PromptVideoReferenceItem[],
+) {
+  for (const match of text.matchAll(PROMPT_REFERENCE_TOKEN_REGEX)) {
+    const token = match[0];
+    const start = match.index ?? 0;
+    const end = start + token.length;
+    const hasRenderableToken = Boolean(
+      getPromptReferenceByToken(referenceItems, token)
+      || getVideoPromptReferenceByToken(videoReferenceItems, token),
+    );
+
+    if (!hasRenderableToken) {
+      continue;
+    }
+
+    if (direction === 'backward' && end === offset) {
+      return { start, end };
+    }
+
+    if (direction === 'forward' && start === offset) {
+      return { start, end };
+    }
+  }
+
+  return null;
+}
 
 function normalizePromptReferenceToken(token: string) {
   const normalized = token
@@ -111,78 +539,354 @@ function PromptTokenEditor({
   value,
   referenceItems,
   videoReferenceItems,
+  themeMode = 'dark',
   onChange,
 }: {
   value: string;
   referenceItems: PromptReferenceItem[];
   videoReferenceItems: PromptVideoReferenceItem[];
+  themeMode?: 'light' | 'dark';
   onChange: (value: string) => void;
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const overlayContentRef = useRef<HTMLDivElement | null>(null);
-  const [isFocused, setIsFocused] = useState(false);
+  const editorShellRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const selectionRef = useRef<PromptEditorSelection | null>(null);
+  const isComposingRef = useRef(false);
+  const [mentionState, setMentionState] = useState<PromptEditorMentionState | null>(null);
 
-  useLayoutEffect(() => {
-    if (!textareaRef.current || !overlayContentRef.current) {
+  const suggestionItems: PromptEditorSuggestionItem[] = [
+    ...referenceItems.map((item) => ({
+      token: item.token,
+      kind: 'image' as const,
+      title: item.title,
+      subtitle: item.subtitle,
+      imageUrl: item.imageUrl,
+    })),
+    ...videoReferenceItems.map((item) => ({
+      token: item.token,
+      kind: 'video' as const,
+      title: item.title,
+      subtitle: item.subtitle,
+      videoUrl: item.videoUrl,
+    })),
+  ];
+
+  const filteredSuggestionItems = mentionState
+    ? suggestionItems.filter((item) => {
+      const normalizedQuery = normalizePromptSearchText(mentionState.query);
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const haystack = normalizePromptSearchText(`${item.token} ${item.title} ${item.subtitle}`);
+      return haystack.includes(normalizedQuery);
+    })
+    : [];
+  const insertPromptTagButtonClass = themeMode === 'light'
+    ? 'inline-flex items-center gap-1.5 rounded-full border border-stone-300 px-2.5 py-1 text-[11px] text-stone-700 transition-colors hover:border-stone-400 hover:bg-stone-100'
+    : 'inline-flex items-center gap-1.5 rounded-full border border-zinc-700 px-2.5 py-1 text-[11px] text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-900 hover:text-white';
+
+  const syncMentionState = () => {
+    if (!editorRef.current || !editorShellRef.current) {
+      setMentionState(null);
       return;
     }
 
-    overlayContentRef.current.style.transform = `translate(${-textareaRef.current.scrollLeft}px, ${-textareaRef.current.scrollTop}px)`;
-  }, [isFocused, value]);
-
-  const renderPromptOverlay = (text: string) => {
-    if (!text) {
-      return <span className="text-zinc-500">输入最终提交给 Seedance 的中文视频提示词；输入 图片1 / 图片2 / 视频1 会自动显示为缩略图标签。</span>;
+    const selection = capturePromptEditorSelection(editorRef.current);
+    selectionRef.current = selection;
+    if (!selection || selection.start !== selection.end) {
+      setMentionState(null);
+      return;
     }
 
-    if (isFocused) {
-      return text;
+    const editorText = serializePromptEditorContent(editorRef.current);
+    const mentionMatch = findPromptMentionMatch(editorText, selection.start);
+    if (!mentionMatch) {
+      setMentionState(null);
+      return;
     }
 
-    const lines = text.split('\n');
+    const caretRect = getPromptEditorCaretRect(editorRef.current);
+    const shellRect = editorShellRef.current.getBoundingClientRect();
+    const maxLeft = Math.max(12, shellRect.width - 292);
+    const nextLeft = Math.min(Math.max(12, caretRect.left - shellRect.left), maxLeft);
 
-    return lines.map((line, lineIndex) => {
-      const parts = line.split(/((?:图片|视频)\s*[0-9０-９]+)/gu);
+    setMentionState((previous) => ({
+      query: mentionMatch.query,
+      activeIndex: previous?.query === mentionMatch.query ? previous.activeIndex : 0,
+      position: {
+        left: nextLeft,
+        top: Math.max(8, caretRect.bottom - shellRect.top + 8),
+      },
+    }));
+  };
 
-      return (
-        <Fragment key={`line-${lineIndex}`}>
-          {parts.map((part, partIndex) => {
-            const imageRef = getPromptReferenceByToken(referenceItems, part);
-            if (imageRef) {
-              return (
-                <span
-                  key={`part-${lineIndex}-${partIndex}`}
-                  className="relative inline-block align-baseline whitespace-pre"
-                >
-                  <span className="invisible inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-[0.65rem] px-1.5">
-                    <img src={imageRef.imageUrl} alt="" aria-hidden="true" className="h-[18px] w-[18px] shrink-0 rounded-[4px] object-cover" />
-                    <span className="text-[12px] font-semibold leading-6">{part}</span>
-                  </span>
-                  <span className="pointer-events-none absolute left-0 top-0 inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-[0.65rem] fast-prompt-image-tag px-1.5">
-                    <img src={imageRef.imageUrl} alt={imageRef.token} className="h-[18px] w-[18px] shrink-0 rounded-[4px] object-cover ring-1 ring-white/10" />
-                    <span className="text-[12px] font-semibold leading-6">{part}</span>
-                  </span>
-                </span>
-              );
+  const commitEditorValue = (nextValue: string, nextSelection?: PromptEditorSelection | null) => {
+    selectionRef.current = nextSelection ?? null;
+    onChange(nextValue);
+  };
+
+  const commitFromEditorDom = () => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    const nextValue = serializePromptEditorContent(editorRef.current);
+    const nextSelection = capturePromptEditorSelection(editorRef.current);
+    if (nextValue !== value) {
+      commitEditorValue(nextValue, nextSelection);
+    } else {
+      selectionRef.current = nextSelection;
+    }
+    syncMentionState();
+  };
+
+  const openMentionPicker = () => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    editorRef.current.focus();
+    const currentText = serializePromptEditorContent(editorRef.current);
+    const currentSelection = capturePromptEditorSelection(editorRef.current) || {
+      start: currentText.length,
+      end: currentText.length,
+    };
+    restorePromptEditorSelection(editorRef.current, currentSelection);
+
+    const needsLeadingSpace = currentSelection.start > 0 && !/\s/u.test(currentText[currentSelection.start - 1] || '');
+    insertTextAtPromptSelection(editorRef.current, needsLeadingSpace ? ' @' : '@');
+    commitFromEditorDom();
+  };
+
+  const insertSuggestionToken = (item: PromptEditorSuggestionItem) => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    const editorText = serializePromptEditorContent(editorRef.current);
+    const currentSelection = capturePromptEditorSelection(editorRef.current);
+    if (!currentSelection) {
+      return;
+    }
+
+    const mentionMatch = findPromptMentionMatch(editorText, currentSelection.start);
+    if (!mentionMatch) {
+      return;
+    }
+
+    const nextValue = `${editorText.slice(0, mentionMatch.start)}${item.token}${editorText.slice(currentSelection.end)}`;
+    const caretOffset = mentionMatch.start + item.token.length;
+    setMentionState(null);
+    commitEditorValue(nextValue, { start: caretOffset, end: caretOffset });
+  };
+
+  useLayoutEffect(() => {
+    if (!editorRef.current || isComposingRef.current) {
+      return;
+    }
+
+    const activeElement = document.activeElement;
+    const editor = editorRef.current;
+    const isFocused = activeElement === editor;
+    const selection = isFocused ? (selectionRef.current || capturePromptEditorSelection(editor)) : null;
+
+    renderPromptEditorContent(editor, value, referenceItems, videoReferenceItems);
+
+    if (selection && document.activeElement === editor) {
+      restorePromptEditorSelection(editor, selection);
+    }
+  }, [value, referenceItems, videoReferenceItems]);
+
+  useEffect(() => {
+    if (!mentionState) {
+      return;
+    }
+
+    if (filteredSuggestionItems.length === 0 && mentionState.activeIndex !== 0) {
+      setMentionState((previous) => previous ? { ...previous, activeIndex: 0 } : previous);
+      return;
+    }
+
+    if (filteredSuggestionItems.length > 0 && mentionState.activeIndex >= filteredSuggestionItems.length) {
+      setMentionState((previous) => previous ? { ...previous, activeIndex: filteredSuggestionItems.length - 1 } : previous);
+    }
+  }, [filteredSuggestionItems.length, mentionState]);
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (mentionState) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (filteredSuggestionItems.length > 0) {
+          setMentionState((previous) => previous ? {
+            ...previous,
+            activeIndex: (previous.activeIndex + 1) % filteredSuggestionItems.length,
+          } : previous);
+        }
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (filteredSuggestionItems.length > 0) {
+          setMentionState((previous) => previous ? {
+            ...previous,
+            activeIndex: (previous.activeIndex - 1 + filteredSuggestionItems.length) % filteredSuggestionItems.length,
+          } : previous);
+        }
+        return;
+      }
+
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        if (filteredSuggestionItems.length > 0) {
+          event.preventDefault();
+          insertSuggestionToken(filteredSuggestionItems[mentionState.activeIndex] || filteredSuggestionItems[0]);
+          return;
+        }
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMentionState(null);
+        return;
+      }
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (!editorRef.current) {
+        return;
+      }
+      insertTextAtPromptSelection(editorRef.current, '\n');
+      commitFromEditorDom();
+      return;
+    }
+
+    if ((event.key === 'Backspace' || event.key === 'Delete') && editorRef.current) {
+      const selection = capturePromptEditorSelection(editorRef.current);
+      if (!selection || selection.start !== selection.end) {
+        return;
+      }
+
+      const editorText = serializePromptEditorContent(editorRef.current);
+      const tokenRange = getAdjacentPromptTokenRange(
+        editorText,
+        selection.start,
+        event.key === 'Backspace' ? 'backward' : 'forward',
+        referenceItems,
+        videoReferenceItems,
+      );
+
+      if (!tokenRange) {
+        return;
+      }
+
+      event.preventDefault();
+      const nextValue = `${editorText.slice(0, tokenRange.start)}${editorText.slice(tokenRange.end)}`;
+      commitEditorValue(nextValue, { start: tokenRange.start, end: tokenRange.start });
+      setMentionState(null);
+    }
+  };
+
+  const handlePaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    const text = event.clipboardData.getData('text/plain').replace(/\r\n?/gu, '\n');
+    insertTextAtPromptSelection(editorRef.current, text);
+    commitFromEditorDom();
+  };
+
+  return (
+    <div ref={editorShellRef} className="relative mt-3 flex-1">
+      <div className="mb-2 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
+        <span>
+          输入 <span className="text-rose-300">@</span> 选择素材；
+        </span>
+        <button
+          type="button"
+          onClick={openMentionPicker}
+          className={insertPromptTagButtonClass}
+        >
+          <ImageIcon className="h-3.5 w-3.5" />
+          插入素材标签
+        </button>
+      </div>
+      <div className="fast-prompt-editor-shell rounded-xl border border-zinc-800 bg-zinc-950 focus-within:border-rose-500">
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="true"
+          spellCheck={false}
+          data-placeholder={PROMPT_EDITOR_PLACEHOLDER}
+          className="fast-prompt-rich-editor"
+          onInput={() => {
+            if (isComposingRef.current) {
+              return;
+            }
+            commitFromEditorDom();
+          }}
+          onFocus={() => {
+            if (!editorRef.current) {
+              return;
             }
 
-            const videoRef = getVideoPromptReferenceByToken(videoReferenceItems, part);
-            if (videoRef) {
-              return (
-                <span
-                  key={`part-${lineIndex}-${partIndex}`}
-                  className="relative inline-block align-baseline whitespace-pre"
-                >
-                  {/* invisible spacer — same size as visible tag so layout isn't disrupted */}
-                  <span className="invisible inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-[0.65rem] px-1.5">
-                    <span className="h-[18px] w-[26px] shrink-0 rounded-[4px] bg-transparent" />
-                    <span className="text-[12px] font-semibold leading-6">{part}</span>
-                  </span>
-                  {/* visible tag */}
-                  <span className="pointer-events-none absolute left-0 top-0 inline-flex h-full items-center gap-1.5 whitespace-nowrap rounded-[0.65rem] fast-prompt-video-tag px-1.5">
-                    <span className="relative h-[18px] w-[26px] shrink-0 overflow-hidden rounded-[4px]">
+            if (editorRef.current.childNodes.length === 0 && value) {
+              renderPromptEditorContent(editorRef.current, value, referenceItems, videoReferenceItems);
+            }
+
+            selectionRef.current = capturePromptEditorSelection(editorRef.current);
+            syncMentionState();
+          }}
+          onBlur={() => {
+            selectionRef.current = editorRef.current ? capturePromptEditorSelection(editorRef.current) : null;
+            setMentionState(null);
+          }}
+          onMouseUp={() => syncMentionState()}
+          onKeyUp={() => syncMentionState()}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onCompositionStart={() => {
+            isComposingRef.current = true;
+            setMentionState(null);
+          }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false;
+            commitFromEditorDom();
+          }}
+        />
+      </div>
+      {mentionState ? (
+        <div
+          className="fast-prompt-mention-panel"
+          style={{
+            left: mentionState.position.left,
+            top: mentionState.position.top,
+          }}
+        >
+          {filteredSuggestionItems.length > 0 ? filteredSuggestionItems.map((item, index) => {
+            const isActive = index === mentionState.activeIndex;
+            return (
+              <button
+                key={item.token}
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  insertSuggestionToken(item);
+                }}
+                className={`fast-prompt-mention-item ${isActive ? 'fast-prompt-mention-item-active' : ''}`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {item.kind === 'image' ? (
+                    <img src={item.imageUrl} alt="" aria-hidden="true" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                  ) : (
+                    <span className="relative h-9 w-12 shrink-0 overflow-hidden rounded-lg bg-zinc-900">
                       <video
-                        src={videoRef.videoUrl}
+                        src={item.videoUrl}
                         muted
                         playsInline
                         preload="metadata"
@@ -190,48 +894,24 @@ function PromptTokenEditor({
                         className="h-full w-full object-cover"
                       />
                     </span>
-                    <span className="text-[12px] font-semibold leading-6">{part}</span>
+                  )}
+                  <span className="min-w-0 text-left">
+                    <span className="block truncate text-sm text-white">{item.title}</span>
+                    <span className="block truncate text-[11px] text-zinc-500">{item.subtitle}</span>
                   </span>
                 </span>
-              );
-            }
-
-            return <Fragment key={`part-${lineIndex}-${partIndex}`}>{part}</Fragment>;
-          })}
-          {lineIndex < lines.length - 1 ? '\n' : null}
-        </Fragment>
-      );
-    });
-  };
-
-  return (
-    <div className="relative mt-3 flex-1 rounded-xl border border-zinc-800 bg-zinc-950 focus-within:border-rose-500">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl"
-      >
-        <div
-          ref={overlayContentRef}
-          className="fast-prompt-editor min-h-[300px] px-4 py-3 text-sm leading-6"
-        >
-          {renderPromptOverlay(value)}
+                <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${item.kind === 'image' ? 'bg-sky-500/12 text-sky-200' : 'bg-violet-500/12 text-violet-200'}`}>
+                  {item.token}
+                </span>
+              </button>
+            );
+          }) : (
+            <div className="px-3 py-2 text-sm text-zinc-500">
+              没有匹配的素材标签
+            </div>
+          )}
         </div>
-      </div>
-      <textarea
-        ref={textareaRef}
-        value={value}
-        spellCheck={false}
-        onChange={(event) => onChange(event.target.value)}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        onScroll={() => {
-          if (!textareaRef.current || !overlayContentRef.current) {
-            return;
-          }
-          overlayContentRef.current.style.transform = `translate(${-textareaRef.current.scrollLeft}px, ${-textareaRef.current.scrollTop}px)`;
-        }}
-        className="fast-prompt-input"
-      />
+      ) : null}
     </div>
   );
 }
@@ -319,6 +999,7 @@ type Props = {
   onToggleReferenceSelection: (referenceId: string) => void;
   onToggleReferenceVideoSelection: (referenceId: string) => void;
   onToggleSceneSelection: (sceneId: string) => void;
+  themeMode?: 'light' | 'dark';
   healthPanel?: ReactNode;
   hideHeader?: boolean;
 };
@@ -692,6 +1373,7 @@ export function FastVideoView({
   onToggleReferenceSelection,
   onToggleReferenceVideoSelection,
   onToggleSceneSelection,
+  themeMode = 'dark',
   healthPanel,
   hideHeader = false,
 }: Props) {
@@ -764,16 +1446,36 @@ export function FastVideoView({
   const costEstimate = getSeedanceCostEstimate(input, seedanceDraft, executionConfig);
   const promptReferenceItems: PromptReferenceItem[] = (() => {
     if (seedanceDraft.baseTemplateId === 'multi_image_reference') {
-      return [
-        ...selectedReferenceImages.map((reference) => reference.imageUrl),
-        ...selectedStoryboardScenes.map((scene) => scene.imageUrl || ''),
-      ]
-        .filter(Boolean)
-        .filter((imageUrl, index, list) => list.indexOf(imageUrl) === index)
-        .map((imageUrl, index) => ({
-          token: getPromptReferenceToken(index),
-          imageUrl,
-        }));
+      const uniqueItems = new Map<string, Omit<PromptReferenceItem, 'token'>>();
+
+      selectedReferenceImages.forEach((reference, index) => {
+        if (!reference.imageUrl || uniqueItems.has(reference.imageUrl)) {
+          return;
+        }
+
+        uniqueItems.set(reference.imageUrl, {
+          imageUrl: reference.imageUrl,
+          title: reference.description?.trim() || `参考图 ${index + 1}`,
+          subtitle: getFastReferenceTypeLabel(reference.referenceType),
+        });
+      });
+
+      selectedStoryboardScenes.forEach((scene, index) => {
+        if (!scene.imageUrl || uniqueItems.has(scene.imageUrl)) {
+          return;
+        }
+
+        uniqueItems.set(scene.imageUrl, {
+          imageUrl: scene.imageUrl,
+          title: scene.title || `分镜 ${index + 1}`,
+          subtitle: '已确认分镜',
+        });
+      });
+
+      return Array.from(uniqueItems.values()).map((item, index) => ({
+        ...item,
+        token: getPromptReferenceToken(index),
+      }));
     }
 
     if (seedanceDraft.baseTemplateId === 'first_frame') {
@@ -781,17 +1483,30 @@ export function FastVideoView({
       return firstSceneImage ? [{
         token: getPromptReferenceToken(0),
         imageUrl: firstSceneImage,
+        title: selectedStoryboardScenes[0]?.title || '首帧参考',
+        subtitle: '首帧分镜',
       }] : [];
     }
 
     if (seedanceDraft.baseTemplateId === 'first_last_frame') {
-      const firstSceneImage = selectedStoryboardScenes[0]?.imageUrl;
-      const lastSceneImage = selectedStoryboardScenes[selectedStoryboardScenes.length - 1]?.imageUrl;
-      return [firstSceneImage, lastSceneImage]
-        .filter((imageUrl): imageUrl is string => Boolean(imageUrl))
-        .map((imageUrl, index) => ({
+      const frameCandidates = [
+        {
+          imageUrl: selectedStoryboardScenes[0]?.imageUrl,
+          title: selectedStoryboardScenes[0]?.title || '首帧参考',
+          subtitle: '首帧分镜',
+        },
+        {
+          imageUrl: selectedStoryboardScenes[selectedStoryboardScenes.length - 1]?.imageUrl,
+          title: selectedStoryboardScenes[selectedStoryboardScenes.length - 1]?.title || '尾帧参考',
+          subtitle: '尾帧分镜',
+        },
+      ];
+
+      return frameCandidates
+        .filter((item): item is Omit<PromptReferenceItem, 'token'> => Boolean(item.imageUrl))
+        .map((item, index) => ({
+          ...item,
           token: getPromptReferenceToken(index),
-          imageUrl,
         }));
     }
 
@@ -801,6 +1516,8 @@ export function FastVideoView({
   const promptVideoReferenceItems: PromptVideoReferenceItem[] = selectedReferenceVideos.map((video, index) => ({
     token: getVideoPromptReferenceToken(index),
     videoUrl: video.videoUrl,
+    title: video.description?.trim() || `参考视频 ${index + 1}`,
+    subtitle: getFastReferenceVideoTypeLabel(video.referenceType),
   }));
   const fieldLabelClassName = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-500';
   const controlClassName = 'mt-1.5 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-rose-500';
@@ -1035,13 +1752,11 @@ export function FastVideoView({
                 {isRegeneratingPrompt ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />重新生成中</span> : <span className="inline-flex items-center gap-2"><RefreshCw className="w-4 h-4" />重新生成提示词</span>}
               </button>
             </div>
-            <div className="mt-2 text-xs text-zinc-500">
-              这里只显示最终提交用的中文执行提示词；手动修改后会同步作为 Seedance 提交内容。
-            </div>
             <PromptTokenEditor
               value={videoPrompt.promptZh || videoPrompt.prompt}
               referenceItems={promptReferenceItems}
               videoReferenceItems={promptVideoReferenceItems}
+              themeMode={themeMode}
               onChange={(nextValue) => onUpdatePrompt({ prompt: nextValue, promptZh: nextValue })}
             />
           </section>

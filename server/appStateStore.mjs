@@ -44,6 +44,7 @@ export function createAppStateStore(dbPath) {
       updated_at = excluded.updated_at
   `);
   const deleteStatement = database.prepare('DELETE FROM app_state WHERE key = ?');
+  const resetStatement = database.prepare('DELETE FROM app_state');
 
   return {
     path: resolvedPath,
@@ -78,6 +79,12 @@ export function createAppStateStore(dbPath) {
     delete(key) {
       const normalizedKey = normalizeStateKey(key);
       deleteStatement.run(normalizedKey);
+    },
+    reset() {
+      resetStatement.run();
+      return {
+        resetAt: new Date().toISOString(),
+      };
     },
     close() {
       database.close();

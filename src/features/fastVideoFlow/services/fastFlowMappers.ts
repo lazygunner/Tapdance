@@ -9,6 +9,12 @@ type NormalizableFastVideoProject = Partial<Omit<FastVideoProject, 'scenes'>> & 
   scenes?: Array<Partial<FastSceneDraft>>;
 };
 
+function normalizeFastVideoAspectRatio(value: unknown): FastVideoInput['aspectRatio'] {
+  return value === '9:16' || value === '1:1' || value === '4:3' || value === '3:4' || value === '21:9'
+    ? value
+    : '16:9';
+}
+
 export function isFastAssetSelectedForVideo(selectedForVideo?: boolean) {
   return selectedForVideo !== false;
 }
@@ -401,7 +407,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
       prompt: typeof input.prompt === 'string' ? input.prompt : base.input.prompt,
       referenceImages: normalizedReferenceImages,
       referenceVideos: normalizeReferenceVideos(input.referenceVideos),
-      aspectRatio: input.aspectRatio || base.input.aspectRatio,
+      aspectRatio: normalizeFastVideoAspectRatio(input.aspectRatio),
       durationSec: Number.isFinite(input.durationSec) ? Math.max(4, Math.min(15, Number(input.durationSec))) : base.input.durationSec,
       preferredSceneCount: input.preferredSceneCount === 1 || input.preferredSceneCount === 2 || input.preferredSceneCount === 'auto'
         ? input.preferredSceneCount

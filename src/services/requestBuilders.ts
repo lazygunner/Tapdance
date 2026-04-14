@@ -1,8 +1,8 @@
-import type { Asset, AspectRatio, Shot } from '../types.ts';
+import type { Asset, AspectRatio, Shot, VisualAspectRatio } from '../types.ts';
 
 const DATA_URL_PATTERN = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/;
 
-export type SupportedImageAspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '1:4' | '1:8' | '4:1' | '8:1';
+export type SupportedImageAspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | '21:9' | '1:4' | '1:8' | '4:1' | '8:1';
 
 export interface InlineImageData {
   imageBytes: string;
@@ -152,7 +152,7 @@ export function toStoryboardInlinePart(dataUrl?: string): StoryboardPart | undef
   };
 }
 
-export function mapStoryboardAspectRatio(aspectRatio: AspectRatio): SupportedImageAspectRatio {
+export function mapStoryboardAspectRatio(aspectRatio: VisualAspectRatio): SupportedImageAspectRatio {
   if (aspectRatio === '9:16') {
     return '9:16';
   }
@@ -165,12 +165,20 @@ export function mapStoryboardAspectRatio(aspectRatio: AspectRatio): SupportedIma
     return '4:3';
   }
 
+  if (aspectRatio === '3:4') {
+    return '3:4';
+  }
+
+  if (aspectRatio === '21:9') {
+    return '21:9';
+  }
+
   return '16:9';
 }
 
 export function buildStoryboardGenerationInput(
   prompt: string,
-  aspectRatio: AspectRatio,
+  aspectRatio: VisualAspectRatio,
   modelName: string = 'gemini-2.5-flash-image',
   referenceAssets: Asset[] = [],
   baseImageBase64?: string,

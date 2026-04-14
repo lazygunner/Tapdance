@@ -2,6 +2,7 @@ import type { FastVideoProject } from './features/fastVideoFlow/types/fastTypes.
 import type { SeedanceExecutorId, SeedanceModelVersion } from './features/seedance/types.ts';
 
 export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3';
+export type VisualAspectRatio = AspectRatio | '3:4' | '21:9';
 export type ProjectType = 'creative-video' | 'fast-video';
 
 export interface Brief {

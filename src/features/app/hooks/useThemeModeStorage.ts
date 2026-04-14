@@ -5,7 +5,7 @@ import { loadPersistedAppState, savePersistedAppState } from '../services/appSta
 
 const THEME_MODE_STATE_KEY = 'ui_theme_mode';
 
-export function useThemeModeStorage(defaultThemeMode: WorkspaceThemeMode = 'dark') {
+export function useThemeModeStorage(defaultThemeMode: WorkspaceThemeMode = 'dark', suspendPersistence = false) {
   const [themeMode, setThemeMode] = useState<WorkspaceThemeMode>(defaultThemeMode);
   const [isThemeModeLoaded, setIsThemeModeLoaded] = useState(false);
 
@@ -39,10 +39,14 @@ export function useThemeModeStorage(defaultThemeMode: WorkspaceThemeMode = 'dark
       return;
     }
 
+    if (suspendPersistence) {
+      return;
+    }
+
     void savePersistedAppState(THEME_MODE_STATE_KEY, themeMode).catch((error) => {
       console.error('Failed to save theme mode', error);
     });
-  }, [isThemeModeLoaded, themeMode]);
+  }, [isThemeModeLoaded, suspendPersistence, themeMode]);
 
   useEffect(() => {
     if (!isThemeModeLoaded || typeof document === 'undefined') {

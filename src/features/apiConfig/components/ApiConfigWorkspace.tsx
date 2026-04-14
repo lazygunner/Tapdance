@@ -16,6 +16,8 @@ type ApiConfigWorkspaceProps = {
   usdToCnyRate: number;
   modelInvocationLogs: ModelInvocationLogEntry[];
   onRestoreDefaults: () => void;
+  onInitializeDatabase: () => void | Promise<void>;
+  isInitializingDatabase: boolean;
   getSourceProviderKey: (sourceId: ModelSourceId) => ModelProviderId;
   getGeminiRoleModelOptions: (role: ModelRole) => Array<{ sourceId: ModelSourceId; modelName: string; label: string }>;
   getVolcengineRoleModelOptions: (role: ModelRole) => Array<{ value: string; label: string }>;
@@ -32,6 +34,8 @@ export function ApiConfigWorkspace({
   usdToCnyRate,
   modelInvocationLogs,
   onRestoreDefaults,
+  onInitializeDatabase,
+  isInitializingDatabase,
   getSourceProviderKey,
   getGeminiRoleModelOptions,
   getVolcengineRoleModelOptions,
@@ -53,6 +57,8 @@ export function ApiConfigWorkspace({
       usdToCnyRate={usdToCnyRate}
       modelInvocationLogs={modelInvocationLogs}
       onRestoreDefaults={onRestoreDefaults}
+      onInitializeDatabase={onInitializeDatabase}
+      isInitializingDatabase={isInitializingDatabase}
       getSourceProviderKey={getSourceProviderKey}
       getGeminiRoleModelOptions={getGeminiRoleModelOptions}
       getVolcengineRoleModelOptions={getVolcengineRoleModelOptions}

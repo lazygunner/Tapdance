@@ -1,6 +1,8 @@
 import { app, BrowserWindow, shell, ipcMain, nativeImage, dialog } from 'electron'
 import { join } from 'node:path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import type { TosConfig } from '../../src/types.ts'
+import { buildTosObjectKey, createTosClient, resolveTosUrl } from '../../src/services/tosUploadService.ts'
 import { startBridge } from './bridge'
 
 let bridgeServer: any = null
@@ -10,6 +12,32 @@ const iconPath = join(__dirname, '../../public/assets/tapdance_logo.png')
 const WINDOW_TITLE_BAR_HEIGHT = 56
 
 type WindowAppearanceMode = 'light' | 'dark'
+type TosUploadPayload = {
+  config: TosConfig
+  fileName: string
+  fileType?: string
+  data: ArrayBuffer
+}
+
+function normalizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const details = [error.message]
+    const causeMessage = error.cause instanceof Error
+      ? error.cause.message
+      : typeof error.cause === 'string'
+        ? error.cause
+        : ''
+    const code = typeof (error as any).code === 'string' ? (error as any).code : ''
+    if (code) {
+      details.push(`code=${code}`)
+    }
+    if (causeMessage && causeMessage !== error.message) {
+      details.push(`cause=${causeMessage}`)
+    }
+    return details.filter(Boolean).join(' | ')
+  }
+  return String(error || 'Unknown error')
+}
 
 const WINDOW_APPEARANCE: Record<WindowAppearanceMode, {
   backgroundColor: string
@@ -150,6 +178,39 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
     await shell.openExternal(url)
+  })
+
+  ipcMain.handle('tos:uploadVideo', async (_, payload: TosUploadPayload) => {
+    try {
+      const fileMeta = {
+        name: String(payload?.fileName || '').trim(),
+        type: String(payload?.fileType || '').trim(),
+      }
+
+      if (!fileMeta.name) {
+        throw new Error('缺少上传文件名')
+      }
+
+      const client = createTosClient(payload.config)
+      const objectKey = buildTosObjectKey(payload.config, fileMeta)
+      const body = Buffer.from(payload.data)
+
+      await client.putObject({
+        bucket: payload.config.bucket,
+        key: objectKey,
+        body,
+        contentLength: body.byteLength,
+        contentType: fileMeta.type || undefined,
+      })
+
+      return {
+        url: resolveTosUrl(payload.config, objectKey),
+        key: objectKey,
+      }
+    } catch (error) {
+      console.error('[Electron][TOS] Upload failed:', error)
+      throw new Error(`TOS 主进程上传失败：${normalizeErrorMessage(error)}`)
+    }
   })
 
   ipcMain.handle('dialog:selectDirectory', async (_, options?: { title?: string; defaultPath?: string }) => {

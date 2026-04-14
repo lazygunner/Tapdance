@@ -195,6 +195,11 @@ test('mapStoryboardAspectRatio preserves 4:3 for image generation', () => {
   assert.equal(mapStoryboardAspectRatio('4:3'), '4:3');
 });
 
+test('mapStoryboardAspectRatio preserves 3:4 and 21:9 for image generation', () => {
+  assert.equal(mapStoryboardAspectRatio('3:4'), '3:4');
+  assert.equal(mapStoryboardAspectRatio('21:9'), '21:9');
+});
+
 test('buildVideoGenerationRequest normalizes 4:3 video requests to 16:9 provider format', () => {
   const request = buildVideoGenerationRequest(
     createShot({

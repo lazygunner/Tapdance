@@ -39,3 +39,25 @@ test('app state store rejects invalid keys', async () => {
   store.close();
   await rm(tempDir, { recursive: true, force: true });
 });
+
+test('app state store can reset all persisted entries', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'renren-app-state-'));
+  const dbPath = join(tempDir, 'app-state.sqlite');
+  const store = createAppStateStore(dbPath);
+
+  store.set('projects', [{ id: 'project-1' }]);
+  store.set('api_settings', { gemini: { apiKey: 'demo' } });
+  const resetResult = store.reset();
+  store.close();
+
+  const reopenedStore = createAppStateStore(dbPath);
+  const projects = reopenedStore.get('projects');
+  const apiSettings = reopenedStore.get('api_settings');
+  reopenedStore.close();
+
+  assert.ok(resetResult.resetAt);
+  assert.equal(projects, null);
+  assert.equal(apiSettings, null);
+
+  await rm(tempDir, { recursive: true, force: true });
+});

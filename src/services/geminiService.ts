@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { Brief, Asset, Shot, AspectRatio } from '../types';
+import { Brief, Asset, Shot, AspectRatio, VisualAspectRatio } from '../types';
 import type { FastVideoInput, FastVideoPlan } from '../features/fastVideoFlow/types/fastTypes.ts';
 import { createFallbackFastVideoPlan } from '../features/fastVideoFlow/services/fastFlowMappers.ts';
 import { buildFastVideoPlanPrompt, buildFastVideoPromptRegenerationPrompt, normalizeFastVideoExecutionPrompt } from '../features/fastVideoFlow/services/fastPromptBuilders.ts';
@@ -555,7 +555,7 @@ export async function generateTransitionPrompt(currentShot: Shot, nextShot: Shot
   };
 }
 
-export async function generateStoryboardImage(prompt: string, aspectRatio: AspectRatio, modelName?: string, referenceAssets: Asset[] = [], useMockMode: boolean = false, baseImageBase64?: string): Promise<string> {
+export async function generateStoryboardImage(prompt: string, aspectRatio: VisualAspectRatio, modelName?: string, referenceAssets: Asset[] = [], useMockMode: boolean = false, baseImageBase64?: string): Promise<string> {
   if (useMockMode) {
     await new Promise(r => setTimeout(r, 1500));
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';

@@ -34,6 +34,7 @@ import { ProjectOverviewWorkspace } from './features/app/components/ProjectOverv
 import { useModelInvocationLogs } from './features/app/hooks/useModelInvocationLogs.ts';
 import { useProjectDetailNavigation } from './features/app/hooks/useProjectDetailNavigation.ts';
 import { useThemeModeStorage } from './features/app/hooks/useThemeModeStorage.ts';
+import { resetPersistedAppStateStore } from './features/app/services/appStateStore.ts';
 import { StartupSplash } from './features/app/components/StartupSplash.tsx';
 import { CreativeFlowWorkspace } from './features/creativeFlow/components/CreativeFlowWorkspace.tsx';
 import { useAssetDetailActions } from './features/creativeFlow/hooks/useAssetDetailActions.ts';
@@ -58,6 +59,7 @@ import {
   type GeminiModelField,
   type VolcengineModelField,
 } from './features/apiConfig/utils/apiConfigUi.ts';
+import { clearModelInvocationLogs } from './services/modelInvocationLog.ts';
 import {
   ASPECT_RATIO_OPTIONS,
   ASSET_TYPE_LABELS,
@@ -141,8 +143,9 @@ export default function App() {
   });
   const [useMockMode] = useState(shouldStartInMockMode);
   const [view, setView] = useState<View>('home');
-  const { themeMode, setThemeMode, isThemeModeLoaded } = useThemeModeStorage('dark');
-  const { apiSettings, setApiSettings } = useApiSettingsStorage();
+  const [isReinitializingAppDatabase, setIsReinitializingAppDatabase] = useState(false);
+  const { themeMode, setThemeMode, isThemeModeLoaded } = useThemeModeStorage('dark', isReinitializingAppDatabase);
+  const { apiSettings, setApiSettings } = useApiSettingsStorage(isReinitializingAppDatabase);
   const { modelInvocationLogs } = useModelInvocationLogs();
   const [idea, setIdea] = useState('');
   const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
@@ -228,6 +231,7 @@ export default function App() {
     upsertProjectListEntry,
     projectListSyncDelayMs: PROJECT_LIST_SYNC_DELAY_MS,
     projectPersistDelayMs: PROJECT_PERSIST_DELAY_MS,
+    suspendPersistence: isReinitializingAppDatabase,
   });
   const shouldComputeProjectGroups = view === 'home' || view === 'groupDetail' || createProjectDraft !== null;
   const projectGroups = shouldComputeProjectGroups ? getProjectGroupSummary(projects) : EMPTY_PROJECT_GROUPS;
@@ -777,6 +781,24 @@ export default function App() {
 
   const { draftIssues } = getFastVideoDraftState(project);
   const currentSurfaceMeta = getWorkspaceSurfaceMeta(view, project);
+  const handleInitializeAppDatabase = async () => {
+    if (isReinitializingAppDatabase) {
+      return;
+    }
+
+    setIsReinitializingAppDatabase(true);
+
+    try {
+      clearModelInvocationLogs();
+      await resetPersistedAppStateStore(apiSettings.seedance.bridgeUrl);
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to reinitialize app database', error);
+      alert(error instanceof Error ? error.message : '初始化数据库失败，请稍后重试。');
+      setIsReinitializingAppDatabase(false);
+    }
+  };
+
   const currentWorkspace = view === 'apiConfig'
     ? (
       <ApiConfigWorkspace
@@ -791,6 +813,8 @@ export default function App() {
           setApiSettings(defaultApiSettings);
           resetFlowModelOverrides();
         }}
+        onInitializeDatabase={() => void handleInitializeAppDatabase()}
+        isInitializingDatabase={isReinitializingAppDatabase}
         getSourceProviderKey={getSourceProviderKey}
         getGeminiRoleModelOptions={(role) => getGeminiRoleModelOptions(apiSettings, role)}
         getVolcengineRoleModelOptions={(role) => getVolcengineRoleModelOptions(apiSettings, role)}

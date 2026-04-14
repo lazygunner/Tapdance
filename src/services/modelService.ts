@@ -1,4 +1,4 @@
-import type { Asset, AspectRatio, Brief, ModelSourceId, Shot } from '../types.ts';
+import type { Asset, AspectRatio, Brief, ModelSourceId, Shot, VisualAspectRatio } from '../types.ts';
 import type { FastSceneDraft, FastVideoInput, FastVideoPlan, FastVideoPromptDraft } from '../features/fastVideoFlow/types/fastTypes.ts';
 import * as geminiService from './geminiService.ts';
 import * as volcengineService from './volcengineService.ts';
@@ -174,7 +174,7 @@ export async function translatePromptsToEnglish(shot: Shot, useMockMode: boolean
   );
 }
 
-export async function generateStoryboardImage(prompt: string, aspectRatio: AspectRatio, modelName?: string, referenceAssets: Asset[] = [], useMockMode: boolean = false, baseImageBase64?: string, sourceId: ModelSourceId = 'gemini.imageModel'): Promise<string> {
+export async function generateStoryboardImage(prompt: string, aspectRatio: VisualAspectRatio, modelName?: string, referenceAssets: Asset[] = [], useMockMode: boolean = false, baseImageBase64?: string, sourceId: ModelSourceId = 'gemini.imageModel'): Promise<string> {
   const finalModelName = modelName || '';
   return withModelLog(
     'generateStoryboardImage',

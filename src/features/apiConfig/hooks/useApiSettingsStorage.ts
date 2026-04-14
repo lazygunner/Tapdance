@@ -9,7 +9,7 @@ import {
   setCachedApiSettings,
 } from '../../../services/apiConfig.ts';
 
-export function useApiSettingsStorage() {
+export function useApiSettingsStorage(suspendPersistence = false) {
   const [apiSettings, setApiSettings] = useState<ApiSettings>(() => loadApiSettings());
   const [isApiSettingsLoaded, setIsApiSettingsLoaded] = useState(false);
   const loadedRef = useRef(false);
@@ -52,8 +52,12 @@ export function useApiSettingsStorage() {
       return;
     }
 
+    if (suspendPersistence) {
+      return;
+    }
+
     void saveApiSettings(apiSettings);
-  }, [apiSettings]);
+  }, [apiSettings, suspendPersistence]);
 
   return {
     apiSettings,

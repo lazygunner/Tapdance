@@ -2,7 +2,7 @@ import type { Asset, AspectRatio, Brief, Shot, VisualAspectRatio } from '../type
 import type { FastVideoInput, FastVideoPlan } from '../features/fastVideoFlow/types/fastTypes.ts';
 import { createFallbackFastVideoPlan } from '../features/fastVideoFlow/services/fastFlowMappers.ts';
 import { buildFastVideoPlanPrompt, buildFastVideoPromptRegenerationPrompt, normalizeFastVideoExecutionPrompt } from '../features/fastVideoFlow/services/fastPromptBuilders.ts';
-import { loadApiSettings } from './apiConfig.ts';
+import { loadApiSettings, resolveVolcengineBaseUrl } from './apiConfig.ts';
 import { buildCharacterReferencePrompt, buildProductReferencePrompt, buildSceneReferencePrompt } from './assetPromptTemplate.ts';
 import { getMockVideoUrl } from './mockMedia.ts';
 import { enforceFramePromptAspectRatio, inferAspectRatioFromFramePrompts } from './promptAspectRatio.ts';
@@ -18,7 +18,7 @@ function getVolcengineConfig() {
 }
 
 function getBaseUrl() {
-  return getVolcengineConfig().baseUrl.replace(/\/$/, '');
+  return resolveVolcengineBaseUrl(getVolcengineConfig().baseUrl).replace(/\/$/, '');
 }
 
 function getHeaders() {

@@ -1,5 +1,5 @@
 import modelCatalogConfig from '../config/modelCatalog.json';
-import type { ApiSettings, ModelSourceId, PromptLanguage } from '../types.ts';
+import type { ApiSettings, CustomProviderModelConfig, ModelSourceId, PromptLanguage } from '../types.ts';
 import { normalizeSeedanceModelVersion } from '../features/seedance/modelVersions.ts';
 import { loadPersistedAppState, savePersistedAppState } from '../features/app/services/appStateStore.ts';
 
@@ -58,6 +58,8 @@ export interface VolcengineModelCatalogItem {
   pricing?: ModelPricingConfig;
 }
 
+export const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
+
 const MODEL_PROVIDER_CATALOG = modelCatalogConfig.providers as Record<ModelProviderId, ProviderCatalog>;
 const PRICING_CATALOG_CONFIG = (modelCatalogConfig.pricingConfig || {}) as PricingCatalogConfig;
 const FALLBACK_PROVIDER_PROMPT_LANGUAGE: Record<ModelProviderId, PromptLanguage> = {
@@ -65,6 +67,9 @@ const FALLBACK_PROVIDER_PROMPT_LANGUAGE: Record<ModelProviderId, PromptLanguage>
   volcengine: 'zh',
 };
 const FALLBACK_USD_TO_CNY_RATE = 7.2;
+const LEGACY_VOLCENGINE_MODEL_ID_MAP: Record<string, string> = {
+  'doubao-seed-1.6': 'doubao-seed-1-8-251228',
+};
 
 function normalizeUsdToCnyRate(value?: number) {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
@@ -142,15 +147,17 @@ export const defaultApiSettings: ApiSettings = {
     proImageModel: 'gemini-3.1-flash-image-preview',
     fastVideoModel: 'veo-3.1-fast-generate-preview',
     proVideoModel: 'veo-3.1-generate-preview',
+    customModels: [],
   },
   volcengine: {
     enabled: true,
     apiKey: '',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    baseUrl: DEFAULT_VOLCENGINE_BASE_URL,
     promptLanguage: getProviderPromptLanguageCatalog('volcengine').default,
     textModel: VOLCENGINE_MODEL_CATALOG.text[0].endpointId,
     imageModel: VOLCENGINE_MODEL_CATALOG.image[0].endpointId,
     videoModel: VOLCENGINE_MODEL_CATALOG.video[0].endpointId,
+    customModels: [],
   },
   seedance: {
     enabled: true,
@@ -222,8 +229,92 @@ function getProviderCatalog(providerId: ModelProviderId) {
   return MODEL_PROVIDER_CATALOG[providerId];
 }
 
-export function getProviderModelCatalog(providerId: ModelProviderId, role: ModelRole): ConfiguredModelCatalogItem[] {
-  return getProviderCatalog(providerId).models[role];
+function normalizeLegacyVolcengineModelId(modelId: string): string {
+  const normalized = modelId.trim();
+  if (!normalized) {
+    return '';
+  }
+
+  return LEGACY_VOLCENGINE_MODEL_ID_MAP[normalized.toLowerCase()] || normalized;
+}
+
+function isModelRole(value: unknown): value is ModelRole {
+  return value === 'text' || value === 'image' || value === 'video';
+}
+
+function normalizeCustomModels(value: unknown, providerId?: ModelProviderId): CustomProviderModelConfig[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized: CustomProviderModelConfig[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    const role = isModelRole(candidate.role) ? candidate.role : null;
+    const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+    const rawModelId = typeof candidate.modelId === 'string' ? candidate.modelId.trim() : '';
+    const modelId = providerId === 'volcengine'
+      ? normalizeLegacyVolcengineModelId(rawModelId)
+      : rawModelId;
+
+    if (!role || !name || !modelId) {
+      continue;
+    }
+
+    const dedupeKey = `${role}:${modelId.toLowerCase()}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+
+    normalized.push({ role, name, modelId });
+  }
+
+  return normalized;
+}
+
+function getCustomProviderModels(settings: ApiSettings, providerId: ModelProviderId): CustomProviderModelConfig[] {
+  const providerSettings = settings[providerId] as { customModels?: CustomProviderModelConfig[] };
+  return Array.isArray(providerSettings.customModels) ? providerSettings.customModels : [];
+}
+
+function getProviderModelCatalogFromSettings(
+  settings: ApiSettings,
+  providerId: ModelProviderId,
+  role: ModelRole,
+): ConfiguredModelCatalogItem[] {
+  const seen = new Set<string>();
+  const customModels = getCustomProviderModels(settings, providerId)
+    .filter((item) => item.role === role)
+    .map((item) => ({
+      name: item.name,
+      modelId: item.modelId,
+    }));
+  const builtInModels = getProviderCatalog(providerId).models[role];
+
+  return [...customModels, ...builtInModels].filter((item) => {
+    const normalizedModelId = item.modelId.trim().toLowerCase();
+    if (!normalizedModelId || seen.has(normalizedModelId)) {
+      return false;
+    }
+
+    seen.add(normalizedModelId);
+    return true;
+  });
+}
+
+export function getProviderModelCatalog(
+  providerId: ModelProviderId,
+  role: ModelRole,
+  settings: ApiSettings = cachedApiSettings,
+): ConfiguredModelCatalogItem[] {
+  return getProviderModelCatalogFromSettings(settings, providerId, role);
 }
 
 function readModelSource(settings: ApiSettings, sourceId: ModelSourceId): string {
@@ -244,13 +335,18 @@ export function getModelRoleFromSourceId(sourceId: Exclude<ModelSourceId, ''>): 
   return ROLE_BY_SOURCE_ID[sourceId];
 }
 
-export function findConfiguredModel(providerId: ModelProviderId, role: ModelRole, modelId: string): ConfiguredModelCatalogItem | undefined {
+export function findConfiguredModel(
+  providerId: ModelProviderId,
+  role: ModelRole,
+  modelId: string,
+  settings: ApiSettings = cachedApiSettings,
+): ConfiguredModelCatalogItem | undefined {
   const normalized = modelId.trim();
   if (!normalized) {
     return undefined;
   }
 
-  return getProviderCatalog(providerId).models[role].find((item) => {
+  return getProviderModelCatalogFromSettings(settings, providerId, role).find((item) => {
     const aliases = item.aliases ? [...item.aliases] : [];
     return item.modelId === normalized || aliases.includes(normalized);
   });
@@ -367,9 +463,15 @@ export function getPricedModelEntries(): Array<{ providerId: ModelProviderId; ro
   return items;
 }
 
-function normalizeVolcengineModelValue(role: ModelRole, endpointId: string): string {
-  const matched = findConfiguredModel('volcengine', role, endpointId);
-  return matched?.modelId || endpointId.trim();
+function normalizeVolcengineModelValue(role: ModelRole, endpointId: string, settings: ApiSettings): string {
+  const normalizedEndpointId = normalizeLegacyVolcengineModelId(endpointId);
+  const matched = findConfiguredModel('volcengine', role, normalizedEndpointId, settings);
+  return matched?.modelId || normalizedEndpointId;
+}
+
+export function resolveVolcengineBaseUrl(baseUrl?: string): string {
+  const normalized = typeof baseUrl === 'string' ? baseUrl.trim() : '';
+  return normalized || DEFAULT_VOLCENGINE_BASE_URL;
 }
 
 function normalizeApiSettings(settings: ApiSettings): ApiSettings {
@@ -386,15 +488,18 @@ function normalizeApiSettings(settings: ApiSettings): ApiSettings {
     ...settings,
     gemini: {
       ...settings.gemini,
+      customModels: normalizeCustomModels(settings.gemini.customModels, 'gemini'),
       promptLanguage: normalizedGeminiPromptLanguage,
     },
     volcengine: {
       ...settings.volcengine,
       enabled: true,
+      baseUrl: resolveVolcengineBaseUrl(settings.volcengine.baseUrl),
+      customModels: normalizeCustomModels(settings.volcengine.customModels, 'volcengine'),
       promptLanguage: normalizedVolcenginePromptLanguage,
-      textModel: normalizeVolcengineModelValue('text', settings.volcengine.textModel),
-      imageModel: normalizeVolcengineModelValue('image', settings.volcengine.imageModel),
-      videoModel: normalizeVolcengineModelValue('video', settings.volcengine.videoModel),
+      textModel: normalizeVolcengineModelValue('text', settings.volcengine.textModel, settings),
+      imageModel: normalizeVolcengineModelValue('image', settings.volcengine.imageModel, settings),
+      videoModel: normalizeVolcengineModelValue('video', settings.volcengine.videoModel, settings),
     },
     seedance: {
       enabled: settings.seedance?.enabled !== false,

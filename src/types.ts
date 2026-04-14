@@ -1,8 +1,8 @@
 import type { FastVideoProject } from './features/fastVideoFlow/types/fastTypes.ts';
 import type { SeedanceExecutorId, SeedanceModelVersion } from './features/seedance/types.ts';
 
-export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3';
-export type VisualAspectRatio = AspectRatio | '3:4' | '21:9';
+export type AspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
+export type VisualAspectRatio = AspectRatio;
 export type ProjectType = 'creative-video' | 'fast-video';
 
 export interface Brief {
@@ -76,6 +76,13 @@ export interface VideoConfig {
 }
 
 export type PromptLanguage = 'zh' | 'en';
+export type ProviderModelRole = 'text' | 'image' | 'video';
+
+export interface CustomProviderModelConfig {
+  role: ProviderModelRole;
+  name: string;
+  modelId: string;
+}
 
 export interface GeminiApiConfig {
   apiKey: string;
@@ -85,6 +92,7 @@ export interface GeminiApiConfig {
   proImageModel: string;
   fastVideoModel: string;
   proVideoModel: string;
+  customModels: CustomProviderModelConfig[];
 }
 
 export interface VolcengineApiConfig {
@@ -95,6 +103,7 @@ export interface VolcengineApiConfig {
   textModel: string;
   imageModel: string;
   videoModel: string;
+  customModels: CustomProviderModelConfig[];
 }
 
 export interface SeedanceApiConfig {

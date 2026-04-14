@@ -47,6 +47,44 @@ function getVolcengineTransitionRequestPreview(aspectRatio: AspectRatio, prompt:
   };
 }
 
+function normalizeBriefStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(/[,\n，、]/u)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function normalizeBriefAspectRatio(value: unknown): Brief['aspectRatio'] {
+  return value === '21:9' || value === '9:16' || value === '1:1' || value === '4:3' || value === '3:4' ? value : '16:9';
+}
+
+function normalizeGeneratedBrief(brief: Brief): Brief {
+  const normalizedCharacters = normalizeBriefStringArray(brief?.characters);
+  const normalizedScenes = normalizeBriefStringArray(brief?.scenes);
+
+  return {
+    theme: typeof brief?.theme === 'string' ? brief.theme.trim() : '',
+    style: typeof brief?.style === 'string' ? brief.style.trim() : '',
+    characters: normalizedCharacters,
+    scenes: normalizedScenes,
+    events: typeof brief?.events === 'string' ? brief.events.trim() : '',
+    mood: typeof brief?.mood === 'string' ? brief.mood.trim() : '',
+    duration: typeof brief?.duration === 'string' ? brief.duration.trim() : '',
+    aspectRatio: normalizeBriefAspectRatio(brief?.aspectRatio),
+    platform: typeof brief?.platform === 'string' ? brief.platform.trim() : '',
+  };
+}
+
 async function withModelLog<T>(
   operation: string,
   sourceId: ModelSourceId,
@@ -99,9 +137,11 @@ export async function generateBriefWithModel(idea: string, modelName: string, us
     sourceId,
     modelName,
     { idea, useMockMode },
-    () => isVolcengineSource(sourceId)
-      ? volcengineService.generateBriefWithModel(idea, modelName, useMockMode)
-      : geminiService.generateBriefWithModel(idea, modelName, useMockMode),
+    async () => normalizeGeneratedBrief(
+      await (isVolcengineSource(sourceId)
+        ? volcengineService.generateBriefWithModel(idea, modelName, useMockMode)
+        : geminiService.generateBriefWithModel(idea, modelName, useMockMode)),
+    ),
   );
 }
 

@@ -104,10 +104,10 @@ export function getGeminiRoleModelOptions(apiSettings: ApiSettings, role: ModelR
 export function getVolcengineRoleModelOptions(apiSettings: ApiSettings, role: ModelRole) {
   const sourceId = VOLCENGINE_ROLE_SOURCE_IDS[role];
   const configuredValue = resolveModelSource(apiSettings, sourceId);
-  const catalogOptions = getProviderModelCatalog('volcengine', role).map((model) => ({
+  const catalogOptions = getProviderModelCatalog('volcengine', role, apiSettings).map((model) => ({
     value: model.modelId,
     label: [
-      formatConfiguredModelDisplay('volcengine', role, model.modelId),
+      `${model.name} (${model.modelId})`,
       getModelPricingLabel('volcengine', role, model.modelId, true),
     ].filter(Boolean).join(' · '),
   }));
@@ -125,11 +125,16 @@ export function getVolcengineRoleModelOptions(apiSettings: ApiSettings, role: Mo
   return catalogOptions;
 }
 
-export function getProviderRoleCatalogOptions(providerId: ModelProviderId, role: ModelRole, configuredValue: string) {
-  const catalogOptions = getProviderModelCatalog(providerId, role).map((model) => ({
+export function getProviderRoleCatalogOptions(
+  apiSettings: ApiSettings,
+  providerId: ModelProviderId,
+  role: ModelRole,
+  configuredValue: string,
+) {
+  const catalogOptions = getProviderModelCatalog(providerId, role, apiSettings).map((model) => ({
     value: model.modelId,
     label: [
-      formatConfiguredModelDisplay(providerId, role, model.modelId),
+      `${model.name} (${model.modelId})`,
       getModelPricingLabel(providerId, role, model.modelId, true),
     ].filter(Boolean).join(' · '),
   }));
@@ -292,6 +297,9 @@ function getVideoDimensions(units?: OperationCostUnits) {
   const aspectRatio = units?.aspectRatio || '16:9';
 
   if (resolution === '1080p') {
+    if (aspectRatio === '21:9') {
+      return { width: 2520, height: 1080 };
+    }
     if (aspectRatio === '9:16') {
       return { width: 1080, height: 1920 };
     }
@@ -301,9 +309,15 @@ function getVideoDimensions(units?: OperationCostUnits) {
     if (aspectRatio === '4:3') {
       return { width: 1440, height: 1080 };
     }
+    if (aspectRatio === '3:4') {
+      return { width: 1080, height: 1440 };
+    }
     return { width: 1920, height: 1080 };
   }
 
+  if (aspectRatio === '21:9') {
+    return { width: 1680, height: 720 };
+  }
   if (aspectRatio === '9:16') {
     return { width: 720, height: 1280 };
   }
@@ -312,6 +326,9 @@ function getVideoDimensions(units?: OperationCostUnits) {
   }
   if (aspectRatio === '4:3') {
     return { width: 960, height: 720 };
+  }
+  if (aspectRatio === '3:4') {
+    return { width: 720, height: 960 };
   }
   return { width: 1280, height: 720 };
 }

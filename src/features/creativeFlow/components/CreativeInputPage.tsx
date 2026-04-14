@@ -95,7 +95,7 @@ export function CreativeInputPage({
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <h3 className="text-sm font-semibold text-[var(--studio-text)]">画面比例</h3>
-                <p className="mt-1 text-[11px] text-[var(--studio-dim)]">支持横屏 16:9、经典 4:3、竖屏 9:16、正方形 1:1。</p>
+                <p className="mt-1 text-[11px] text-[var(--studio-dim)]">支持 21:9、16:9、4:3、1:1、3:4、9:16，后续分镜和视频默认构图会跟随这里的设置。</p>
               </div>
               <div className="studio-segmented">
                 {aspectRatioOptions.map((option) => (

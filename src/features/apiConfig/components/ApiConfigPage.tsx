@@ -1,15 +1,16 @@
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 
-import { AlertTriangle, Clapperboard, Database, Loader2, MessageSquareText, Settings2, Upload, Video } from 'lucide-react';
+import { AlertTriangle, Clapperboard, Database, Loader2, MessageSquareText, Plus, Settings2, Trash2, Upload, Video } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { StudioModal, StudioSelect } from '../../../components/studio/StudioPrimitives.tsx';
-import { SEEDANCE_MODEL_VERSIONS } from '../../seedance/modelVersions.ts';
 import type { ApiSettings, ModelSourceId } from '../../../types.ts';
 import {
+  DEFAULT_VOLCENGINE_BASE_URL,
   DEFAULT_MODEL_ROLE_META,
   getDefaultModelSource,
   getPricedModelEntries,
+  getProviderModelCatalog,
   getProviderPromptLanguageCatalog,
   resolveModelSource,
   type ModelProviderId,
@@ -42,9 +43,92 @@ type ApiConfigPageProps = {
   getSourceProviderKey: (sourceId: ModelSourceId) => ModelProviderId;
   getGeminiRoleModelOptions: (role: ModelRole) => Array<{ sourceId: ModelSourceId; modelName: string; label: string }>;
   getVolcengineRoleModelOptions: (role: ModelRole) => Array<{ value: string; label: string }>;
-  getProviderRoleCatalogOptions: (providerId: ModelProviderId, role: ModelRole, configuredValue: string) => Array<{ value: string; label: string }>;
+  getProviderRoleCatalogOptions: (apiSettings: ApiSettings, providerId: ModelProviderId, role: ModelRole, configuredValue: string) => Array<{ value: string; label: string }>;
   updateGeminiRoleModel: (role: ModelRole, modelId: string) => void;
 };
+
+type CustomModelDraft = {
+  providerId: ModelProviderId;
+  role: ModelRole;
+  name: string;
+  modelId: string;
+};
+
+function createCustomModelDraft(providerId: ModelProviderId): CustomModelDraft {
+  return {
+    providerId,
+    role: 'text',
+    name: '',
+    modelId: '',
+  };
+}
+
+function getProviderCustomModels(settings: ApiSettings, providerId: ModelProviderId) {
+  return providerId === 'volcengine' ? settings.volcengine.customModels : settings.gemini.customModels;
+}
+
+function getProviderRoleConfiguredModel(settings: ApiSettings, providerId: ModelProviderId, role: ModelRole) {
+  if (providerId === 'gemini') {
+    if (role === 'image') {
+      return settings.gemini.imageModel;
+    }
+    if (role === 'video') {
+      return settings.gemini.fastVideoModel;
+    }
+    return settings.gemini.textModel;
+  }
+
+  if (role === 'image') {
+    return settings.volcengine.imageModel;
+  }
+  if (role === 'video') {
+    return settings.volcengine.videoModel;
+  }
+  return settings.volcengine.textModel;
+}
+
+function applyProviderRoleModelToSettings(settings: ApiSettings, providerId: ModelProviderId, role: ModelRole, modelId: string): ApiSettings {
+  if (providerId === 'gemini') {
+    if (role === 'image') {
+      return {
+        ...settings,
+        gemini: {
+          ...settings.gemini,
+          imageModel: modelId,
+          proImageModel: modelId,
+        },
+      };
+    }
+
+    if (role === 'video') {
+      return {
+        ...settings,
+        gemini: {
+          ...settings.gemini,
+          fastVideoModel: modelId,
+          proVideoModel: modelId,
+        },
+      };
+    }
+
+    return {
+      ...settings,
+      gemini: {
+        ...settings.gemini,
+        textModel: modelId,
+      },
+    };
+  }
+
+  const field = VOLCENGINE_ROLE_FIELDS[role];
+  return {
+    ...settings,
+    volcengine: {
+      ...settings.volcengine,
+      [field]: modelId,
+    },
+  };
+}
 
 export function ApiConfigPage({
   apiSettings,
@@ -63,7 +147,97 @@ export function ApiConfigPage({
   updateGeminiRoleModel,
 }: ApiConfigPageProps) {
   const [isInitializeDatabaseModalOpen, setIsInitializeDatabaseModalOpen] = useState(false);
+  const [isCustomModelModalOpen, setIsCustomModelModalOpen] = useState(false);
+  const [customModelDraft, setCustomModelDraft] = useState<CustomModelDraft>(() => createCustomModelDraft('gemini'));
+  const [customModelError, setCustomModelError] = useState('');
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  const openCustomModelModal = (providerId: ModelProviderId) => {
+    setCustomModelDraft(createCustomModelDraft(providerId));
+    setCustomModelError('');
+    setIsCustomModelModalOpen(true);
+  };
+
+  const closeCustomModelModal = () => {
+    setCustomModelError('');
+    setIsCustomModelModalOpen(false);
+  };
+
+  const handleSaveCustomModel = () => {
+    const providerId = customModelDraft.providerId;
+    const role = customModelDraft.role;
+    const name = customModelDraft.name.trim();
+    const modelId = customModelDraft.modelId.trim();
+
+    if (!name) {
+      setCustomModelError('请填写模型显示名称。');
+      return;
+    }
+
+    if (!modelId) {
+      setCustomModelError('请填写模型 ID / Endpoint。');
+      return;
+    }
+
+    const hasDuplicate = getProviderModelCatalog(providerId, role, apiSettings)
+      .some((item) => item.modelId.trim().toLowerCase() === modelId.toLowerCase());
+    if (hasDuplicate) {
+      setCustomModelError('该模型 ID 已存在于当前服务商的同类模型列表中。');
+      return;
+    }
+
+    setApiSettings((prev) => {
+      const nextCustomModels = [...getProviderCustomModels(prev, providerId), { role, name, modelId }];
+      const nextSettings = providerId === 'volcengine'
+        ? {
+          ...prev,
+          volcengine: {
+            ...prev.volcengine,
+            customModels: nextCustomModels,
+          },
+        }
+        : {
+          ...prev,
+          gemini: {
+            ...prev.gemini,
+            customModels: nextCustomModels,
+          },
+        };
+
+      return applyProviderRoleModelToSettings(nextSettings, providerId, role, modelId);
+    });
+
+    closeCustomModelModal();
+  };
+
+  const handleRemoveCustomModel = (providerId: ModelProviderId, role: ModelRole, modelId: string) => {
+    setApiSettings((prev) => {
+      const nextCustomModels = getProviderCustomModels(prev, providerId)
+        .filter((item) => !(item.role === role && item.modelId === modelId));
+      const nextSettings = providerId === 'volcengine'
+        ? {
+          ...prev,
+          volcengine: {
+            ...prev.volcengine,
+            customModels: nextCustomModels,
+          },
+        }
+        : {
+          ...prev,
+          gemini: {
+            ...prev.gemini,
+            customModels: nextCustomModels,
+          },
+        };
+
+      if (getProviderRoleConfiguredModel(prev, providerId, role).trim() !== modelId.trim()) {
+        return nextSettings;
+      }
+
+      const fallbackModelId = getProviderModelCatalog(providerId, role, nextSettings)[0]?.modelId || '';
+      return applyProviderRoleModelToSettings(nextSettings, providerId, role, fallbackModelId);
+    });
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-5xl mx-auto py-8">
@@ -214,33 +388,44 @@ export function ApiConfigPage({
           const modelFieldGroups = providerId === 'gemini' ? GEMINI_PROVIDER_MODEL_FIELDS : VOLCENGINE_PROVIDER_MODEL_FIELDS;
           const promptLanguageCatalog = getProviderPromptLanguageCatalog(providerId);
           const currentPromptLanguage = isVolcengine ? apiSettings.volcengine.promptLanguage : apiSettings.gemini.promptLanguage;
+          const customModels = getProviderCustomModels(apiSettings, providerId);
 
           return (
             <section key={providerId} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
               <div className="flex items-center justify-between gap-4 mb-6">
                 <h3 className="text-lg font-semibold text-white">{meta.title}</h3>
-                <div className="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-950 p-1">
-                  {promptLanguageCatalog.supported.map((language) => (
-                    <button
-                      key={`${providerId}-${language}`}
-                      type="button"
-                      aria-label={language === 'zh' ? '切换为中文提示词' : 'Switch to English prompts'}
-                      title={language === 'zh' ? '中文提示词' : 'English prompts'}
-                      onClick={() => {
-                        if (isVolcengine) {
-                          setApiSettings((prev) => ({ ...prev, volcengine: { ...prev.volcengine, promptLanguage: language } }));
-                          return;
-                        }
-                        setApiSettings((prev) => ({ ...prev, gemini: { ...prev.gemini, promptLanguage: language } }));
-                      }}
-                      className={`h-8 w-10 rounded-md text-base leading-none transition-colors ${currentPromptLanguage === language
-                        ? 'bg-indigo-600 text-white'
-                        : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
-                        }`}
-                    >
-                      {PROMPT_LANGUAGE_FLAGS[language]}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-3 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => openCustomModelModal(providerId)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-900 hover:text-white"
+                  >
+                    <Plus className="h-4 w-4" />
+                    添加模型
+                  </button>
+                  <div className="inline-flex items-center rounded-lg border border-zinc-800 bg-zinc-950 p-1">
+                    {promptLanguageCatalog.supported.map((language) => (
+                      <button
+                        key={`${providerId}-${language}`}
+                        type="button"
+                        aria-label={language === 'zh' ? '切换为中文提示词' : 'Switch to English prompts'}
+                        title={language === 'zh' ? '中文提示词' : 'English prompts'}
+                        onClick={() => {
+                          if (isVolcengine) {
+                            setApiSettings((prev) => ({ ...prev, volcengine: { ...prev.volcengine, promptLanguage: language } }));
+                            return;
+                          }
+                          setApiSettings((prev) => ({ ...prev, gemini: { ...prev.gemini, promptLanguage: language } }));
+                        }}
+                        className={`h-8 w-10 rounded-md text-base leading-none transition-colors ${currentPromptLanguage === language
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
+                          }`}
+                      >
+                        {PROMPT_LANGUAGE_FLAGS[language]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -263,6 +448,27 @@ export function ApiConfigPage({
                   />
                 </label>
 
+                {isVolcengine && (
+                  <label className="block">
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">API Base URL / 第三方 Endpoint</span>
+                    <input
+                      value={apiSettings.volcengine.baseUrl}
+                      onChange={(event) => setApiSettings((prev) => ({
+                        ...prev,
+                        volcengine: {
+                          ...prev.volcengine,
+                          baseUrl: event.target.value,
+                        },
+                      }))}
+                      placeholder={DEFAULT_VOLCENGINE_BASE_URL}
+                      className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                    />
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      默认走官方地址 {DEFAULT_VOLCENGINE_BASE_URL}。如果填写第三方兼容网关，将优先使用该地址，请求火山 Ark 与 Seedance 任务 API 时都不会再走官方 URL。
+                    </p>
+                  </label>
+                )}
+
                 <div className="space-y-3">
                   {MODEL_ROLE_ORDER.map((role) => (
                     <div key={`${providerId}-${role}`} className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
@@ -274,7 +480,7 @@ export function ApiConfigPage({
                           const configuredValue = providerId === 'gemini'
                             ? apiSettings.gemini[fieldConfig.field as GeminiModelField]
                             : apiSettings.volcengine[fieldConfig.field as VolcengineModelField];
-                          const options = getProviderRoleCatalogOptions(providerId, role, configuredValue);
+                          const options = getProviderRoleCatalogOptions(apiSettings, providerId, role, configuredValue);
                           const selectedValue = configuredValue || options[0]?.value || '';
 
                           return (
@@ -316,6 +522,51 @@ export function ApiConfigPage({
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-300">自定义模型</p>
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">
+                        用于补充当前服务商没有内置的模型。添加后会直接出现在对应类型的模型下拉框中。
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[10px] text-zinc-400">
+                      {customModels.length} 个
+                    </span>
+                  </div>
+
+                  {customModels.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-zinc-800 bg-black/20 px-4 py-3 text-xs text-zinc-500">
+                      还没有手动添加的模型。
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {customModels.map((item) => (
+                        <div key={`${providerId}-${item.role}-${item.modelId}`} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/20 px-4 py-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium text-white">{item.name}</p>
+                              <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-400">
+                                {DEFAULT_MODEL_ROLE_META[item.role].title}
+                              </span>
+                            </div>
+                            <p className="mt-1 truncate font-mono text-xs text-zinc-500">{item.modelId}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomModel(providerId, item.role, item.modelId)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-400 transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200"
+                            aria-label={`删除模型 ${item.name}`}
+                            title="删除模型"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {providerId === 'volcengine' && (
@@ -400,7 +651,7 @@ export function ApiConfigPage({
 
                 {providerId === 'volcengine' && (
                   <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400 leading-relaxed">
-                    当前版本已内置一组按官方文档整理的火山引擎模型预设。Seedance Ark API 和通用 Ark 模型共用这一张 API Key。
+                    当前版本已内置一组按官方文档整理的火山引擎模型预设，也支持追加自定义模型和第三方兼容 Endpoint。Seedance Ark API 和通用 Ark 模型共用这一张 API Key。
                     <div className="flex flex-wrap gap-4 mt-3">
                       <a href="https://www.volcengine.com/docs/82379/1366799?lang=zh" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">
                         火山云图像生成文档
@@ -704,6 +955,111 @@ export function ApiConfigPage({
           </button>
         </div>
       </section>
+
+      <StudioModal
+        open={isCustomModelModalOpen}
+        onClose={closeCustomModelModal}
+        className="max-w-lg p-0"
+      >
+        <div className="p-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-indigo-500/20 bg-indigo-500/10 text-indigo-200">
+              <Plus className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-200/80">自定义模型</p>
+              <h3 className="mt-2 text-xl font-semibold text-white">添加 {PROVIDER_CARD_META[customModelDraft.providerId].title} 模型</h3>
+              <p className="mt-3 text-sm leading-6 text-zinc-400">
+                填写后会把模型加入当前服务商的可选列表，并自动切换当前类型到这个模型。
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 space-y-4">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+              <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">服务商</div>
+              <div className="mt-2 text-sm font-medium text-white">{PROVIDER_CARD_META[customModelDraft.providerId].title}</div>
+            </div>
+
+            <label className="block">
+              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">模型类型</span>
+              <StudioSelect
+                value={customModelDraft.role}
+                onChange={(event) => {
+                  setCustomModelError('');
+                  setCustomModelDraft((prev) => ({
+                    ...prev,
+                    role: event.target.value as ModelRole,
+                  }));
+                }}
+                className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+              >
+                {MODEL_ROLE_ORDER.map((role) => (
+                  <option key={`custom-model-role-${role}`} value={role}>
+                    {DEFAULT_MODEL_ROLE_META[role].title}
+                  </option>
+                ))}
+              </StudioSelect>
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">显示名称</span>
+              <input
+                value={customModelDraft.name}
+                onChange={(event) => {
+                  setCustomModelError('');
+                  setCustomModelDraft((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }));
+                }}
+                placeholder="例如 Doubao Seed 1.8"
+                className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">模型 ID / Endpoint</span>
+              <input
+                value={customModelDraft.modelId}
+                onChange={(event) => {
+                  setCustomModelError('');
+                  setCustomModelDraft((prev) => ({
+                    ...prev,
+                    modelId: event.target.value,
+                  }));
+                }}
+                placeholder="例如 doubao-seed-1-8-251228"
+                className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+              />
+            </label>
+
+            {customModelError ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                {customModelError}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={closeCustomModelModal}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveCustomModel}
+              className="inline-flex items-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20"
+            >
+              <Plus className="h-4 w-4" />
+              保存并使用
+            </button>
+          </div>
+        </div>
+      </StudioModal>
 
       <StudioModal
         open={isInitializeDatabaseModalOpen}

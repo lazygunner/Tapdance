@@ -68,8 +68,11 @@
       "models": {
         "text": [
           {
-            "name": "Doubao Seed 1.6",
-            "modelId": "Doubao-Seed-1.6"
+            "name": "Doubao Seed 1.8",
+            "modelId": "doubao-seed-1-8-251228",
+            "aliases": [
+              "Doubao-Seed-1.6"
+            ]
           },
           {
             "name": "Doubao 1.5 Thinking Pro",

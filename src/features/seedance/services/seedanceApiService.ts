@@ -1,4 +1,4 @@
-import { loadApiSettings } from '../../../services/apiConfig.ts';
+import { loadApiSettings, resolveVolcengineBaseUrl } from '../../../services/apiConfig.ts';
 import { ensureInlineImageDataUrl } from '../../../services/requestBuilders.ts';
 import { compileSeedanceRequest } from './seedanceDraft.ts';
 import type { SeedanceApiModelKey, SeedanceApiTask, SeedanceDraft } from '../types.ts';
@@ -12,7 +12,7 @@ function getSeedanceConfig() {
 }
 
 function getBaseUrl() {
-  return getVolcengineConfig().baseUrl.replace(/\/$/, '');
+  return resolveVolcengineBaseUrl(getVolcengineConfig().baseUrl).replace(/\/$/, '');
 }
 
 function getHeaders() {

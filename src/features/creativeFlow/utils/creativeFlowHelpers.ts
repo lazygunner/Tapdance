@@ -14,10 +14,12 @@ export const ASSET_TYPE_LABELS: Record<Asset['type'], string> = {
 };
 
 export const ASPECT_RATIO_OPTIONS: Array<{ value: AspectRatio; label: string }> = [
+  { value: '21:9', label: '电影宽屏 21:9' },
   { value: '16:9', label: '横屏 16:9' },
   { value: '4:3', label: '经典 4:3' },
-  { value: '9:16', label: '竖屏 9:16' },
   { value: '1:1', label: '正方形 1:1' },
+  { value: '3:4', label: '海报 3:4' },
+  { value: '9:16', label: '竖屏 9:16' },
 ];
 
 export function createEmptyAssetDraft(type: Asset['type'] = 'character'): Partial<Asset> {
@@ -32,6 +34,9 @@ export function createEmptyAssetDraft(type: Asset['type'] = 'character'): Partia
 }
 
 export function getAspectRatioClass(aspectRatio: AspectRatio = '16:9') {
+  if (aspectRatio === '21:9') {
+    return 'aspect-[21/9]';
+  }
   if (aspectRatio === '9:16') {
     return 'aspect-[9/16]';
   }
@@ -40,6 +45,9 @@ export function getAspectRatioClass(aspectRatio: AspectRatio = '16:9') {
   }
   if (aspectRatio === '4:3') {
     return 'aspect-[4/3]';
+  }
+  if (aspectRatio === '3:4') {
+    return 'aspect-[3/4]';
   }
   return 'aspect-video';
 }

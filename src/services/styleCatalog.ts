@@ -11,7 +11,28 @@ export interface StylePreset {
   previewImage?: string;
 }
 
-const STYLE_PRESETS = stylePresetsConfig.styles as StylePreset[];
+function resolveStylePreviewImage(previewImage?: string) {
+  const normalized = String(previewImage || '').trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (/^(https?:|data:|blob:|file:)/iu.test(normalized)) {
+    return normalized;
+  }
+
+  if (typeof document === 'undefined') {
+    return normalized;
+  }
+
+  const relativePath = normalized.replace(/^\/+/u, '');
+  return new URL(relativePath, document.baseURI).toString();
+}
+
+const STYLE_PRESETS = (stylePresetsConfig.styles as StylePreset[]).map((preset) => ({
+  ...preset,
+  previewImage: resolveStylePreviewImage(preset.previewImage),
+}));
 
 export function getStylePresets() {
   return STYLE_PRESETS;

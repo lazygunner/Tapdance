@@ -645,14 +645,14 @@ export default function App() {
         stylePrompt: customStyleDescription || buildStyleGuideText(matchedStyle),
         aspectRatio: finalAspectRatio,
       };
-      const characterAssets: Asset[] = brief.characters.map((name) => ({
+      const characterAssets: Asset[] = styledBrief.characters.map((name) => ({
         id: crypto.randomUUID(),
         type: 'character',
         name,
         description: '',
         characterPrompt: { characterType: 'human' },
       }));
-      const sceneAssets: Asset[] = brief.scenes.map((name) => ({
+      const sceneAssets: Asset[] = styledBrief.scenes.map((name) => ({
         id: crypto.randomUUID(),
         type: 'scene',
         name,
@@ -818,7 +818,7 @@ export default function App() {
         getSourceProviderKey={getSourceProviderKey}
         getGeminiRoleModelOptions={(role) => getGeminiRoleModelOptions(apiSettings, role)}
         getVolcengineRoleModelOptions={(role) => getVolcengineRoleModelOptions(apiSettings, role)}
-        getProviderRoleCatalogOptions={(providerId, role, configuredValue) => getProviderRoleCatalogOptions(providerId, role, configuredValue)}
+        getProviderRoleCatalogOptions={(currentApiSettings, providerId, role, configuredValue) => getProviderRoleCatalogOptions(currentApiSettings, providerId, role, configuredValue)}
         updateGeminiRoleModel={updateGeminiRoleModel}
       />
     )

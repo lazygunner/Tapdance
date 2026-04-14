@@ -42,7 +42,7 @@ export async function buildShotSeedanceDraft(
   const videoConfig = shot.videoConfig || {
     resolution: '720p' as const,
     frameRate: 24,
-    aspectRatio: aspectRatio === '9:16' ? '9:16' as const : '16:9' as const,
+    aspectRatio,
     useFirstFrame: true,
     useLastFrame: true,
     useReferenceAssets: false,

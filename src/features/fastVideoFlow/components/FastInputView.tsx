@@ -21,6 +21,10 @@ function getReferenceTypeLabel(referenceType?: FastReferenceImage['referenceType
   return REFERENCE_TYPE_OPTIONS.find((option) => option.value === (referenceType || 'other'))?.label || '其他参考图';
 }
 
+function isRealPersonReference(referenceType?: FastReferenceImage['referenceType']) {
+  return referenceType === 'person';
+}
+
 /** Popover listing Seedance API constraints for reference videos */
 function VideoRequirementsPopover() {
   const c = VIDEO_REFERENCE_CONSTRAINTS;
@@ -339,7 +343,7 @@ export function FastInputView({
                             className="studio-button studio-button-secondary cursor-pointer"
                           >
                             <Users className="w-4 h-4" />
-                            选择虚拟人像
+                            选择人像素材
                           </button>
                         </div>
 
@@ -349,6 +353,16 @@ export function FastInputView({
                             value={reference.referenceType || 'other'}
                             onChange={(event) => onUpdateReferenceImage(reference.id, { referenceType: event.target.value as FastReferenceImage['referenceType'] })}
                             className="studio-select mt-2"
+                            displayValue={(
+                              <span className="inline-flex items-center gap-2">
+                                <span>{getReferenceTypeLabel(reference.referenceType)}</span>
+                                {isRealPersonReference(reference.referenceType) ? (
+                                  <span className="rounded-full border border-sky-400/30 bg-sky-400/12 px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-sky-200">
+                                    真人
+                                  </span>
+                                ) : null}
+                              </span>
+                            )}
                           >
                             {REFERENCE_TYPE_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>{option.label}</option>

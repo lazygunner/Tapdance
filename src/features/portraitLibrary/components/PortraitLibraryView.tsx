@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from 'react';
 import { motion } from 'motion/react';
-import { BookOpenText, ExternalLink, FolderOpen, RefreshCw, Users, X } from 'lucide-react';
+import { BookOpenText, ExternalLink, FolderOpen, Plus, RefreshCw, Upload, Users, X } from 'lucide-react';
 import {
+  cx,
   StudioModal,
   StudioPage,
   StudioPageHeader,
@@ -9,12 +10,16 @@ import {
   StudioSelect,
 } from '../../../components/studio/StudioPrimitives.tsx';
 import type { WorkspaceThemeMode } from '../../../components/studio/WorkspaceViews.tsx';
+import { saveMediaToAssetLibrary } from '../../../services/assetLibrary.ts';
 import {
   buildPortraitLibraryFileUrl,
+  fetchRealPortraitLibraryAssets,
   fetchPortraitLibraryConfig,
   getPortraitLibraryRelativePath,
+  saveRealPortraitLibraryAssets,
   updatePortraitLibraryConfig,
   type PortraitLibraryConfig,
+  type RealPortraitLibraryAsset,
 } from '../../../services/portraitLibrary.ts';
 
 type PortraitLibraryViewProps = {
@@ -57,12 +62,38 @@ type BrowserPortraitFolderState = {
   fileCount: number;
 };
 
+type PortraitLibraryTab = 'public' | 'real';
+
+type RealPortraitDraftState = {
+  description: string;
+  assetId: string;
+  imageDataUrl: string;
+  fileNameHint: string;
+};
+
 const ITEMS_PER_PAGE = 30;
 const PORTRAIT_DOWNLOAD_URL = 'https://pan.quark.cn/s/48caf9810a81';
 const BROWSER_DIRECTORY_INPUT_PROPS = {
   directory: '',
   webkitdirectory: '',
 } as const;
+const REAL_PORTRAIT_LIBRARY_GROUP_NAME = '人像素材库';
+const REAL_PORTRAIT_LIBRARY_PROJECT_NAME = '真人人像';
+const EMPTY_REAL_PORTRAIT_DRAFT: RealPortraitDraftState = {
+  description: '',
+  assetId: '',
+  imageDataUrl: '',
+  fileNameHint: '',
+};
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('读取图片失败。'));
+    reader.readAsDataURL(file);
+  });
+}
 
 export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: PortraitLibraryViewProps) {
   const resolvedThemeMode: WorkspaceThemeMode = themeMode
@@ -71,6 +102,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
       : 'dark');
   const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI?.isElectron);
 
+  const [activeTab, setActiveTab] = useState<PortraitLibraryTab>('public');
   const [data, setData] = useState<PortraitItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -91,7 +123,16 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
     fileUrls: {},
     fileCount: 0,
   });
+  const [realPortraitAssets, setRealPortraitAssets] = useState<RealPortraitLibraryAsset[]>([]);
+  const [isLoadingRealPortraitAssets, setIsLoadingRealPortraitAssets] = useState(false);
+  const [realPortraitError, setRealPortraitError] = useState('');
+  const [realPortraitFeedback, setRealPortraitFeedback] = useState('');
+  const [isAddRealPortraitModalOpen, setIsAddRealPortraitModalOpen] = useState(false);
+  const [isSavingRealPortraitAsset, setIsSavingRealPortraitAsset] = useState(false);
+  const [realPortraitDraft, setRealPortraitDraft] = useState<RealPortraitDraftState>(EMPTY_REAL_PORTRAIT_DRAFT);
+  const [realPortraitDraftError, setRealPortraitDraftError] = useState('');
   const browserDirectoryInputRef = useRef<HTMLInputElement | null>(null);
+  const realPortraitUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshPortraitConfig = async () => {
     setIsRefreshingConfig(true);
@@ -102,6 +143,20 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
       console.warn('Failed to load portrait library config:', configError);
     } finally {
       setIsRefreshingConfig(false);
+    }
+  };
+
+  const refreshRealPortraitAssets = async () => {
+    setIsLoadingRealPortraitAssets(true);
+    setRealPortraitError('');
+    try {
+      const nextAssets = await fetchRealPortraitLibraryAssets();
+      setRealPortraitAssets(nextAssets);
+    } catch (loadError: any) {
+      console.error('Failed to load real portrait library assets:', loadError);
+      setRealPortraitError(loadError?.message || '加载真人人像资产失败');
+    } finally {
+      setIsLoadingRealPortraitAssets(false);
     }
   };
 
@@ -144,6 +199,10 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
 
   useEffect(() => {
     void refreshPortraitConfig();
+  }, []);
+
+  useEffect(() => {
+    void refreshRealPortraitAssets();
   }, []);
 
   useEffect(() => () => {
@@ -209,12 +268,129 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
     });
   }, [data, filters]);
 
+  const publicPortraitCount = filteredData.length;
+  const realPortraitCount = realPortraitAssets.length;
   const visibleData = filteredData.slice(0, page * ITEMS_PER_PAGE);
   const hasMore = visibleData.length < filteredData.length;
 
   const handleFilterChange = (key: keyof FilterState, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
     setPage(1);
+  };
+
+  const resetRealPortraitDraft = () => {
+    setRealPortraitDraft(EMPTY_REAL_PORTRAIT_DRAFT);
+    setRealPortraitDraftError('');
+  };
+
+  const handleRealPortraitFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      throw new Error('仅支持图片文件。');
+    }
+
+    const imageDataUrl = await readFileAsDataUrl(file);
+    setRealPortraitDraft((prev) => ({
+      ...prev,
+      imageDataUrl,
+      fileNameHint: file.name || prev.fileNameHint,
+    }));
+    setRealPortraitDraftError('');
+  };
+
+  const handleRealPortraitUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      await handleRealPortraitFile(file);
+    } catch (uploadError: any) {
+      console.error('Failed to upload real portrait image:', uploadError);
+      setRealPortraitDraftError(uploadError?.message || '上传图片失败，请重试。');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleRealPortraitPaste = async (event: ClipboardEvent<HTMLDivElement>) => {
+    const clipboardItems = Array.from(event.clipboardData.items as ArrayLike<DataTransferItem>);
+    const file = clipboardItems
+      .find((item) => item.type.startsWith('image/'))
+      ?.getAsFile();
+
+    if (!file) {
+      return;
+    }
+
+    event.preventDefault();
+    try {
+      await handleRealPortraitFile(file);
+    } catch (pasteError: any) {
+      console.error('Failed to paste real portrait image:', pasteError);
+      setRealPortraitDraftError(pasteError?.message || '粘贴图片失败，请重试。');
+    }
+  };
+
+  const handleOpenAddRealPortraitModal = () => {
+    setRealPortraitFeedback('');
+    resetRealPortraitDraft();
+    setIsAddRealPortraitModalOpen(true);
+  };
+
+  const handleSaveRealPortraitAsset = async () => {
+    const description = realPortraitDraft.description.trim();
+    const assetId = realPortraitDraft.assetId.trim();
+    const imageDataUrl = realPortraitDraft.imageDataUrl.trim();
+
+    if (!description) {
+      setRealPortraitDraftError('请填写描述。');
+      return;
+    }
+    if (!imageDataUrl) {
+      setRealPortraitDraftError('请先粘贴或上传图片。');
+      return;
+    }
+    if (!assetId) {
+      setRealPortraitDraftError('请填写 assetId。');
+      return;
+    }
+
+    setIsSavingRealPortraitAsset(true);
+    setRealPortraitDraftError('');
+
+    try {
+      const recordId = crypto.randomUUID?.() || `real-portrait-${Date.now()}`;
+      const savedFile = await saveMediaToAssetLibrary({
+        sourceUrl: imageDataUrl,
+        kind: 'image',
+        assetId: `portrait-library:real:${recordId}`,
+        title: description,
+        groupName: REAL_PORTRAIT_LIBRARY_GROUP_NAME,
+        projectName: REAL_PORTRAIT_LIBRARY_PROJECT_NAME,
+        fileNameHint: realPortraitDraft.fileNameHint || '',
+      });
+      const nextAsset: RealPortraitLibraryAsset = {
+        id: recordId,
+        description,
+        assetId,
+        imageUrl: savedFile.url,
+        createdAt: new Date().toISOString(),
+      };
+      const nextAssets = await saveRealPortraitLibraryAssets([nextAsset, ...realPortraitAssets]);
+
+      setRealPortraitAssets(nextAssets);
+      setRealPortraitError('');
+      setRealPortraitFeedback(`已新增真人人像资产「${description}」`);
+      setActiveTab('real');
+      setIsAddRealPortraitModalOpen(false);
+      resetRealPortraitDraft();
+    } catch (saveError: any) {
+      console.error('Failed to save real portrait asset:', saveError);
+      setRealPortraitDraftError(saveError?.message || '保存真人人像资产失败。');
+    } finally {
+      setIsSavingRealPortraitAsset(false);
+    }
   };
 
   const openDownloadLink = async () => {
@@ -327,6 +503,12 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
     ? 'border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-50'
     : 'border-white/10 bg-white/[0.04] text-zinc-100 hover:border-white/20 hover:bg-white/[0.07]';
   const dimTextClass = resolvedThemeMode === 'light' ? 'text-stone-500' : 'text-zinc-400';
+  const tabButtonBaseClass = resolvedThemeMode === 'light'
+    ? 'border-stone-300/90 bg-white text-stone-500 hover:border-stone-400 hover:text-stone-900'
+    : 'border-white/10 bg-white/[0.04] text-zinc-400 hover:border-white/20 hover:text-zinc-100';
+  const activeTabButtonClass = resolvedThemeMode === 'light'
+    ? 'border-cyan-300/80 bg-cyan-50 text-cyan-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]'
+    : 'border-cyan-400/30 bg-cyan-400/10 text-cyan-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]';
   const ContentWrapper = isModal ? 'div' : StudioPage;
 
   return (
@@ -334,158 +516,277 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
       {!isModal && (
         <StudioPageHeader
           eyebrow="Asset Library"
-          title="虚拟人像库"
+          title="人像素材库"
           actions={(
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setConfigFeedback('');
-                  setIsConfigModalOpen(true);
-                }}
-                className={`inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-medium transition-colors ${secondaryButtonClass}`}
-              >
-                <FolderOpen className="h-4 w-4" />
-                图片素材配置
-              </button>
+              {activeTab === 'public' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfigFeedback('');
+                    setIsConfigModalOpen(true);
+                  }}
+                  className={`inline-flex h-11 items-center gap-2 rounded-2xl border px-4 text-sm font-medium transition-colors ${secondaryButtonClass}`}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  图片素材配置
+                </button>
+              ) : null}
               <div className="flex h-11 items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-white/5 px-4 font-medium text-[var(--studio-muted)]">
-                {loading ? '加载中...' : `共 ${filteredData.length} 个人像`}
+                {activeTab === 'public'
+                  ? loading ? '加载中...' : `平台公开 ${publicPortraitCount} 人`
+                  : isLoadingRealPortraitAssets ? '加载中...' : `真人人像 ${realPortraitCount} 人`}
               </div>
             </div>
           )}
         />
       )}
 
-      <div className={`${isModal ? 'mb-4' : 'mt-8'} flex flex-wrap items-center gap-4`}>
-        <label className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">性别</span>
-          <StudioSelect value={filters.gender} onChange={(event) => handleFilterChange('gender', event.target.value)} className="min-w-[120px] studio-select">
-            <option value="all">不限</option>
-            <option value="女">女</option>
-            <option value="男">男</option>
-          </StudioSelect>
-        </label>
+      <div className={`${isModal ? 'mb-4' : 'mt-6'} space-y-3`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className={`inline-flex gap-1.5 rounded-[1.35rem] border p-1 ${secondaryButtonClass}`}>
+            {([
+              { key: 'public', label: '平台公开', count: publicPortraitCount },
+              { key: 'real', label: '真人人像', count: realPortraitCount },
+            ] as Array<{ key: PortraitLibraryTab; label: string; count: number }>).map((tab) => {
+              const isActive = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={cx(
+                    'inline-flex items-center gap-2 rounded-[1rem] border px-3.5 py-2 text-sm font-medium transition-colors',
+                    isActive ? activeTabButtonClass : tabButtonBaseClass,
+                  )}
+                >
+                  <span>{tab.label}</span>
+                  <span className="rounded-full bg-black/10 px-2 py-0.5 text-[11px] leading-4">{tab.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-        <label className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">年龄</span>
-          <StudioSelect value={filters.age} onChange={(event) => handleFilterChange('age', event.target.value)} className="min-w-[120px] studio-select">
-            <option value="all">不限</option>
-            <option value="18-">18岁及以下</option>
-            <option value="19-25">19 - 25岁</option>
-            <option value="26-35">26 - 35岁</option>
-            <option value="36-50">36 - 50岁</option>
-            <option value="51+">51岁及以上</option>
-          </StudioSelect>
-        </label>
+        {activeTab === 'public' ? (
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2">
+              <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">性别</span>
+              <StudioSelect value={filters.gender} onChange={(event) => handleFilterChange('gender', event.target.value)} className="min-w-[120px] studio-select">
+                <option value="all">不限</option>
+                <option value="女">女</option>
+                <option value="男">男</option>
+              </StudioSelect>
+            </label>
 
-        <label className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">国籍</span>
-          <StudioSelect value={filters.country} onChange={(event) => handleFilterChange('country', event.target.value)} className="min-w-[140px] studio-select">
-            <option value="all">不限</option>
-            {filterOptions.countries.map((country) => <option key={country} value={country}>{country}</option>)}
-          </StudioSelect>
-        </label>
+            <label className="flex items-center gap-2">
+              <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">年龄</span>
+              <StudioSelect value={filters.age} onChange={(event) => handleFilterChange('age', event.target.value)} className="min-w-[120px] studio-select">
+                <option value="all">不限</option>
+                <option value="18-">18岁及以下</option>
+                <option value="19-25">19 - 25岁</option>
+                <option value="26-35">26 - 35岁</option>
+                <option value="36-50">36 - 50岁</option>
+                <option value="51+">51岁及以上</option>
+              </StudioSelect>
+            </label>
 
-        <label className="flex items-center gap-2">
-          <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">职业</span>
-          <StudioSelect value={filters.occupation} onChange={(event) => handleFilterChange('occupation', event.target.value)} className="min-w-[160px] studio-select">
-            <option value="all">不限</option>
-            {filterOptions.occupations.map((occupation) => <option key={occupation} value={occupation}>{occupation}</option>)}
-          </StudioSelect>
-        </label>
+            <label className="flex items-center gap-2">
+              <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">国籍</span>
+              <StudioSelect value={filters.country} onChange={(event) => handleFilterChange('country', event.target.value)} className="min-w-[140px] studio-select">
+                <option value="all">不限</option>
+                {filterOptions.countries.map((country) => <option key={country} value={country}>{country}</option>)}
+              </StudioSelect>
+            </label>
 
-        {(filters.gender !== 'all' || filters.age !== 'all' || filters.country !== 'all' || filters.occupation !== 'all') && (
-          <button
-            type="button"
-            onClick={() => {
-              setFilters({ gender: 'all', age: 'all', country: 'all', occupation: 'all' });
-              setPage(1);
-            }}
-            className="text-sm text-cyan-500 hover:text-cyan-400 font-medium ml-2 transition-colors"
-          >
-            重置条件
-          </button>
-        )}
+            <label className="flex items-center gap-2">
+              <span className="text-sm font-medium text-[var(--studio-muted)] whitespace-nowrap">职业</span>
+              <StudioSelect value={filters.occupation} onChange={(event) => handleFilterChange('occupation', event.target.value)} className="min-w-[160px] studio-select">
+                <option value="all">不限</option>
+                {filterOptions.occupations.map((occupation) => <option key={occupation} value={occupation}>{occupation}</option>)}
+              </StudioSelect>
+            </label>
+
+            {(filters.gender !== 'all' || filters.age !== 'all' || filters.country !== 'all' || filters.occupation !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilters({ gender: 'all', age: 'all', country: 'all', occupation: 'all' });
+                  setPage(1);
+                }}
+                className="text-sm text-cyan-500 hover:text-cyan-400 font-medium ml-2 transition-colors"
+              >
+                重置条件
+              </button>
+            )}
+          </div>
+        ) : null}
       </div>
 
-      <div className="mt-8 flex-1 pb-16">
-        {error ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-red-500/20 bg-[var(--studio-surface-soft)] p-12 text-[var(--studio-muted)]">
-            <Users className="mb-4 h-10 w-10 opacity-50" />
-            <p className="text-lg font-semibold">{error}</p>
-            <p className="mt-2 text-sm">请检查 /public 目录中是否存在 portrait_lib_raw.json</p>
-          </div>
-        ) : loading ? (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {Array.from({ length: 15 }).map((_, index) => (
-              <div key={index} className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-2xl border ${skeletonClass}`}>
-                <img src="./assets/loading.gif" alt="" className="studio-loading-gif !h-1/2 !w-1/2 opacity-30" />
-              </div>
-            ))}
-          </div>
-        ) : filteredData.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] py-20">
-            <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
-              <Users className="h-6 w-6 text-[var(--studio-muted)]" />
-            </span>
-            <p className="text-lg font-medium text-[var(--studio-text)]">没有找到匹配的人像</p>
-            <p className="mt-2 text-sm text-[var(--studio-muted)]">尝试放宽你的筛选条件</p>
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
-              {visibleData.map((item) => {
-                const sourceUrl = item.AssetGroup?.Content?.Image?.[0]?.URL;
-                const imageUrl = resolvePortraitImageUrl(sourceUrl);
-                const assetId = item.AssetGroup?.Content?.Image?.[0]?.AssetID || item.AssetGroup.SID;
+      <div className="mt-6 flex-1 pb-16">
+        {activeTab === 'public' ? (
+          error ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-red-500/20 bg-[var(--studio-surface-soft)] p-12 text-[var(--studio-muted)]">
+              <Users className="mb-4 h-10 w-10 opacity-50" />
+              <p className="text-lg font-semibold">{error}</p>
+              <p className="mt-2 text-sm">请检查 /public 目录中是否存在 portrait_lib_raw.json</p>
+            </div>
+          ) : loading ? (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {Array.from({ length: 15 }).map((_, index) => (
+                <div key={index} className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-2xl border ${skeletonClass}`}>
+                  <img src="./assets/loading.gif" alt="" className="studio-loading-gif !h-1/2 !w-1/2 opacity-30" />
+                </div>
+              ))}
+            </div>
+          ) : filteredData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] py-20">
+              <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                <Users className="h-6 w-6 text-[var(--studio-muted)]" />
+              </span>
+              <p className="text-lg font-medium text-[var(--studio-text)]">没有找到匹配的人像</p>
+              <p className="mt-2 text-sm text-[var(--studio-muted)]">尝试放宽你的筛选条件</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+                {visibleData.map((item) => {
+                  const sourceUrl = item.AssetGroup?.Content?.Image?.[0]?.URL;
+                  const imageUrl = resolvePortraitImageUrl(sourceUrl);
+                  const assetId = item.AssetGroup?.Content?.Image?.[0]?.AssetID || item.AssetGroup.SID;
 
-                return (
+                  return (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      key={item.AssetGroup.SID}
+                      className={`group relative aspect-[3/4] overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl ${onSelect ? 'cursor-pointer border-transparent shadow-lg hover:border-sky-500' : 'border-[var(--studio-border)]'}`}
+                      onClick={onSelect && imageUrl ? () => onSelect(imageUrl, assetId) : undefined}
+                    >
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={item.AssetGroup.Title}
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-black/10">无图片</div>
+                      )}
+
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-90" />
+
+                      <div className="absolute inset-0 flex flex-col justify-end p-3">
+                        <h4 className="mb-1 line-clamp-1 text-sm font-bold text-[rgba(255,255,255,0.96)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] transition-all duration-300 group-hover:line-clamp-none md:text-base">
+                          {item.AssetGroup.Title}
+                        </h4>
+                        <p className="line-clamp-1 text-[10px] text-[rgba(255,255,255,0.85)] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] transition-all duration-300 group-hover:line-clamp-3 md:text-xs">
+                          {item.AssetGroup.Description}
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {hasMore && (
+                <div className="mt-10 flex justify-center pb-10">
+                  <button
+                    type="button"
+                    onClick={() => setPage((currentPage) => currentPage + 1)}
+                    className="studio-button studio-button-primary px-8"
+                  >
+                    加载更多
+                  </button>
+                </div>
+              )}
+            </>
+          )
+        ) : (
+          <div className="space-y-5">
+            <StudioPanel className="flex flex-wrap items-start justify-between gap-4 p-5" tone="soft">
+              <div>
+                <div className="studio-eyebrow">Real Portraits</div>
+                <h2 className="mt-2 text-xl font-semibold text-[var(--studio-text)]">真人人像资产</h2>
+                <p className={`mt-2 max-w-3xl text-sm leading-6 ${dimTextClass}`}>
+                  手动维护可复用的真人参考图，保存描述、图片和 `assetId`。后续在任务里选择参考图时，会继续沿用当前的 `imageUrl + assetId` 逻辑。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenAddRealPortraitModal}
+                className="studio-button studio-button-primary px-4"
+              >
+                <Plus className="h-4 w-4" />
+                添加真人人像资产
+              </button>
+            </StudioPanel>
+
+            {realPortraitFeedback ? (
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                {realPortraitFeedback}
+              </div>
+            ) : null}
+
+            {realPortraitError ? (
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {realPortraitError}
+              </div>
+            ) : null}
+
+            {isLoadingRealPortraitAssets ? (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-2xl border ${skeletonClass}`}>
+                    <img src="./assets/loading.gif" alt="" className="studio-loading-gif !h-1/2 !w-1/2 opacity-30" />
+                  </div>
+                ))}
+              </div>
+            ) : realPortraitAssets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] py-20">
+                <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                  <Users className="h-6 w-6 text-[var(--studio-muted)]" />
+                </span>
+                <p className="text-lg font-medium text-[var(--studio-text)]">真人人像库还是空的</p>
+                <p className="mt-2 text-sm text-[var(--studio-muted)]">先添加一张带 `assetId` 的真人参考图，后续就能在任务里直接选用。</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+                {realPortraitAssets.map((item) => (
                   <motion.div
                     layout
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    key={item.AssetGroup.SID}
+                    key={item.id}
                     className={`group relative aspect-[3/4] overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl ${onSelect ? 'cursor-pointer border-transparent shadow-lg hover:border-sky-500' : 'border-[var(--studio-border)]'}`}
-                    onClick={onSelect && imageUrl ? () => onSelect(imageUrl, assetId) : undefined}
+                    onClick={onSelect ? () => onSelect(item.imageUrl, item.assetId) : undefined}
                   >
-                    {imageUrl ? (
-                      <img
-                        src={imageUrl}
-                        alt={item.AssetGroup.Title}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-black/10">无图片</div>
-                    )}
+                    <img
+                      src={item.imageUrl}
+                      alt={item.description}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                      loading="lazy"
+                    />
 
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-90" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent opacity-95" />
 
                     <div className="absolute inset-0 flex flex-col justify-end p-3">
-                      <h4 className="mb-1 line-clamp-1 text-sm font-bold text-[rgba(255,255,255,0.96)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] transition-all duration-300 group-hover:line-clamp-none md:text-base">
-                        {item.AssetGroup.Title}
+                      <div className="mb-2 inline-flex w-fit max-w-full items-center rounded-full bg-black/45 px-2 py-1 text-[10px] font-medium text-cyan-100 backdrop-blur">
+                        asset://{item.assetId}
+                      </div>
+                      <h4 className="mb-1 line-clamp-2 text-sm font-bold text-[rgba(255,255,255,0.96)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] md:text-base">
+                        {item.description}
                       </h4>
-                      <p className="line-clamp-1 text-[10px] text-[rgba(255,255,255,0.85)] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] transition-all duration-300 group-hover:line-clamp-3 md:text-xs">
-                        {item.AssetGroup.Description}
+                      <p className="text-[10px] text-[rgba(255,255,255,0.82)] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] md:text-xs">
+                        {new Date(item.createdAt).toLocaleString()}
                       </p>
                     </div>
                   </motion.div>
-                );
-              })}
-            </div>
-
-            {hasMore && (
-              <div className="mt-10 flex justify-center pb-10">
-                <button
-                  type="button"
-                  onClick={() => setPage((currentPage) => currentPage + 1)}
-                  className="studio-button studio-button-primary px-8"
-                >
-                  加载更多
-                </button>
+                ))}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
 
@@ -503,7 +804,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
                 <div className="studio-eyebrow">Portrait Assets</div>
                 <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">图片素材配置</h2>
                 <p className={`mt-2 max-w-2xl text-sm leading-6 ${dimTextClass}`}>
-                  为了让“虚拟人像库”稳定显示本地预览图，先下载素材包，再选择包含图片文件的素材文件夹。
+                  为了让“平台公开”稳定显示本地预览图，先下载素材包，再选择包含图片文件的素材文件夹。
                 </p>
               </div>
               <button
@@ -666,6 +967,179 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
         </div>
       </StudioModal>
 
+      <StudioModal
+        open={isAddRealPortraitModalOpen}
+        onClose={() => {
+          if (!isSavingRealPortraitAsset) {
+            setIsAddRealPortraitModalOpen(false);
+            resetRealPortraitDraft();
+          }
+        }}
+        themeMode={resolvedThemeMode}
+        className="max-w-3xl overflow-hidden p-0"
+        closeOnOverlayClick={!isSavingRealPortraitAsset}
+      >
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.22),transparent_58%)]" />
+          <div className="relative border-b border-[var(--studio-border)] px-6 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="studio-eyebrow">Real Portraits</div>
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">添加真人人像资产</h2>
+                <p className={`mt-2 max-w-2xl text-sm leading-6 ${dimTextClass}`}>
+                  填写描述和 `assetId`，再粘贴或上传图片。保存后会写入现有资产库目录，后续任务可直接选择这张真人参考图。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isSavingRealPortraitAsset) {
+                    setIsAddRealPortraitModalOpen(false);
+                    resetRealPortraitDraft();
+                  }
+                }}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${secondaryButtonClass}`}
+                aria-label="关闭"
+                disabled={isSavingRealPortraitAsset}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(20rem,1.05fr)]">
+            <div className="space-y-5">
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">描述</span>
+                <textarea
+                  value={realPortraitDraft.description}
+                  onChange={(event) => {
+                    setRealPortraitDraft((prev) => ({ ...prev, description: event.target.value }));
+                    setRealPortraitDraftError('');
+                  }}
+                  placeholder="例如：品牌代言人正脸半身照"
+                  className="studio-textarea mt-2 min-h-32"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">assetId</span>
+                <input
+                  value={realPortraitDraft.assetId}
+                  onChange={(event) => {
+                    setRealPortraitDraft((prev) => ({ ...prev, assetId: event.target.value }));
+                    setRealPortraitDraftError('');
+                  }}
+                  placeholder="请输入火山素材 assetId"
+                  className="studio-input mt-2"
+                />
+              </label>
+
+              <StudioPanel className="space-y-3 p-4" tone="soft">
+                <div className="text-sm font-semibold text-[var(--studio-text)]">保存规则</div>
+                <ul className={`space-y-2 text-sm leading-6 ${dimTextClass}`}>
+                  <li>图片会按现有资产库存储逻辑落到本地目录。</li>
+                  <li>后续选中这张图时，会把当前 `assetId` 一起回填到任务参考图。</li>
+                  <li>如果同一人物有多个角度，建议分别建不同条目，避免混淆。</li>
+                </ul>
+              </StudioPanel>
+            </div>
+
+            <div className="space-y-4">
+              <div
+                tabIndex={0}
+                onPaste={(event) => void handleRealPortraitPaste(event)}
+                className={cx(
+                  'flex min-h-[22rem] flex-col overflow-hidden rounded-3xl border border-dashed bg-[var(--studio-surface-soft)] outline-none transition-colors',
+                  realPortraitDraft.imageDataUrl ? 'border-cyan-400/30' : 'border-[var(--studio-border)]',
+                )}
+              >
+                {realPortraitDraft.imageDataUrl ? (
+                  <img
+                    src={realPortraitDraft.imageDataUrl}
+                    alt="真人人像预览"
+                    className="h-[22rem] w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+                    <div className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/5 text-cyan-300">
+                      <Upload className="h-6 w-6" />
+                    </div>
+                    <div className="mt-4 text-base font-semibold text-[var(--studio-text)]">粘贴或上传图片</div>
+                    <p className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
+                      聚焦当前区域后直接粘贴截图，或使用下方上传按钮选择图片文件。
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => realPortraitUploadInputRef.current?.click()}
+                  className="studio-button studio-button-secondary px-4"
+                >
+                  <Upload className="h-4 w-4" />
+                  上传图片
+                </button>
+                {realPortraitDraft.imageDataUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRealPortraitDraft((prev) => ({ ...prev, imageDataUrl: '', fileNameHint: '' }));
+                      setRealPortraitDraftError('');
+                    }}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    清除图片
+                  </button>
+                ) : null}
+              </div>
+
+              <div className={`rounded-2xl border p-4 ${softPanelClass}`}>
+                <div className="text-sm font-semibold text-[var(--studio-text)]">当前图片</div>
+                <div className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
+                  {realPortraitDraft.fileNameHint || (realPortraitDraft.imageDataUrl ? '已从剪贴板载入图片' : '尚未选择图片')}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {realPortraitDraftError ? (
+            <div className="px-6 pb-2">
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {realPortraitDraftError}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex items-center justify-end gap-3 border-t border-[var(--studio-border)] px-6 py-5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isSavingRealPortraitAsset) {
+                  setIsAddRealPortraitModalOpen(false);
+                  resetRealPortraitDraft();
+                }
+              }}
+              disabled={isSavingRealPortraitAsset}
+              className="studio-button studio-button-secondary px-4"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSaveRealPortraitAsset()}
+              disabled={isSavingRealPortraitAsset}
+              className="studio-button studio-button-primary px-4"
+            >
+              {isSavingRealPortraitAsset ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              保存到真人人像库
+            </button>
+          </div>
+        </div>
+      </StudioModal>
+
       <input
         ref={browserDirectoryInputRef}
         type="file"
@@ -674,6 +1148,13 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
         className="hidden"
         multiple
         {...(BROWSER_DIRECTORY_INPUT_PROPS as any)}
+      />
+      <input
+        ref={realPortraitUploadInputRef}
+        type="file"
+        accept="image/*"
+        onChange={(event) => void handleRealPortraitUpload(event)}
+        className="hidden"
       />
     </ContentWrapper>
   );

@@ -50,6 +50,10 @@ function getFastReferenceVideoTypeLabel(referenceType?: FastVideoInput['referenc
   return FAST_REFERENCE_VIDEO_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_VIDEO_TYPE_LABELS.other;
 }
 
+function isRealPersonReference(referenceType?: FastVideoInput['referenceImages'][number]['referenceType']) {
+  return referenceType === 'person';
+}
+
 function isSelectedForVideo(selectedForVideo?: boolean) {
   return selectedForVideo !== false;
 }
@@ -1666,7 +1670,14 @@ export function FastVideoView({
                     </button>
                   </div>
                   <div className="mt-2 text-sm text-zinc-300">图片{index + 1}</div>
-                  <div className="text-[11px] text-sky-300">类型：{getFastReferenceTypeLabel(reference.referenceType)}</div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-sky-300">
+                    <span>类型：{getFastReferenceTypeLabel(reference.referenceType)}</span>
+                    {isRealPersonReference(reference.referenceType) ? (
+                      <span className="rounded-full border border-sky-400/30 bg-sky-400/12 px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-sky-200">
+                        真人
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               ))}
               {readyStoryboardScenes.map((scene, index) => (

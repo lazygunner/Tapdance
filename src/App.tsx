@@ -283,6 +283,20 @@ export default function App() {
     setCreateProjectDraft,
   });
 
+  const updateProjectById = (projectId: string, updater: (current: Project) => Project) => {
+    updateProjectRecord(projectId, updater);
+  };
+
+  const updateFastFlowByProjectId = (
+    projectId: string,
+    updater: (current: Project['fastFlow']) => Project['fastFlow'],
+  ) => {
+    updateProjectRecord(projectId, (current) => ({
+      ...current,
+      fastFlow: updater(current.fastFlow),
+    }));
+  };
+
   const setFastFlow = (updater: (current: Project['fastFlow']) => Project['fastFlow']) => {
     setProject((prev) => ({
       ...prev,
@@ -442,6 +456,8 @@ export default function App() {
     isRefreshingFastVideoTaskRef,
     setProject,
     setFastFlow,
+    updateProjectRecord: updateProjectById,
+    updateFastFlowByProjectId,
     setView,
     setHasKey,
     setApiSettings,
@@ -468,7 +484,7 @@ export default function App() {
     project,
     useMockMode,
     seedanceBridgeUrl: apiSettings.seedance.bridgeUrl,
-    setProject,
+    updateProjectRecord: updateProjectById,
     getOperationRecord,
     setOperationRecord,
     persistGeneratedMediaUrl,
@@ -749,6 +765,7 @@ export default function App() {
     useMockMode,
     isCreativeProject,
     setProject,
+    updateProjectRecord: updateProjectById,
     setView: (nextView) => setView(nextView),
     setHasKey,
     setIsGeneratingShots,

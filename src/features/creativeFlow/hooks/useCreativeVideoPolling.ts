@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
 
 import { getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { fetchSeedanceTask } from '../../fastVideoFlow/services/seedanceBridgeClient.ts';
@@ -20,7 +19,7 @@ type UseCreativeVideoPollingArgs = {
   project: Project;
   useMockMode: boolean;
   seedanceBridgeUrl: string;
-  setProject: Dispatch<SetStateAction<Project>>;
+  updateProjectRecord: (projectId: string, updater: (current: Project) => Project) => void;
   getOperationRecord: (operationKey: string) => any;
   setOperationRecord: (operationKey: string, operation?: any) => void;
   persistGeneratedMediaUrl: (
@@ -124,7 +123,7 @@ export function useCreativeVideoPolling({
   project,
   useMockMode,
   seedanceBridgeUrl,
-  setProject,
+  updateProjectRecord,
   getOperationRecord,
   setOperationRecord,
   persistGeneratedMediaUrl,
@@ -289,8 +288,8 @@ export function useCreativeVideoPolling({
       }
 
       if (updated) {
-        setProject((prev) => ({
-          ...prev,
+        updateProjectRecord(project.id, (current) => ({
+          ...current,
           shots: newShots,
         }));
       }

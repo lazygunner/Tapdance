@@ -74,6 +74,8 @@ type FastVideoFlowActionDeps = {
   isRefreshingFastVideoTaskRef: MutableRefObject<boolean>;
   setProject: Dispatch<SetStateAction<Project>>;
   setFastFlow: (updater: (current: Project['fastFlow']) => Project['fastFlow']) => void;
+  updateProjectRecord: (projectId: string, updater: (current: Project) => Project) => void;
+  updateFastFlowByProjectId: (projectId: string, updater: (current: Project['fastFlow']) => Project['fastFlow']) => void;
   setView: (view: 'fastStoryboard' | 'fastVideo') => void;
   setHasKey: Dispatch<SetStateAction<boolean>>;
   setApiSettings: Dispatch<SetStateAction<ApiSettings>>;
@@ -123,6 +125,8 @@ export function createFastVideoFlowActions({
   isRefreshingFastVideoTaskRef,
   setProject,
   setFastFlow,
+  updateProjectRecord,
+  updateFastFlowByProjectId,
   setView,
   setHasKey,
   setApiSettings,
@@ -366,6 +370,7 @@ export function createFastVideoFlowActions({
 
   const handleGenerateFastPlan = async () => {
     const fastInput = project.fastFlow.input;
+    const targetProjectId = project.id;
     if (!fastInput.prompt.trim()) {
       return;
     }
@@ -379,30 +384,30 @@ export function createFastVideoFlowActions({
         getOperationSourceId('fast-plan', 'text') || getTextModelSourceId(),
       );
 
-      setProject((prev) => ({
-        ...prev,
+      updateProjectRecord(targetProjectId, (current) => ({
+        ...current,
         projectType: 'fast-video',
-        name: prev.nameCustomized ? prev.name : buildFastProjectName(prev.fastFlow.input),
+        name: current.nameCustomized ? current.name : buildFastProjectName(current.fastFlow.input),
         fastFlow: normalizeFastVideoProject({
-          ...prev.fastFlow,
+          ...current.fastFlow,
           scenes: plan.scenes,
           videoPrompt: {
             prompt: plan.videoPrompt.promptZh || plan.videoPrompt.prompt,
             promptZh: plan.videoPrompt.promptZh || plan.videoPrompt.prompt,
           },
           seedanceDraft: {
-            ...createDefaultFastSeedanceDraft(prev.fastFlow.input, plan.videoPrompt.promptZh || plan.videoPrompt.prompt),
-            baseTemplateId: inferFastFlowTemplateId(prev.fastFlow.input, plan.scenes.length),
+            ...createDefaultFastSeedanceDraft(current.fastFlow.input, plan.videoPrompt.promptZh || plan.videoPrompt.prompt),
+            baseTemplateId: inferFastFlowTemplateId(current.fastFlow.input, plan.scenes.length),
           },
           executionConfig: {
-            ...prev.fastFlow.executionConfig,
-            executor: prev.fastFlow.executionConfig.executor || apiSettings.seedance.defaultExecutor,
-            cliModelVersion: prev.fastFlow.executionConfig.cliModelVersion || apiSettings.seedance.cliModelVersion,
-            pollIntervalSec: prev.fastFlow.executionConfig.pollIntervalSec || apiSettings.seedance.pollIntervalSec,
+            ...current.fastFlow.executionConfig,
+            executor: current.fastFlow.executionConfig.executor || apiSettings.seedance.defaultExecutor,
+            cliModelVersion: current.fastFlow.executionConfig.cliModelVersion || apiSettings.seedance.cliModelVersion,
+            pollIntervalSec: current.fastFlow.executionConfig.pollIntervalSec || apiSettings.seedance.pollIntervalSec,
             videoResolution: '720p',
           },
           task: {
-            provider: prev.fastFlow.executionConfig.executor || apiSettings.seedance.defaultExecutor,
+            provider: current.fastFlow.executionConfig.executor || apiSettings.seedance.defaultExecutor,
             taskId: '',
             status: 'idle',
             submitId: '',
@@ -756,6 +761,7 @@ export function createFastVideoFlowActions({
   };
 
   const handleRefreshFastVideoTask = async (taskIdOverride?: string, executorOverride?: 'ark' | 'cli') => {
+    const targetProjectId = project.id;
     const taskId = (taskIdOverride || project.fastFlow.task.taskId || project.fastFlow.task.submitId || '').trim();
     const taskExecutor = executorOverride || resolveFastVideoTaskProvider(
       project.fastFlow.task,
@@ -775,7 +781,7 @@ export function createFastVideoFlowActions({
     try {
       if (useMockMode) {
         const nowIso = new Date().toISOString();
-        setFastFlow((current) => ({
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
           task: {
             ...current.task,
@@ -811,20 +817,20 @@ export function createFastVideoFlowActions({
         const persistedVideo = shouldPersistOutputs && result.videoUrl
           ? await persistGeneratedMediaUrl(result.videoUrl, {
             kind: 'video',
-            assetId: `${project.id}:fast-task:video`,
+            assetId: `${targetProjectId}:fast-task:video`,
             title: '极速视频成片',
           })
           : undefined;
         const persistedLastFrame = shouldPersistOutputs && result.lastFrameUrl
           ? await persistGeneratedMediaUrl(result.lastFrameUrl, {
             kind: 'image',
-            assetId: `${project.id}:fast-task:last-frame`,
+            assetId: `${targetProjectId}:fast-task:last-frame`,
             title: '极速视频尾帧',
           })
           : undefined;
         const nowIso = new Date().toISOString();
 
-        setFastFlow((current) => ({
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
           task: {
             ...current.task,
@@ -861,13 +867,13 @@ export function createFastVideoFlowActions({
       const persistedVideo = normalizedStatus === 'completed' && latestVideoUrl
         ? await persistGeneratedMediaUrl(latestVideoUrl, {
           kind: 'video',
-          assetId: `${project.id}:fast-task:video`,
+          assetId: `${targetProjectId}:fast-task:video`,
           title: '极速视频成片',
         })
         : undefined;
       const nowIso = new Date().toISOString();
 
-      setFastFlow((current) => ({
+      updateFastFlowByProjectId(targetProjectId, (current) => ({
         ...current,
         task: {
           ...current.task,
@@ -894,7 +900,7 @@ export function createFastVideoFlowActions({
         request: { taskId, executor: taskExecutor },
         error: error?.message || '查询 Seedance 任务失败。',
       });
-      setFastFlow((current) => ({
+      updateFastFlowByProjectId(targetProjectId, (current) => ({
         ...current,
         task: {
           ...current.task,
@@ -910,6 +916,7 @@ export function createFastVideoFlowActions({
   };
 
   const handleCancelFastVideoTask = async () => {
+    const targetProjectId = project.id;
     const task = project.fastFlow.task;
     const taskId = getFastVideoTaskId(task);
     if (!taskId) {
@@ -920,7 +927,7 @@ export function createFastVideoFlowActions({
     try {
       if (useMockMode) {
         const nowIso = new Date().toISOString();
-        setFastFlow((current) => ({
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
           task: {
             ...current.task,
@@ -948,7 +955,7 @@ export function createFastVideoFlowActions({
       });
 
       const nowIso = new Date().toISOString();
-      setFastFlow((current) => ({
+      updateFastFlowByProjectId(targetProjectId, (current) => ({
         ...current,
         task: {
           ...current.task,
@@ -985,6 +992,7 @@ export function createFastVideoFlowActions({
   };
 
   const handleSubmitFastVideo = async () => {
+    const targetProjectId = project.id;
     const draft = syncFastFlowSeedanceDraft(project.fastFlow);
     const submitExecutor = project.fastFlow.executionConfig.executor;
     const validation = validateSeedanceDraft(draft);
@@ -1004,7 +1012,7 @@ export function createFastVideoFlowActions({
 
     setIsSubmittingFastVideo(true);
     const submitStartedAt = new Date().toISOString();
-    setFastFlow((current) => ({
+    updateFastFlowByProjectId(targetProjectId, (current) => ({
       ...current,
       task: {
         ...current.task,
@@ -1023,7 +1031,7 @@ export function createFastVideoFlowActions({
       if (useMockMode) {
         const mockTaskId = `mock-${Date.now()}`;
         const finishedAt = new Date().toISOString();
-        setFastFlow((current) => ({
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
           task: {
             ...current.task,
@@ -1058,7 +1066,7 @@ export function createFastVideoFlowActions({
           response: result,
         });
 
-        setFastFlow((current) => ({
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
           task: {
             ...current.task,
@@ -1092,7 +1100,7 @@ export function createFastVideoFlowActions({
           .filter(Boolean);
         const submitRequestLog = buildSeedanceSubmitLogRequest(draft, 'cli');
         const result = await submitSeedanceTask({
-          projectId: project.id,
+          projectId: targetProjectId,
           prompt: draft.prompt.rawPrompt,
           imageSources,
           videoSources,
@@ -1132,7 +1140,7 @@ export function createFastVideoFlowActions({
           response: result,
         });
 
-        setFastFlow((current) => ({
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
           task: {
             ...current.task,
@@ -1168,7 +1176,7 @@ export function createFastVideoFlowActions({
         response: error?.response,
         error: errorMessage,
       });
-      setFastFlow((current) => ({
+      updateFastFlowByProjectId(targetProjectId, (current) => ({
         ...current,
         task: {
           ...current.task,

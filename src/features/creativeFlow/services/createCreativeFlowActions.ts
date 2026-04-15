@@ -60,6 +60,7 @@ type CreativeFlowActionDeps = {
   useMockMode: boolean;
   isCreativeProject: boolean;
   setProject: Dispatch<SetStateAction<Project>>;
+  updateProjectRecord: (projectId: string, updater: (current: Project) => Project) => void;
   setView: (view: 'shots') => void;
   setHasKey: Dispatch<SetStateAction<boolean>>;
   setIsGeneratingShots: Dispatch<SetStateAction<boolean>>;
@@ -173,6 +174,7 @@ export function createCreativeFlowActions({
   useMockMode,
   isCreativeProject,
   setProject,
+  updateProjectRecord,
   setView,
   setHasKey,
   setIsGeneratingShots,
@@ -585,6 +587,7 @@ export function createCreativeFlowActions({
   };
 
   const handleGenerateVideo = async (shotId: string) => {
+    const targetProjectId = project.id;
     if (!project.brief) {
       return;
     }
@@ -623,9 +626,9 @@ export function createCreativeFlowActions({
       if (useMockMode) {
         const mockOp = { provider: executor, taskId: `mock-shot-${shotId}-${Date.now()}`, submitId: executor === 'cli' ? `mock-shot-${shotId}-${Date.now()}` : '' };
         setOperationRecord(operationKey, mockOp);
-        setProject((prev) => ({
-          ...prev,
-          shots: prev.shots.map((item) => item.id === shotId ? { ...item, videoOperation: mockOp } : item),
+        updateProjectRecord(targetProjectId, (current) => ({
+          ...current,
+          shots: current.shots.map((item) => item.id === shotId ? { ...item, videoOperation: mockOp } : item),
         }));
         return;
       }
@@ -653,7 +656,7 @@ export function createCreativeFlowActions({
           .map((asset) => asset.urlOrData)
           .filter(Boolean);
         const result = await submitSeedanceTask({
-          projectId: project.id,
+          projectId: targetProjectId,
           prompt: draft.prompt.rawPrompt,
           imageSources,
           options: {
@@ -693,17 +696,17 @@ export function createCreativeFlowActions({
             await deleteSeedanceTask(operation.taskId);
           }
           setOperationRecord(operationKey);
-          setProject((prev) => ({
-            ...prev,
-            shots: prev.shots.map((item) => item.id === shotId
+          updateProjectRecord(targetProjectId, (current) => ({
+            ...current,
+            shots: current.shots.map((item) => item.id === shotId
               ? { ...item, videoStatus: 'cancelled', videoOperation: undefined, videoError: '' }
               : item),
           }));
         } catch (error: any) {
           console.error('Failed to cancel video generation after operation was created:', error);
-          setProject((prev) => ({
-            ...prev,
-            shots: prev.shots.map((item) => item.id === shotId ? { ...item, videoOperation: operation } : item),
+          updateProjectRecord(targetProjectId, (current) => ({
+            ...current,
+            shots: current.shots.map((item) => item.id === shotId ? { ...item, videoOperation: operation } : item),
           }));
           alert(error?.message || '取消视频生成失败。');
         } finally {
@@ -712,9 +715,9 @@ export function createCreativeFlowActions({
         return;
       }
 
-      setProject((prev) => ({
-        ...prev,
-        shots: prev.shots.map((item) => item.id === shotId ? { ...item, videoOperation: operation } : item),
+      updateProjectRecord(targetProjectId, (current) => ({
+        ...current,
+        shots: current.shots.map((item) => item.id === shotId ? { ...item, videoOperation: operation } : item),
       }));
     } catch (error: any) {
       setOperationRecord(operationKey);
@@ -727,9 +730,9 @@ export function createCreativeFlowActions({
         request: { shotId, executor },
         error: error?.message || '启动视频生成失败。',
       });
-      setProject((prev) => ({
-        ...prev,
-        shots: prev.shots.map((item) => item.id === shotId ? { ...item, videoStatus: 'failed', videoError: error.message || '启动生成失败。' } : item),
+      updateProjectRecord(targetProjectId, (current) => ({
+        ...current,
+        shots: current.shots.map((item) => item.id === shotId ? { ...item, videoStatus: 'failed', videoError: error.message || '启动生成失败。' } : item),
       }));
       if (isPermissionError(error)) {
         setHasKey(false);
@@ -740,6 +743,7 @@ export function createCreativeFlowActions({
   };
 
   const handleCancelVideo = async (shotId: string) => {
+    const targetProjectId = project.id;
     const operationKey = getShotVideoOperationKey(shotId);
     const shot = project.shots.find((item) => item.id === shotId);
     if (shot?.videoStatus !== 'generating') {
@@ -772,16 +776,15 @@ export function createCreativeFlowActions({
         request: { taskId, executor: operation.provider || 'ark' },
       });
       setOperationRecord(operationKey);
-      setProject((prev) => ({
-        ...prev,
-        shots: prev.shots.map((item) => item.id === shotId
+      updateProjectRecord(targetProjectId, (current) => ({
+        ...current,
+        shots: current.shots.map((item) => item.id === shotId
           ? {
             ...item,
             videoStatus: 'cancelled',
             videoOperation: undefined,
             videoError: '',
-          }
-          : item),
+          } : item),
       }));
     } catch (error: any) {
       console.error('Failed to cancel video generation:', error);
@@ -854,6 +857,7 @@ export function createCreativeFlowActions({
   };
 
   const handleGenerateTransitionVideo = async (currentShotId: string, nextShotId: string) => {
+    const targetProjectId = project.id;
     if (!project.brief) {
       return;
     }
@@ -882,9 +886,9 @@ export function createCreativeFlowActions({
       if (useMockMode) {
         const mockOp = { provider: executor, taskId: `mock-transition-${currentShotId}-${Date.now()}`, submitId: executor === 'cli' ? `mock-transition-${currentShotId}-${Date.now()}` : '' };
         setOperationRecord(operationKey, mockOp);
-        setProject((prev) => ({
-          ...prev,
-          shots: prev.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: mockOp } : item),
+        updateProjectRecord(targetProjectId, (current) => ({
+          ...current,
+          shots: current.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: mockOp } : item),
         }));
         return;
       }
@@ -918,7 +922,7 @@ export function createCreativeFlowActions({
           .map((asset) => asset.urlOrData)
           .filter(Boolean);
         const result = await submitSeedanceTask({
-          projectId: project.id,
+          projectId: targetProjectId,
           prompt: draft.prompt.rawPrompt,
           imageSources,
           options: {
@@ -958,22 +962,21 @@ export function createCreativeFlowActions({
             await deleteSeedanceTask(operation.taskId);
           }
           setOperationRecord(operationKey);
-          setProject((prev) => ({
-            ...prev,
-            shots: prev.shots.map((item) => item.id === currentShotId
+          updateProjectRecord(targetProjectId, (current) => ({
+            ...current,
+            shots: current.shots.map((item) => item.id === currentShotId
               ? {
                 ...item,
                 transitionVideoStatus: 'cancelled',
                 transitionVideoOperation: undefined,
                 transitionVideoError: '',
-              }
-              : item),
+              } : item),
           }));
         } catch (error: any) {
           console.error('Failed to cancel transition video generation after operation was created:', error);
-          setProject((prev) => ({
-            ...prev,
-            shots: prev.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: operation } : item),
+          updateProjectRecord(targetProjectId, (current) => ({
+            ...current,
+            shots: current.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: operation } : item),
           }));
           alert(error?.message || '取消转场视频生成失败。');
         } finally {
@@ -982,9 +985,9 @@ export function createCreativeFlowActions({
         return;
       }
 
-      setProject((prev) => ({
-        ...prev,
-        shots: prev.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: operation } : item),
+      updateProjectRecord(targetProjectId, (current) => ({
+        ...current,
+        shots: current.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: operation } : item),
       }));
     } catch (error: any) {
       setOperationRecord(operationKey);
@@ -997,9 +1000,9 @@ export function createCreativeFlowActions({
         request: { currentShotId, nextShotId, executor },
         error: error?.message || '启动转场视频生成失败。',
       });
-      setProject((prev) => ({
-        ...prev,
-        shots: prev.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoStatus: 'failed', transitionVideoError: error.message || '启动生成失败。' } : item),
+      updateProjectRecord(targetProjectId, (current) => ({
+        ...current,
+        shots: current.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoStatus: 'failed', transitionVideoError: error.message || '启动生成失败。' } : item),
       }));
       if (isPermissionError(error)) {
         setHasKey(false);
@@ -1010,6 +1013,7 @@ export function createCreativeFlowActions({
   };
 
   const handleCancelTransitionVideo = async (currentShotId: string) => {
+    const targetProjectId = project.id;
     const operationKey = getTransitionVideoOperationKey(currentShotId);
     const currentShot = project.shots.find((item) => item.id === currentShotId);
     if (currentShot?.transitionVideoStatus !== 'generating') {
@@ -1046,16 +1050,15 @@ export function createCreativeFlowActions({
         request: { taskId, executor: operation.provider || 'ark' },
       });
       setOperationRecord(operationKey);
-      setProject((prev) => ({
-        ...prev,
-        shots: prev.shots.map((item) => item.id === currentShotId
+      updateProjectRecord(targetProjectId, (current) => ({
+        ...current,
+        shots: current.shots.map((item) => item.id === currentShotId
           ? {
             ...item,
             transitionVideoStatus: 'cancelled',
             transitionVideoOperation: undefined,
             transitionVideoError: '',
-          }
-          : item),
+          } : item),
       }));
     } catch (error: any) {
       console.error('Failed to cancel transition video generation:', error);

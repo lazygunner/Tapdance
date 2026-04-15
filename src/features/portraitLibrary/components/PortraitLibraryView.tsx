@@ -710,7 +710,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
                 <div className="studio-eyebrow">Real Portraits</div>
                 <h2 className="mt-2 text-xl font-semibold text-[var(--studio-text)]">真人人像资产</h2>
                 <p className={`mt-2 max-w-3xl text-sm leading-6 ${dimTextClass}`}>
-                  手动维护可复用的真人参考图，保存描述、图片和 `assetId`。后续在任务里选择参考图时，会继续沿用当前的 `imageUrl + assetId` 逻辑。
+                  手动维护可复用的真人参考图，获取网址:https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement。
                 </p>
               </div>
               <button
@@ -759,26 +759,32 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     key={item.id}
-                    className={`group relative aspect-[3/4] overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl ${onSelect ? 'cursor-pointer border-transparent shadow-lg hover:border-sky-500' : 'border-[var(--studio-border)]'}`}
+                    className={cx(
+                      'group overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl',
+                      onSelect
+                        ? 'cursor-pointer border-transparent shadow-lg hover:border-sky-500'
+                        : 'border-[var(--studio-border)]',
+                    )}
                     onClick={onSelect ? () => onSelect(item.imageUrl, item.assetId) : undefined}
                   >
-                    <img
-                      src={item.imageUrl}
-                      alt={item.description}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                      loading="lazy"
-                    />
+                    <div className="relative aspect-[3/4] overflow-hidden">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.description}
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                        loading="lazy"
+                      />
 
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent opacity-95" />
-
-                    <div className="absolute inset-0 flex flex-col justify-end p-3">
-                      <div className="mb-2 inline-flex w-fit max-w-full items-center rounded-full bg-black/45 px-2 py-1 text-[10px] font-medium text-cyan-100 backdrop-blur">
-                        asset://{item.assetId}
+                      <div className="pointer-events-none absolute left-3 top-3 max-w-[calc(100%-1.5rem)] translate-y-1 rounded-full border border-black/10 bg-black/72 px-2.5 py-1 text-[10px] font-medium text-cyan-50 opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.35)] backdrop-blur-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
+                        <span className="block truncate">asset://{item.assetId}</span>
                       </div>
-                      <h4 className="mb-1 line-clamp-2 text-sm font-bold text-[rgba(255,255,255,0.96)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] md:text-base">
+                    </div>
+
+                    <div className="space-y-1.5 border-t border-[var(--studio-border)] px-3 py-3">
+                      <h4 className="line-clamp-2 text-sm font-semibold text-[var(--studio-text)] md:text-base">
                         {item.description}
                       </h4>
-                      <p className="text-[10px] text-[rgba(255,255,255,0.82)] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] md:text-xs">
+                      <p className={`text-[10px] md:text-xs ${dimTextClass}`}>
                         {new Date(item.createdAt).toLocaleString()}
                       </p>
                     </div>

@@ -149,6 +149,7 @@ export function FastFlowWorkspace({
         videoPrompt={project.fastFlow.videoPrompt}
         generatingImages={generatingFastSceneImages}
         onUpdateScene={onUpdateScene}
+        onUpdatePrompt={onUpdatePrompt}
         onGenerateImage={(sceneId) => onGenerateSceneImage(sceneId, 'text-only')}
         onGenerateImageWithPrevious={(sceneId) => onGenerateSceneImage(sceneId, 'previous-scene')}
         onToggleLock={onToggleSceneLock}

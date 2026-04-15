@@ -11,6 +11,7 @@ type Props = {
   videoPrompt: FastVideoPromptDraft | null;
   generatingImages: Record<string, boolean>;
   onUpdateScene: (sceneId: string, patch: Partial<FastSceneDraft>) => void;
+  onUpdatePrompt: (patch: Partial<FastVideoPromptDraft>) => void;
   onGenerateImage: (sceneId: string) => void;
   onGenerateImageWithPrevious: (sceneId: string) => void;
   onToggleLock: (sceneId: string) => void;
@@ -29,6 +30,7 @@ export function FastStoryboardView({
   videoPrompt,
   generatingImages,
   onUpdateScene,
+  onUpdatePrompt,
   onGenerateImage,
   onGenerateImageWithPrevious,
   onToggleLock,
@@ -55,6 +57,9 @@ export function FastStoryboardView({
   const modalGhostButtonClass = themeMode === 'light'
     ? 'border-stone-200 text-stone-700 hover:bg-stone-100'
     : 'border-zinc-700 text-zinc-200 hover:bg-zinc-800';
+  const inlineTextareaClass = themeMode === 'light'
+    ? 'w-full rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-950 outline-none focus:border-sky-500 resize-none'
+    : 'w-full rounded-xl border border-zinc-800 bg-zinc-950/60 px-4 py-3 text-sm text-zinc-300 outline-none focus:border-violet-500 resize-none';
   const emptyImageShellClass = themeMode === 'light'
     ? 'border-b border-[rgba(110,124,145,0.14)] bg-[linear-gradient(135deg,rgba(244,114,182,0.07),rgba(99,102,241,0.08))]'
     : 'border-b border-zinc-800 bg-[linear-gradient(135deg,rgba(168,85,247,0.14),rgba(17,24,39,0.9))]';
@@ -158,9 +163,14 @@ export function FastStoryboardView({
 
           <StudioPanel className="p-6" tone="soft">
             <div className="text-white font-semibold">视频提示词草稿</div>
-            <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-300 whitespace-pre-wrap">
-              {videoPrompt?.promptZh || videoPrompt?.prompt || '尚未生成'}
-            </div>
+            <div className="mt-2 text-sm text-zinc-500">这里可以直接修改最终执行用的中文视频提示词，修改会即时保存。</div>
+            <textarea
+              value={videoPrompt?.promptZh || videoPrompt?.prompt || ''}
+              onChange={(event) => onUpdatePrompt({ prompt: event.target.value, promptZh: event.target.value })}
+              rows={8}
+              className={`mt-4 whitespace-pre-wrap ${inlineTextareaClass}`}
+              placeholder="尚未生成视频提示词"
+            />
           </StudioPanel>
         </aside>
 
@@ -238,9 +248,13 @@ export function FastStoryboardView({
                         />
                       </div>
                     </div>
-                    <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-300 whitespace-pre-wrap">
-                      {scene.imagePromptZh?.trim() || '尚未生成中文参考提示词'}
-                    </div>
+                    <textarea
+                      value={scene.imagePromptZh || ''}
+                      onChange={(event) => onUpdateScene(scene.id, { imagePromptZh: event.target.value })}
+                      rows={6}
+                      className={inlineTextareaClass}
+                      placeholder="尚未生成中文参考提示词"
+                    />
                   </div>
 
                   <details className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">

@@ -8,6 +8,7 @@ import {
 import type { ModelInvocationLogEntry } from '../../../services/modelInvocationLog';
 import type { ApiSettings, ModelSourceId, Project } from '../../../types.ts';
 import type {
+  FastReferenceAudio,
   FastReferenceImage,
   FastReferenceVideo,
   FastSceneDraft,
@@ -26,6 +27,7 @@ import { fetchSeedanceTask, submitSeedanceTask } from './seedanceBridgeClient.ts
 import { createSeedanceTask, deleteSeedanceTask, getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { validateSeedanceDraft } from '../../seedance/services/seedanceDraft.ts';
 import type { SeedanceBaseTemplateId, SeedanceDraft } from '../../seedance/types.ts';
+import { SEEDANCE_TEMPLATE_REGISTRY } from '../../seedance/config/seedanceTemplateRegistry.ts';
 import {
   buildFastProjectName,
   getFastVideoTaskId,
@@ -308,6 +310,58 @@ export function createFastVideoFlowActions({
     }));
   };
 
+  const handleAddFastReferenceAudio = () => {
+    setFastFlow((current) => ({
+      ...current,
+      input: {
+        ...current.input,
+        referenceAudios: [
+          ...(current.input.referenceAudios || []),
+          {
+            id: crypto.randomUUID?.() || `fast-reference-audio-${Date.now()}`,
+            audioUrl: '',
+            referenceType: 'other',
+            description: '',
+            selectedForVideo: true,
+          },
+        ],
+      },
+    }));
+  };
+
+  const handleUpdateFastReferenceAudio = (referenceId: string, patch: Partial<FastReferenceAudio>) => {
+    setFastFlow((current) => ({
+      ...current,
+      input: {
+        ...current.input,
+        referenceAudios: (current.input.referenceAudios || []).map((item) => item.id === referenceId ? { ...item, ...patch } : item),
+      },
+    }));
+  };
+
+  const handleRemoveFastReferenceAudio = (referenceId: string) => {
+    setFastFlow((current) => ({
+      ...current,
+      input: {
+        ...current.input,
+        referenceAudios: (current.input.referenceAudios || []).filter((item) => item.id !== referenceId),
+      },
+    }));
+  };
+
+  const handleToggleFastReferenceAudioSelection = (referenceId: string) => {
+    setFastFlow((current) => ({
+      ...current,
+      input: {
+        ...current.input,
+        referenceAudios: (current.input.referenceAudios || []).map((item) => item.id === referenceId ? {
+          ...item,
+          selectedForVideo: item.selectedForVideo === false,
+        } : item),
+      },
+    }));
+  };
+
   const handleGenerateFastPlan = async () => {
     const fastInput = project.fastFlow.input;
     if (!fastInput.prompt.trim()) {
@@ -499,8 +553,11 @@ export function createFastVideoFlowActions({
       const currentDraft = current.seedanceDraft || createDefaultFastSeedanceDraft(current.input, prompt);
       const selectedReferenceImages = current.input.referenceImages.filter((item) => item.imageUrl.trim() && item.selectedForVideo !== false);
       const selectedReferenceVideos = current.input.referenceVideos.filter((item) => item.videoUrl.trim() && item.selectedForVideo !== false);
-      const nextBaseTemplateId: SeedanceBaseTemplateId = selectedReferenceImages.length > 0 || selectedReferenceVideos.length > 0 ? 'multi_image_reference' : 'free_text';
+      const nextBaseTemplateId: SeedanceBaseTemplateId = selectedReferenceImages.length > 0 || selectedReferenceVideos.length > 0
+        ? 'multi_image_reference'
+        : 'free_text';
       const nextTask = createEmptySeedanceTask();
+      const supportedOverlayIds = new Set(SEEDANCE_TEMPLATE_REGISTRY[nextBaseTemplateId].supportedOverlays);
 
       return {
         ...current,
@@ -516,6 +573,7 @@ export function createFastVideoFlowActions({
         seedanceDraft: {
           ...currentDraft,
           baseTemplateId: nextBaseTemplateId,
+          overlayTemplateIds: currentDraft.overlayTemplateIds.filter((item) => supportedOverlayIds.has(item)),
           prompt: {
             ...currentDraft.prompt,
             rawPrompt: prompt,
@@ -657,11 +715,17 @@ export function createFastVideoFlowActions({
   ) => {
     setFastFlow((current) => {
       const currentDraft = current.seedanceDraft || createDefaultFastSeedanceDraft(current.input, current.videoPrompt?.prompt);
+      const nextBaseTemplateId = patch.baseTemplateId ?? currentDraft.baseTemplateId;
+      const supportedOverlayIds = new Set(SEEDANCE_TEMPLATE_REGISTRY[nextBaseTemplateId].supportedOverlays);
+      const nextOverlayTemplateIds = (patch.overlayTemplateIds ?? currentDraft.overlayTemplateIds)
+        .filter((item) => supportedOverlayIds.has(item));
       return {
         ...current,
         seedanceDraft: {
           ...currentDraft,
           ...patch,
+          baseTemplateId: nextBaseTemplateId,
+          overlayTemplateIds: nextOverlayTemplateIds,
           prompt: patch.prompt
             ? {
               ...currentDraft.prompt,
@@ -1129,6 +1193,10 @@ export function createFastVideoFlowActions({
     handleUpdateFastReferenceVideo,
     handleRemoveFastReferenceVideo,
     handleToggleFastReferenceVideoSelection,
+    handleAddFastReferenceAudio,
+    handleUpdateFastReferenceAudio,
+    handleRemoveFastReferenceAudio,
+    handleToggleFastReferenceAudioSelection,
     handleGenerateFastPlan,
     handleUpdateFastScene,
     handleToggleFastSceneLock,

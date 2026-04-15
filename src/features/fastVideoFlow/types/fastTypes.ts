@@ -17,6 +17,7 @@ export interface FastReferenceImage {
 }
 
 export type FastReferenceVideoType = 'motion' | 'camera' | 'effect' | 'edit' | 'extend' | 'other';
+export type FastReferenceAudioType = 'music' | 'dialogue' | 'effect' | 'rhythm' | 'other';
 
 export interface FastReferenceVideoMeta {
   durationSec: number;
@@ -33,10 +34,24 @@ export interface FastReferenceVideo {
   videoMeta?: FastReferenceVideoMeta | null;
 }
 
+export interface FastReferenceAudioMeta {
+  durationSec: number;
+}
+
+export interface FastReferenceAudio {
+  id: string;
+  audioUrl: string;
+  referenceType?: FastReferenceAudioType;
+  description?: string;
+  selectedForVideo?: boolean;
+  audioMeta?: FastReferenceAudioMeta | null;
+}
+
 export interface FastVideoInput {
   prompt: string;
   referenceImages: FastReferenceImage[];
   referenceVideos: FastReferenceVideo[];
+  referenceAudios: FastReferenceAudio[];
   aspectRatio: VisualAspectRatio;
   durationSec: number;
   preferredSceneCount: FastSceneCountPreference;

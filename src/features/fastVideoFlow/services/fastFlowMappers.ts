@@ -1,4 +1,16 @@
-import type { FastReferenceImage, FastReferenceImageType, FastReferenceVideo, FastReferenceVideoType, FastSceneDraft, FastVideoInput, FastVideoPlan, FastVideoProject, SeedanceTask } from '../types/fastTypes.ts';
+import type {
+  FastReferenceAudio,
+  FastReferenceAudioType,
+  FastReferenceImage,
+  FastReferenceImageType,
+  FastReferenceVideo,
+  FastReferenceVideoType,
+  FastSceneDraft,
+  FastVideoInput,
+  FastVideoPlan,
+  FastVideoProject,
+  SeedanceTask,
+} from '../types/fastTypes.ts';
 import { FAST_VIDEO_PROMPT_CONFIG } from '../../../config/fastVideoPrompts.ts';
 import { normalizeFastVideoExecutionPrompt } from './fastPromptBuilders.ts';
 import { hasHumanFaceMosaicSuffix, syncHumanFaceMosaicPrompt } from './fastScenePrompt.ts';
@@ -24,6 +36,7 @@ export function createEmptyFastVideoInput(): FastVideoInput {
     prompt: '',
     referenceImages: [],
     referenceVideos: [],
+    referenceAudios: [],
     aspectRatio: '16:9',
     durationSec: 10,
     preferredSceneCount: 'auto',
@@ -130,6 +143,13 @@ function normalizeFastReferenceVideoType(value: unknown): FastReferenceVideoType
     : 'other';
 }
 
+function normalizeFastReferenceAudioType(value: unknown): FastReferenceAudioType {
+  return value === 'music' || value === 'dialogue' || value === 'effect'
+    || value === 'rhythm' || value === 'other'
+    ? value
+    : 'other';
+}
+
 function normalizeReferenceVideos(value: unknown): FastReferenceVideo[] {
   if (!Array.isArray(value)) {
     return [];
@@ -152,6 +172,32 @@ function normalizeReferenceVideos(value: unknown): FastReferenceVideo[] {
             durationSec: Number.isFinite(candidate.videoMeta.durationSec) ? Math.max(0, Number(candidate.videoMeta.durationSec)) : 0,
             width: Number.isFinite(candidate.videoMeta.width) ? Math.max(0, Number(candidate.videoMeta.width)) : 0,
             height: Number.isFinite(candidate.videoMeta.height) ? Math.max(0, Number(candidate.videoMeta.height)) : 0,
+          }
+          : null,
+      };
+    });
+}
+
+function normalizeReferenceAudios(value: unknown): FastReferenceAudio[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => {
+      const candidate = item as Partial<FastReferenceAudio>;
+      return {
+        id: typeof candidate.id === 'string' && candidate.id.trim()
+          ? candidate.id
+          : `fast-reference-audio-${index + 1}`,
+        audioUrl: typeof candidate.audioUrl === 'string' ? candidate.audioUrl : '',
+        referenceType: normalizeFastReferenceAudioType(candidate.referenceType),
+        description: typeof candidate.description === 'string' ? candidate.description : '',
+        selectedForVideo: isFastAssetSelectedForVideo(candidate.selectedForVideo),
+        audioMeta: candidate.audioMeta && typeof candidate.audioMeta === 'object'
+          ? {
+            durationSec: Number.isFinite(candidate.audioMeta.durationSec) ? Math.max(0, Number(candidate.audioMeta.durationSec)) : 0,
           }
           : null,
       };
@@ -225,6 +271,8 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
   const selectedReferenceImages = originalReferenceImages.filter((item) => isFastAssetSelectedForVideo(item.selectedForVideo));
   const originalReferenceVideos = fastFlow.input.referenceVideos.filter((item) => item.videoUrl.trim());
   const selectedReferenceVideos = originalReferenceVideos.filter((item) => isFastAssetSelectedForVideo(item.selectedForVideo));
+  const originalReferenceAudios = fastFlow.input.referenceAudios.filter((item) => item.audioUrl.trim());
+  const selectedReferenceAudios = originalReferenceAudios.filter((item) => isFastAssetSelectedForVideo(item.selectedForVideo));
   const useAssetIdForVideoTask = fastFlow.executionConfig.executor === 'ark';
   const assets = (() => {
     if (baseDraft.baseTemplateId === 'first_last_frame') {
@@ -310,6 +358,24 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
                       : '其他参考视频'
           }${video.description?.trim() ? `，${video.description.trim()}` : ''}`,
         })),
+        ...selectedReferenceAudios.map((audio, index) => ({
+          id: audio.id || `fast-reference-audio-${index + 1}`,
+          kind: 'audio' as const,
+          source: 'url' as const,
+          urlOrData: audio.audioUrl,
+          role: 'reference_audio' as const,
+          label: `参考音频${index + 1}是${
+            audio.referenceType === 'music'
+              ? '音乐参考音频'
+              : audio.referenceType === 'dialogue'
+                ? '对白参考音频'
+                : audio.referenceType === 'effect'
+                  ? '音效参考音频'
+                  : audio.referenceType === 'rhythm'
+                    ? '节奏参考音频'
+                    : '其他参考音频'
+          }${audio.description?.trim() ? `，${audio.description.trim()}` : ''}`,
+        })),
       ];
 
       return referenceAssets.filter((asset, index, list) => (
@@ -328,7 +394,7 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
   return {
     ...baseDraft,
     assets,
-    prompt: {
+      prompt: {
       ...baseDraft.prompt,
       rawPrompt: fastFlow.videoPrompt?.prompt || baseDraft.prompt.rawPrompt || '',
     },
@@ -407,6 +473,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
       prompt: typeof input.prompt === 'string' ? input.prompt : base.input.prompt,
       referenceImages: normalizedReferenceImages,
       referenceVideos: normalizeReferenceVideos(input.referenceVideos),
+      referenceAudios: normalizeReferenceAudios(input.referenceAudios),
       aspectRatio: normalizeFastVideoAspectRatio(input.aspectRatio),
       durationSec: Number.isFinite(input.durationSec) ? Math.max(4, Math.min(15, Number(input.durationSec))) : base.input.durationSec,
       preferredSceneCount: input.preferredSceneCount === 1 || input.preferredSceneCount === 2 || input.preferredSceneCount === 'auto'
@@ -434,6 +501,9 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
           value?.videoPrompt?.prompt,
         ),
         ...value.seedanceDraft,
+        baseTemplateId: value.seedanceDraft.baseTemplateId === 'audio_guided'
+          ? 'multi_image_reference'
+          : value.seedanceDraft.baseTemplateId,
         prompt: {
           ...createDefaultFastSeedanceDraft(
             {

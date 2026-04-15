@@ -18,12 +18,24 @@ const FAST_REFERENCE_VIDEO_TYPE_LABELS: Record<NonNullable<FastVideoInput['refer
   other: '其他参考视频',
 };
 
+const FAST_REFERENCE_AUDIO_TYPE_LABELS: Record<NonNullable<FastVideoInput['referenceAudios'][number]['referenceType']>, string> = {
+  music: '音乐参考音频',
+  dialogue: '对白参考音频',
+  effect: '音效参考音频',
+  rhythm: '节奏参考音频',
+  other: '其他参考音频',
+};
+
 function getFastReferenceTypeLabel(referenceType?: FastVideoInput['referenceImages'][number]['referenceType']) {
   return FAST_REFERENCE_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_TYPE_LABELS.other;
 }
 
 function getFastReferenceVideoTypeLabel(referenceType?: FastVideoInput['referenceVideos'][number]['referenceType']) {
   return FAST_REFERENCE_VIDEO_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_VIDEO_TYPE_LABELS.other;
+}
+
+function getFastReferenceAudioTypeLabel(referenceType?: FastVideoInput['referenceAudios'][number]['referenceType']) {
+  return FAST_REFERENCE_AUDIO_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_AUDIO_TYPE_LABELS.other;
 }
 
 function buildFastReferenceImageDetails(input: FastVideoInput) {
@@ -47,6 +59,18 @@ function buildFastReferenceVideoDetails(input: FastVideoInput) {
 
   return readyVideos.map((video, index) => (
     `- 视频${index + 1}: type=${getFastReferenceVideoTypeLabel(video.referenceType)}; description=${(video.description || '').trim() || 'N/A'}`
+  )).join('\n');
+}
+
+function buildFastReferenceAudioDetails(input: FastVideoInput) {
+  const readyAudios = input.referenceAudios.filter((item) => item.audioUrl.trim());
+
+  if (readyAudios.length === 0) {
+    return 'No structured reference audios are available.';
+  }
+
+  return readyAudios.map((audio, index) => (
+    `- 音频${index + 1}: type=${getFastReferenceAudioTypeLabel(audio.referenceType)}; description=${(audio.description || '').trim() || 'N/A'}`
   )).join('\n');
 }
 
@@ -103,6 +127,7 @@ export function buildFastVideoPlanPrompt(input: FastVideoInput) {
   const preferredSceneCount = input.preferredSceneCount === 'auto' ? 'auto (decide 1 or 2 scenes based on whether the idea needs a visual transition)' : String(input.preferredSceneCount);
   const referenceCount = input.referenceImages.filter((item) => item.imageUrl.trim()).length;
   const referenceVideoCount = input.referenceVideos.filter((item) => item.videoUrl.trim()).length;
+  const referenceAudioCount = input.referenceAudios.filter((item) => item.audioUrl.trim()).length;
   const referenceInstruction = referenceCount > 0
     ? FAST_VIDEO_PROMPT_CONFIG.plan.referenceWithImage(referenceCount)
     : FAST_VIDEO_PROMPT_CONFIG.plan.referenceWithoutImage;
@@ -118,6 +143,7 @@ User input:
 - Negative prompt: ${input.negativePrompt || 'N/A'}
 - Reference image count: ${referenceCount}
 - Reference video count: ${referenceVideoCount}
+- Reference audio count: ${referenceAudioCount}
 
 Reference image details:
 ${buildFastReferenceImageDetails(input)}
@@ -125,11 +151,15 @@ ${buildFastReferenceImageDetails(input)}
 Reference video details:
 ${buildFastReferenceVideoDetails(input)}
 
+Reference audio details:
+${buildFastReferenceAudioDetails(input)}
+
 ${referenceInstruction}
 ${buildQuickCutDirective(input)}
 
 If reference images are present, you must explicitly use each image according to its declared type and any provided description when planning the storyboard and final video prompt.
 If reference videos are present, you must explicitly describe how each reference video's motion/camera/effect should be applied or referenced in the final video prompt.
+If reference audios are present, you must explicitly incorporate each audio's rhythm, dialogue, music, or sound-design cues into the final video prompt.
 When referring to supplied input images inside the final video prompt, you MUST use the exact labels 图片1, 图片2, 图片3... matching the reference image order above.
 Do NOT use vague phrases such as “所提供场景图”, “所提供人物图”, “参考了所提供图片”, or other non-indexed wording.
 
@@ -148,6 +178,7 @@ ${FAST_VIDEO_PROMPT_CONFIG.plan.responseShape}`;
 export function buildFastVideoPromptRegenerationPrompt(input: FastVideoInput, scenes: FastSceneDraft[]) {
   const referenceCount = input.referenceImages.filter((item) => item.imageUrl.trim()).length;
   const referenceVideoCount = input.referenceVideos.filter((item) => item.videoUrl.trim()).length;
+  const referenceAudioCount = input.referenceAudios.filter((item) => item.audioUrl.trim()).length;
   const normalizedScenes = scenes.map((scene, index) => ({
     sceneNumber: index + 1,
     title: scene.title || `分镜 ${index + 1}`,
@@ -166,12 +197,16 @@ User input:
 - Negative prompt: ${input.negativePrompt || 'N/A'}
 - Reference image count: ${referenceCount}
 - Reference video count: ${referenceVideoCount}
+- Reference audio count: ${referenceAudioCount}
 
 Reference image details:
 ${buildFastReferenceImageDetails(input)}
 
 Reference video details:
 ${buildFastReferenceVideoDetails(input)}
+
+Reference audio details:
+${buildFastReferenceAudioDetails(input)}
 
 ${buildQuickCutDirective(input)}
 
@@ -183,10 +218,11 @@ Your task:
 2. Treat the confirmed storyboard scenes as the strongest source of truth for opening state, motion progression, continuity, composition, and exclusions.
 3. Explicitly incorporate each reference image according to its declared type and any provided description.
 4. Explictly incorporate each reference video's motion, camera movement, or effects if present.
-5. Preserve subject identity, scene continuity, style direction, and exclusions across the whole video.
-5. Do not output scene lists, explanations, markdown, or any extra text.
-6. When referring to supplied input images inside the final prompt, you MUST use the exact labels 图片1, 图片2, 图片3... matching the reference image order above.
-7. Do NOT use vague phrases such as “所提供场景图”, “所提供人物图”, “参考了所提供图片”, or other non-indexed wording.
+5. Explicitly incorporate each reference audio's rhythm, dialogue, music, or sound-design cues if present.
+6. Preserve subject identity, scene continuity, style direction, and exclusions across the whole video.
+7. Do not output scene lists, explanations, markdown, or any extra text.
+8. When referring to supplied input images inside the final prompt, you MUST use the exact labels 图片1, 图片2, 图片3... matching the reference image order above.
+9. Do NOT use vague phrases such as “所提供场景图”, “所提供人物图”, “参考了所提供图片”, or other non-indexed wording.
 
 Output requirements:
 - prompt must be Simplified Chinese.

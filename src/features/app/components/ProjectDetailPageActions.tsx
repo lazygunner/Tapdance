@@ -64,8 +64,15 @@ export function ProjectDetailPageActions({
 
   if (view === 'fastStoryboard') {
     const readyReferenceImages = project.fastFlow.input.referenceImages.filter((reference) => reference.imageUrl.trim());
+    const readyReferenceVideos = project.fastFlow.input.referenceVideos.filter((reference) => reference.videoUrl.trim());
+    const readyReferenceAudios = project.fastFlow.input.referenceAudios.filter((reference) => reference.audioUrl.trim());
     const readyImageCount = project.fastFlow.scenes.filter((scene) => scene.imageUrl).length;
-    const canProceedToVideo = (readyImageCount > 0 || readyReferenceImages.length > 0) && Boolean(project.fastFlow.videoPrompt?.prompt);
+    const canProceedToVideo = (
+      readyImageCount > 0
+      || readyReferenceImages.length > 0
+      || readyReferenceVideos.length > 0
+      || readyReferenceAudios.length > 0
+    ) && Boolean(project.fastFlow.videoPrompt?.prompt);
     const canSkipStoryboard = Boolean(project.fastFlow.videoPrompt?.prompt?.trim());
 
     return (

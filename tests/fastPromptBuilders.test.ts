@@ -7,8 +7,9 @@ import type { FastVideoInput } from '../src/features/fastVideoFlow/types/fastTyp
 function createInput(overrides: Partial<FastVideoInput> = {}): FastVideoInput {
   return {
     prompt: '番茄炒蛋，高能量料理短片',
-    referenceImages: [],
-    referenceVideos: [],
+    referenceImages: overrides.referenceImages ?? [],
+    referenceVideos: overrides.referenceVideos ?? [],
+    referenceAudios: overrides.referenceAudios ?? [],
     aspectRatio: '16:9',
     durationSec: 15,
     preferredSceneCount: 'auto',
@@ -51,4 +52,19 @@ test('buildFastVideoPromptRegenerationPrompt keeps quick-cut guidance for final 
 
   assert.match(prompt, /Quick cut mode: enabled/);
   assert.match(prompt, /retro jazz aesthetics/);
+});
+
+test('buildFastVideoPlanPrompt includes reference audio details when present', () => {
+  const prompt = buildFastVideoPlanPrompt(createInput({
+    referenceAudios: [{
+      id: 'audio-1',
+      audioUrl: 'https://example.com/reference.mp3',
+      referenceType: 'rhythm',
+      description: '鼓点清晰，推进感强',
+    }],
+  }));
+
+  assert.match(prompt, /Reference audio count: 1/);
+  assert.match(prompt, /音频1: type=节奏参考音频; description=鼓点清晰，推进感强/);
+  assert.match(prompt, /reference audios are present/i);
 });

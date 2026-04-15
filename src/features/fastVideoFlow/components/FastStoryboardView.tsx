@@ -41,6 +41,8 @@ export function FastStoryboardView({
   hideHeader = false,
 }: Props) {
   const readyReferenceImages = input.referenceImages.filter((reference) => reference.imageUrl.trim());
+  const readyReferenceVideos = input.referenceVideos.filter((reference) => reference.videoUrl.trim());
+  const readyReferenceAudios = input.referenceAudios.filter((reference) => reference.audioUrl.trim());
   const [editingNegativePromptSceneId, setEditingNegativePromptSceneId] = useState<string | null>(null);
   const activeNegativePromptScene = editingNegativePromptSceneId
     ? scenes.find((scene) => scene.id === editingNegativePromptSceneId) || null
@@ -71,7 +73,12 @@ export function FastStoryboardView({
   }
 
   const readyImageCount = scenes.filter((scene) => scene.imageUrl).length;
-  const canProceedToVideo = (readyImageCount > 0 || readyReferenceImages.length > 0) && Boolean(videoPrompt?.prompt);
+  const canProceedToVideo = (
+    readyImageCount > 0
+    || readyReferenceImages.length > 0
+    || readyReferenceVideos.length > 0
+    || readyReferenceAudios.length > 0
+  ) && Boolean(videoPrompt?.prompt);
   const canSkipStoryboard = Boolean(videoPrompt?.prompt);
 
   return (
@@ -83,8 +90,8 @@ export function FastStoryboardView({
           description={(
             <>
               <p>当前流程会生成 {scenes.length} 张分镜图。每一步都可以人工修改提示词、重新生成，或直接上传替换图片。</p>
-              {readyImageCount === 0 && readyReferenceImages.length > 0 ? (
-                <p className="mt-3 text-sm text-[var(--studio-dim)]">当前还没有分镜图，但你已经上传了参考图，可以直接跳过分镜图生成进入视频生成。</p>
+              {readyImageCount === 0 && (readyReferenceImages.length > 0 || readyReferenceVideos.length > 0 || readyReferenceAudios.length > 0) ? (
+                <p className="mt-3 text-sm text-[var(--studio-dim)]">当前还没有分镜图，但你已经上传了参考素材，可以直接跳过分镜图生成进入视频生成。</p>
               ) : null}
             </>
           )}

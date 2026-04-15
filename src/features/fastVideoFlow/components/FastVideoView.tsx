@@ -32,6 +32,14 @@ const FAST_REFERENCE_VIDEO_TYPE_LABELS: Record<NonNullable<FastVideoInput['refer
   other: '其他参考视频',
 };
 
+const FAST_REFERENCE_AUDIO_TYPE_LABELS: Record<NonNullable<FastVideoInput['referenceAudios'][number]['referenceType']>, string> = {
+  music: '音乐参考音频',
+  dialogue: '对白参考音频',
+  effect: '音效参考音频',
+  rhythm: '节奏参考音频',
+  other: '其他参考音频',
+};
+
 const FAST_OVERLAY_OPTIONS: Array<{
   id: SeedanceOverlayTemplateId;
   label: string;
@@ -50,6 +58,10 @@ function getFastReferenceVideoTypeLabel(referenceType?: FastVideoInput['referenc
   return FAST_REFERENCE_VIDEO_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_VIDEO_TYPE_LABELS.other;
 }
 
+function getFastReferenceAudioTypeLabel(referenceType?: FastVideoInput['referenceAudios'][number]['referenceType']) {
+  return FAST_REFERENCE_AUDIO_TYPE_LABELS[referenceType || 'other'] || FAST_REFERENCE_AUDIO_TYPE_LABELS.other;
+}
+
 function isRealPersonReference(referenceType?: FastVideoInput['referenceImages'][number]['referenceType']) {
   return referenceType === 'person';
 }
@@ -64,6 +76,10 @@ function getPromptReferenceToken(index: number) {
 
 function getVideoPromptReferenceToken(index: number) {
   return `视频${index + 1}`;
+}
+
+function getAudioPromptReferenceToken(index: number) {
+  return `音频${index + 1}`;
 }
 
 type PromptVideoReferenceItem = {
@@ -100,17 +116,23 @@ type PromptEditorMentionState = {
   };
 };
 
+type PromptAudioReferenceItem = {
+  token: string;
+  title: string;
+  subtitle: string;
+};
+
 type PromptEditorSuggestionItem = {
   token: string;
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'audio';
   title: string;
   subtitle: string;
   imageUrl?: string;
   videoUrl?: string;
 };
 
-const PROMPT_REFERENCE_TOKEN_REGEX = /((?:图片|视频)\s*[0-9０-９]+)/gu;
-const PROMPT_EDITOR_PLACEHOLDER = '输入最终提交给 Seedance 的中文视频提示词；输入 @ 可直接插入图片 / 视频素材标签。';
+const PROMPT_REFERENCE_TOKEN_REGEX = /((?:图片|视频|音频)\s*[0-9０-９]+)/gu;
+const PROMPT_EDITOR_PLACEHOLDER = '输入最终提交给 Seedance 的中文视频提示词；输入 @ 可直接插入图片 / 视频 / 音频素材标签。';
 
 function splitPromptTextByReferenceToken(text: string) {
   const segments: Array<{ type: 'text' | 'token'; value: string }> = [];
@@ -222,7 +244,8 @@ function serializePromptEditorContent(root: HTMLElement) {
 function createPromptTokenChip(root: HTMLElement, item: PromptEditorSuggestionItem) {
   const documentRef = root.ownerDocument;
   const chip = documentRef.createElement('span');
-  chip.className = `fast-prompt-chip ${item.kind === 'image' ? 'fast-prompt-image-tag' : 'fast-prompt-video-tag'}`;
+  const chipColorClass = item.kind === 'image' ? 'fast-prompt-image-tag' : item.kind === 'video' ? 'fast-prompt-video-tag' : 'fast-prompt-audio-tag';
+  chip.className = `fast-prompt-chip ${chipColorClass}`;
   chip.contentEditable = 'false';
   chip.tabIndex = -1;
   chip.dataset.promptToken = item.token;
@@ -252,6 +275,14 @@ function createPromptTokenChip(root: HTMLElement, item: PromptEditorSuggestionIt
     chip.append(preview);
   }
 
+  if (item.kind === 'audio') {
+    const preview = documentRef.createElement('span');
+    preview.setAttribute('aria-hidden', 'true');
+    preview.className = 'inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] bg-black/10 text-[10px] font-semibold';
+    preview.textContent = '音';
+    chip.append(preview);
+  }
+
   const label = documentRef.createElement('span');
   label.className = 'text-[12px] font-semibold leading-6';
   label.textContent = item.token;
@@ -265,6 +296,7 @@ function renderPromptEditorContent(
   text: string,
   referenceItems: PromptReferenceItem[],
   videoReferenceItems: PromptVideoReferenceItem[],
+  audioReferenceItems: PromptAudioReferenceItem[] = [],
 ) {
   const fragment = root.ownerDocument.createDocumentFragment();
 
@@ -296,6 +328,17 @@ function renderPromptEditorContent(
         title: videoRef.title,
         subtitle: videoRef.subtitle,
         videoUrl: videoRef.videoUrl,
+      }));
+      return;
+    }
+
+    const audioRef = getAudioPromptReferenceByToken(audioReferenceItems, segment.value);
+    if (audioRef) {
+      fragment.append(createPromptTokenChip(root, {
+        token: audioRef.token,
+        kind: 'audio',
+        title: audioRef.title,
+        subtitle: audioRef.subtitle,
       }));
       return;
     }
@@ -465,6 +508,7 @@ function getAdjacentPromptTokenRange(
   direction: 'backward' | 'forward',
   referenceItems: PromptReferenceItem[],
   videoReferenceItems: PromptVideoReferenceItem[],
+  audioReferenceItems: PromptAudioReferenceItem[] = [],
 ) {
   for (const match of text.matchAll(PROMPT_REFERENCE_TOKEN_REGEX)) {
     const token = match[0];
@@ -472,7 +516,8 @@ function getAdjacentPromptTokenRange(
     const end = start + token.length;
     const hasRenderableToken = Boolean(
       getPromptReferenceByToken(referenceItems, token)
-      || getVideoPromptReferenceByToken(videoReferenceItems, token),
+      || getVideoPromptReferenceByToken(videoReferenceItems, token)
+      || getAudioPromptReferenceByToken(audioReferenceItems, token),
     );
 
     if (!hasRenderableToken) {
@@ -539,16 +584,42 @@ function getVideoPromptReferenceByToken(
   return videoReferenceItems.find((item) => item.token === normalizedToken) || null;
 }
 
+function normalizeAudioPromptReferenceToken(token: string) {
+  const normalized = token
+    .replace(/\s+/gu, '')
+    .replace(/[０-９]/gu, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0));
+  const match = /^音频(\d+)$/u.exec(normalized);
+  if (!match) {
+    return null;
+  }
+
+  return `音频${match[1]}`;
+}
+
+function getAudioPromptReferenceByToken(
+  audioReferenceItems: PromptAudioReferenceItem[],
+  token: string,
+) {
+  const normalizedToken = normalizeAudioPromptReferenceToken(token);
+  if (!normalizedToken) {
+    return null;
+  }
+
+  return audioReferenceItems.find((item) => item.token === normalizedToken) || null;
+}
+
 function PromptTokenEditor({
   value,
   referenceItems,
   videoReferenceItems,
+  audioReferenceItems,
   themeMode = 'dark',
   onChange,
 }: {
   value: string;
   referenceItems: PromptReferenceItem[];
   videoReferenceItems: PromptVideoReferenceItem[];
+  audioReferenceItems?: PromptAudioReferenceItem[];
   themeMode?: 'light' | 'dark';
   onChange: (value: string) => void;
 }) {
@@ -572,6 +643,12 @@ function PromptTokenEditor({
       title: item.title,
       subtitle: item.subtitle,
       videoUrl: item.videoUrl,
+    })),
+    ...(audioReferenceItems || []).map((item) => ({
+      token: item.token,
+      kind: 'audio' as const,
+      title: item.title,
+      subtitle: item.subtitle,
     })),
   ];
 
@@ -695,12 +772,12 @@ function PromptTokenEditor({
     const isFocused = activeElement === editor;
     const selection = isFocused ? (selectionRef.current || capturePromptEditorSelection(editor)) : null;
 
-    renderPromptEditorContent(editor, value, referenceItems, videoReferenceItems);
+    renderPromptEditorContent(editor, value, referenceItems, videoReferenceItems, audioReferenceItems);
 
     if (selection && document.activeElement === editor) {
       restorePromptEditorSelection(editor, selection);
     }
-  }, [value, referenceItems, videoReferenceItems]);
+  }, [value, referenceItems, videoReferenceItems, audioReferenceItems]);
 
   useEffect(() => {
     if (!mentionState) {
@@ -779,6 +856,7 @@ function PromptTokenEditor({
         event.key === 'Backspace' ? 'backward' : 'forward',
         referenceItems,
         videoReferenceItems,
+        audioReferenceItems,
       );
 
       if (!tokenRange) {
@@ -840,7 +918,7 @@ function PromptTokenEditor({
             }
 
             if (editorRef.current.childNodes.length === 0 && value) {
-              renderPromptEditorContent(editorRef.current, value, referenceItems, videoReferenceItems);
+              renderPromptEditorContent(editorRef.current, value, referenceItems, videoReferenceItems, audioReferenceItems);
             }
 
             selectionRef.current = capturePromptEditorSelection(editorRef.current);
@@ -1002,6 +1080,7 @@ type Props = {
   onPreviewImage: (url: string) => void;
   onToggleReferenceSelection: (referenceId: string) => void;
   onToggleReferenceVideoSelection: (referenceId: string) => void;
+  onToggleReferenceAudioSelection: (referenceId: string) => void;
   onToggleSceneSelection: (sceneId: string) => void;
   themeMode?: 'light' | 'dark';
   healthPanel?: ReactNode;
@@ -1376,6 +1455,7 @@ export function FastVideoView({
   onPreviewImage,
   onToggleReferenceSelection,
   onToggleReferenceVideoSelection,
+  onToggleReferenceAudioSelection,
   onToggleSceneSelection,
   themeMode = 'dark',
   healthPanel,
@@ -1387,7 +1467,10 @@ export function FastVideoView({
   const selectedStoryboardScenes = readyStoryboardScenes.filter((scene) => isSelectedForVideo(scene.selectedForVideo));
   const readyReferenceVideos = (input.referenceVideos || []).filter((reference) => reference.videoUrl.trim());
   const selectedReferenceVideos = readyReferenceVideos.filter((reference) => isSelectedForVideo(reference.selectedForVideo));
+  const readyReferenceAudios = (input.referenceAudios || []).filter((reference) => reference.audioUrl.trim());
+  const selectedReferenceAudios = readyReferenceAudios.filter((reference) => isSelectedForVideo(reference.selectedForVideo));
   const selectedReferenceVideoCount = selectedReferenceVideos.length;
+  const selectedReferenceAudioCount = selectedReferenceAudios.length;
   const selectedReferenceCount = readyReferenceImages.filter((reference) => isSelectedForVideo(reference.selectedForVideo)).length;
   const selectedSceneCount = readyStoryboardScenes.filter((scene) => isSelectedForVideo(scene.selectedForVideo)).length;
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -1523,6 +1606,12 @@ export function FastVideoView({
     title: video.description?.trim() || `参考视频 ${index + 1}`,
     subtitle: getFastReferenceVideoTypeLabel(video.referenceType),
   }));
+  // Audio reference tokens
+  const promptAudioReferenceItems: PromptAudioReferenceItem[] = selectedReferenceAudios.map((audio, index) => ({
+    token: getAudioPromptReferenceToken(index),
+    title: audio.description?.trim() || `参考音频 ${index + 1}`,
+    subtitle: getFastReferenceAudioTypeLabel(audio.referenceType),
+  }));
   const fieldLabelClassName = 'text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-500';
   const controlClassName = 'mt-1.5 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-rose-500';
   const taskMetricTone: MetricCardTone = !hasSubmittedTask
@@ -1630,18 +1719,21 @@ export function FastVideoView({
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.96fr)_minmax(340px,0.96fr)] gap-4 items-start">
         <div className="space-y-4">
           <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="text-white font-semibold">参考素材与已确认分镜</div>
-              <div className="text-xs text-zinc-500">
-                {[
-                  readyReferenceImages.length > 0 && `参考图 ${selectedReferenceCount}/${readyReferenceImages.length} 已选`,
-                  readyStoryboardScenes.length > 0 && `分镜 ${selectedSceneCount}/${readyStoryboardScenes.length} 已选`,
-                  readyReferenceVideos.length > 0 && `参考视频 ${selectedReferenceVideoCount}/${readyReferenceVideos.length} 已选`,
-                ].filter(Boolean).join(' · ')}
+            <div className="flex items-center justify-between gap-4 overflow-hidden">
+              <div className="text-white font-semibold flex items-center whitespace-nowrap overflow-hidden">
+                参考素材确认
+                <span className="ml-3 text-xs text-zinc-500 font-normal truncate">
+                  {[
+                    readyReferenceImages.length > 0 && `图 ${selectedReferenceCount}/${readyReferenceImages.length}已选`,
+                    readyStoryboardScenes.length > 0 && `分镜 ${selectedSceneCount}/${readyStoryboardScenes.length}已选`,
+                    readyReferenceVideos.length > 0 && `视频 ${selectedReferenceVideoCount}/${readyReferenceVideos.length}已选`,
+                    readyReferenceAudios.length > 0 && `音频 ${selectedReferenceAudioCount}/${readyReferenceAudios.length}已选`,
+                  ].filter(Boolean).join(' · ')}
+                </span>
               </div>
             </div>
             <div className="mt-2 text-xs text-zinc-500">
-              只有勾选的素材会传给 Seedance API。提示词中可用 <span className="text-sky-400">图片1</span> / <span className="text-violet-400">视频1</span> 引用对应素材。
+              只有勾选的素材会传给 Seedance API。提示词中可用 <span className="text-sky-400">图片1</span> / <span className="text-violet-400">视频1</span> / <span className="text-emerald-400">音频1</span> 引用对应素材。
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1 pr-1">
               {readyReferenceImages.map((reference, index) => (
@@ -1745,7 +1837,36 @@ export function FastVideoView({
                     </button>
                   </div>
                   <div className="mt-2 text-sm text-violet-300">视频{index + 1}</div>
-                  <div className="text-[11px] text-violet-500">参考视频</div>
+                  <div className="text-[11px] text-violet-500">{getFastReferenceVideoTypeLabel(video.referenceType)}</div>
+                </div>
+              ))}
+              {readyReferenceAudios.map((audio, index) => (
+                <div key={audio.id} className="shrink-0 w-32 xl:w-36">
+                  <div className="relative">
+                    <div className={`aspect-video rounded-xl overflow-hidden border bg-zinc-950 flex flex-col justify-center px-1 md:px-2 transition-colors ${isSelectedForVideo(audio.selectedForVideo) ? 'border-emerald-500/30' : 'border-zinc-800 opacity-65'}`}>
+                      <audio
+                        src={audio.audioUrl}
+                        controls
+                        controlsList="nodownload noplaybackrate"
+                        preload="metadata"
+                        className="w-full h-8"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onToggleReferenceAudioSelection(audio.id);
+                      }}
+                      className={`absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${isSelectedForVideo(audio.selectedForVideo) ? 'border-emerald-400/35 bg-emerald-500/20 text-emerald-100' : 'border-zinc-700/90 bg-zinc-950/86 text-zinc-400 hover:text-zinc-200'}`}
+                      title={isSelectedForVideo(audio.selectedForVideo) ? '已选中参与执行' : '未选中参与执行'}
+                    >
+                      {isSelectedForVideo(audio.selectedForVideo) ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <div className="mt-2 text-sm text-emerald-300">音频{index + 1}</div>
+                  <div className="text-[11px] text-emerald-500">{getFastReferenceAudioTypeLabel(audio.referenceType)}</div>
                 </div>
               ))}
             </div>
@@ -1767,6 +1888,7 @@ export function FastVideoView({
               value={videoPrompt.promptZh || videoPrompt.prompt}
               referenceItems={promptReferenceItems}
               videoReferenceItems={promptVideoReferenceItems}
+              audioReferenceItems={promptAudioReferenceItems}
               themeMode={themeMode}
               onChange={(nextValue) => onUpdatePrompt({ prompt: nextValue, promptZh: nextValue })}
             />
@@ -1815,7 +1937,7 @@ export function FastVideoView({
               <div className="text-right text-xs text-zinc-500">
                 {(executionConfig.executor === 'ark' ? 'Ark API' : '本地 CLI')}
                 {' · '}
-                {`画幅：${seedanceDraft.options.ratio} · 时长：${seedanceDraft.options.duration || 10}s · 分辨率：${seedanceDraft.options.resolution}`}
+                {`画幅：${seedanceDraft.options.ratio} · 时长：${seedanceDraft.options.duration || 10}s · ${seedanceDraft.options.resolution}`}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-3">
@@ -1881,7 +2003,7 @@ export function FastVideoView({
                 </StudioSelect>
               </label>
               <label className="block">
-                <span className={fieldLabelClassName}>时长（4-15 秒）</span>
+                <span className={fieldLabelClassName}>时长(4-15s)</span>
                 <input
                   type="number"
                   min={4}

@@ -55,6 +55,8 @@ export function isProjectEmpty(project: Project): boolean {
     && project.shots.length === 0;
   const fastEmpty = !(project.fastFlow.input.prompt || '').trim()
     && project.fastFlow.input.referenceImages.length === 0
+    && project.fastFlow.input.referenceVideos.length === 0
+    && project.fastFlow.input.referenceAudios.length === 0
     && project.fastFlow.scenes.length === 0
     && !project.fastFlow.videoPrompt
     && !project.fastFlow.task.taskId

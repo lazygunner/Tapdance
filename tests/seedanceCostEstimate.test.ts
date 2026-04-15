@@ -8,8 +8,9 @@ import { getSeedanceCostEstimate, resolveSeedanceEstimateDimensions } from '../s
 function createInput(overrides: Partial<FastVideoInput> = {}): FastVideoInput {
   return {
     prompt: '城市夜景',
-    referenceImages: [],
-    referenceVideos: [],
+    referenceImages: overrides.referenceImages ?? [],
+    referenceVideos: overrides.referenceVideos ?? [],
+    referenceAudios: overrides.referenceAudios ?? [],
     aspectRatio: '16:9',
     durationSec: 10,
     preferredSceneCount: 'auto',

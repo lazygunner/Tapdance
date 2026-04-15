@@ -57,6 +57,47 @@ test('normalizeFastVideoProject preserves parsed reference video metadata', () =
   });
 });
 
+test('normalizeFastVideoProject preserves parsed reference audio metadata', () => {
+  const normalized = normalizeFastVideoProject({
+    input: {
+      ...createEmptyFastVideoProject().input,
+      referenceAudios: [{
+        id: 'audio-1',
+        audioUrl: 'https://example.com/reference.mp3',
+        audioMeta: {
+          durationSec: 8.2,
+        },
+      }],
+    },
+  });
+
+  assert.deepEqual(normalized.input.referenceAudios[0].audioMeta, {
+    durationSec: 8.2,
+  });
+});
+
+test('normalizeFastVideoProject maps legacy audio-guided fast-flow template back to multi-image mode', () => {
+  const normalized = normalizeFastVideoProject({
+    input: {
+      ...createEmptyFastVideoProject().input,
+      referenceImages: [{
+        id: 'ref-1',
+        imageUrl: 'https://example.com/reference.png',
+      }],
+      referenceAudios: [{
+        id: 'audio-1',
+        audioUrl: 'https://example.com/reference.mp3',
+      }],
+    },
+    seedanceDraft: {
+      ...createDefaultFastSeedanceDraft(createEmptyFastVideoProject().input),
+      baseTemplateId: 'audio_guided',
+    },
+  });
+
+  assert.equal(normalized.seedanceDraft?.baseTemplateId, 'multi_image_reference');
+});
+
 test('fast video defaults to Ark executor and auto-audio overlay', () => {
   const project = createEmptyFastVideoProject();
   const draft = createDefaultFastSeedanceDraft(project.input);
@@ -291,4 +332,51 @@ test('syncFastFlowSeedanceDraft uses the first and last checked storyboard image
       { role: 'last_frame', urlOrData: 'https://example.com/scene-3.png' },
     ],
   );
+});
+
+test('syncFastFlowSeedanceDraft includes selected reference audios without changing fast-flow template logic', () => {
+  const project = createEmptyFastVideoProject();
+  project.input.prompt = '电子音乐节奏海报';
+  project.input.referenceImages = [
+    {
+      id: 'ref-1',
+      imageUrl: 'https://example.com/reference-1.png',
+      referenceType: 'style',
+      selectedForVideo: true,
+    },
+  ];
+  project.input.referenceAudios = [
+    {
+      id: 'audio-1',
+      audioUrl: 'https://example.com/reference-1.mp3',
+      referenceType: 'music',
+      description: '鼓点稳定',
+      selectedForVideo: true,
+    },
+    {
+      id: 'audio-2',
+      audioUrl: 'https://example.com/reference-2.mp3',
+      referenceType: 'effect',
+      selectedForVideo: false,
+    },
+  ];
+  project.videoPrompt = {
+    prompt: '最终视频提示词',
+    promptZh: '最终视频提示词',
+  };
+  project.seedanceDraft = {
+    ...createDefaultFastSeedanceDraft(project.input, project.videoPrompt.prompt),
+    baseTemplateId: 'multi_image_reference',
+  };
+
+  const draft = syncFastFlowSeedanceDraft(project);
+
+  assert.deepEqual(
+    draft.assets.map((asset) => ({ kind: asset.kind, role: asset.role, urlOrData: asset.urlOrData })),
+    [
+      { kind: 'image', role: 'reference_image', urlOrData: 'https://example.com/reference-1.png' },
+      { kind: 'audio', role: 'reference_audio', urlOrData: 'https://example.com/reference-1.mp3' },
+    ],
+  );
+  assert.equal(draft.options.generateAudio, true);
 });

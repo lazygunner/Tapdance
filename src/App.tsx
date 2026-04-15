@@ -417,6 +417,10 @@ export default function App() {
     handleUpdateFastReferenceVideo,
     handleRemoveFastReferenceVideo,
     handleToggleFastReferenceVideoSelection,
+    handleAddFastReferenceAudio,
+    handleUpdateFastReferenceAudio,
+    handleRemoveFastReferenceAudio,
+    handleToggleFastReferenceAudioSelection,
     handleGenerateFastPlan,
     handleUpdateFastScene,
     handleToggleFastSceneLock,
@@ -853,6 +857,9 @@ export default function App() {
           onUpdateReferenceVideo={handleUpdateFastReferenceVideo}
           onRemoveReferenceVideo={handleRemoveFastReferenceVideo}
           onToggleReferenceVideoSelection={handleToggleFastReferenceVideoSelection}
+          onAddReferenceAudio={handleAddFastReferenceAudio}
+          onUpdateReferenceAudio={handleUpdateFastReferenceAudio}
+          onRemoveReferenceAudio={handleRemoveFastReferenceAudio}
           onUpdateScene={handleUpdateFastScene}
           onGenerateSceneImage={handleGenerateFastSceneImage}
           onToggleSceneLock={handleToggleFastSceneLock}
@@ -867,6 +874,7 @@ export default function App() {
           onRefreshStatus={() => void handleRefreshFastVideoTask()}
           onCancelTask={() => void handleCancelFastVideoTask()}
           onToggleReferenceSelection={handleToggleFastReferenceSelection}
+          onToggleReferenceAudioSelection={handleToggleFastReferenceAudioSelection}
           onToggleSceneSelection={handleToggleFastSceneSelection}
         />
       )

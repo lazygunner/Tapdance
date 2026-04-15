@@ -17,6 +17,9 @@ export function inferFastFlowTemplateId(input: FastVideoInput, sceneCount: numbe
   if (input.referenceImages.some((item) => item.imageUrl.trim())) {
     return 'multi_image_reference';
   }
+  if (input.referenceVideos.some((item) => item.videoUrl.trim())) {
+    return 'multi_image_reference';
+  }
   if (sceneCount >= 2) {
     return 'first_last_frame';
   }

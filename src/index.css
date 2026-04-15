@@ -949,6 +949,19 @@ body {
   box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.22);
 }
 
+/* audio reference token inside the prompt editor overlay */
+.fast-prompt-audio-tag {
+  background: rgba(16, 185, 129, 0.14);
+  color: #a7f3d0;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.22);
+}
+
+.theme-light .fast-prompt-audio-tag {
+  background: rgba(5, 150, 105, 0.10);
+  color: #047857;
+  box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.22);
+}
+
 .fast-prompt-mention-panel {
   position: absolute;
   z-index: 30;

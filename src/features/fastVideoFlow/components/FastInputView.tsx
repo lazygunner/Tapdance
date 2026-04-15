@@ -1,13 +1,13 @@
-import { useState, type ChangeEvent, type ClipboardEvent, type ReactNode } from 'react';
-import { AlertTriangle, Clapperboard, HelpCircle, Image as ImageIcon, Settings2, Sparkles, Upload, Users, Video, X } from 'lucide-react';
+import { useCallback, useState, type ChangeEvent, type ClipboardEvent, type ReactNode } from 'react';
+import { AlertTriangle, Clapperboard, HelpCircle, Image as ImageIcon, Settings2, Sparkles, Upload, Users, Video, Volume2, X } from 'lucide-react';
 
-import type { FastReferenceImage, FastVideoInput } from '../types/fastTypes.ts';
+import type { FastReferenceAudio, FastReferenceImage, FastVideoInput } from '../types/fastTypes.ts';
 import { ClickPopover } from '../../../components/studio/ClickPopover.tsx';
 import { StudioPage, StudioPageHeader, StudioPanel, StudioSelect, StudioModal } from '../../../components/studio/StudioPrimitives.tsx';
 import { PortraitLibraryView } from '../../portraitLibrary/components/PortraitLibraryView.tsx';
 import { FAST_VIDEO_PROMPT_CONFIG } from '../../../config/fastVideoPrompts.ts';
 import { VideoUrlPreview, VIDEO_REFERENCE_CONSTRAINTS } from './VideoUrlPreview.tsx';
-import { uploadVideoToTos, isLikelyTosCorsError, isTosConfigComplete } from '../../../services/tosUploadService.ts';
+import { uploadFileToTos, uploadVideoToTos, isLikelyTosCorsError, isTosConfigComplete } from '../../../services/tosUploadService.ts';
 
 const REFERENCE_TYPE_OPTIONS: Array<{ value: NonNullable<FastReferenceImage['referenceType']>; label: string }> = [
   { value: 'scene', label: '场景参考图' },
@@ -16,6 +16,22 @@ const REFERENCE_TYPE_OPTIONS: Array<{ value: NonNullable<FastReferenceImage['ref
   { value: 'style', label: '风格参考图' },
   { value: 'other', label: '其他参考图' },
 ];
+
+const SUPPORTED_AUDIO_FILE_EXTENSIONS = new Set(['mp3', 'wav']);
+const SUPPORTED_AUDIO_FILE_TYPES = new Set(['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/wave', 'audio/x-wav']);
+const AUDIO_UPLOAD_ACCEPT = '.mp3,.wav,audio/mpeg,audio/mp3,audio/wav,audio/wave,audio/x-wav';
+const AUDIO_FORMAT_HINT = '仅支持 MP3 / WAV，M4A 需先转换后再上传。';
+
+function getFileExtension(name: string) {
+  const parts = name.split('.');
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : '';
+}
+
+function isSupportedAudioFile(file: File) {
+  const extension = getFileExtension(file.name);
+  const mimeType = String(file.type || '').trim().toLowerCase();
+  return SUPPORTED_AUDIO_FILE_EXTENSIONS.has(extension) || SUPPORTED_AUDIO_FILE_TYPES.has(mimeType);
+}
 
 function getReferenceTypeLabel(referenceType?: FastReferenceImage['referenceType']) {
   return REFERENCE_TYPE_OPTIONS.find((option) => option.value === (referenceType || 'other'))?.label || '其他参考图';
@@ -72,6 +88,9 @@ type Props = {
   onUpdateReferenceVideo: (referenceId: string, patch: Partial<import('../types/fastTypes.ts').FastReferenceVideo>) => void;
   onRemoveReferenceVideo: (referenceId: string) => void;
   onToggleReferenceVideoSelection: (referenceId: string) => void;
+  onAddReferenceAudio: () => void;
+  onUpdateReferenceAudio: (referenceId: string, patch: Partial<FastReferenceAudio>) => void;
+  onRemoveReferenceAudio: (referenceId: string) => void;
   onTosUploadConfig?: import('../../../types.ts').TosConfig;
   onOpenApiConfig?: () => void;
   operationPanel?: ReactNode;
@@ -109,6 +128,9 @@ export function FastInputView({
   onUpdateReferenceVideo,
   onRemoveReferenceVideo,
   onToggleReferenceVideoSelection,
+  onAddReferenceAudio,
+  onUpdateReferenceAudio,
+  onRemoveReferenceAudio,
   onTosUploadConfig,
   onOpenApiConfig,
   operationPanel,
@@ -116,6 +138,64 @@ export function FastInputView({
 }: Props) {
   const [portraitPickerTargetId, setPortraitPickerTargetId] = useState<string | null>(null);
   const [uploadingVideoIds, setUploadingVideoIds] = useState<Record<string, boolean>>({});
+  const [uploadingAudioIds, setUploadingAudioIds] = useState<Record<string, boolean>>({});
+  const [audioValidationErrors, setAudioValidationErrors] = useState<Record<string, string>>({});
+
+  const MAX_AUDIO_DURATION_SEC = 15;
+
+  const clearAudioValidationError = useCallback((referenceId: string) => {
+    setAudioValidationErrors(prev => {
+      if (!prev[referenceId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[referenceId];
+      return next;
+    });
+  }, []);
+
+  const validateAudioFileFormat = useCallback((referenceId: string, file: File): boolean => {
+    if (isSupportedAudioFile(file)) {
+      clearAudioValidationError(referenceId);
+      return true;
+    }
+
+    setAudioValidationErrors(prev => ({
+      ...prev,
+      [referenceId]: `上传音频格式不受支持：${file.name}。${AUDIO_FORMAT_HINT}`,
+    }));
+    return false;
+  }, [clearAudioValidationError]);
+
+  const validateAudioDuration = useCallback((referenceId: string, durationSec: number, audioUrl: string): boolean => {
+    if (durationSec > MAX_AUDIO_DURATION_SEC) {
+      setAudioValidationErrors(prev => ({
+        ...prev,
+        [referenceId]: `音频时长 ${durationSec.toFixed(1)}s 超过上限 ${MAX_AUDIO_DURATION_SEC}s，请裁剪后重新上传。`,
+      }));
+      onUpdateReferenceAudio(referenceId, { audioUrl: '', audioMeta: null });
+      return false;
+    }
+    clearAudioValidationError(referenceId);
+    return true;
+  }, [clearAudioValidationError, onUpdateReferenceAudio]);
+
+  const checkUploadedAudioDuration = useCallback((referenceId: string, url: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const audio = new Audio();
+      audio.preload = 'metadata';
+      audio.onloadedmetadata = () => {
+        const ok = validateAudioDuration(referenceId, audio.duration, url);
+        audio.src = '';
+        resolve(ok);
+      };
+      audio.onerror = () => {
+        audio.src = '';
+        resolve(true);
+      };
+      audio.src = url;
+    });
+  }, [validateAudioDuration]);
   const [tosCorsModalState, setTosCorsModalState] = useState<{ origin: string; message: string } | null>(null);
   const canGoDirectToVideo = Boolean(input.prompt.trim() || hasPlan);
 
@@ -152,7 +232,7 @@ export function FastInputView({
           title="极速视频输入"
           description={(
             <p>
-              输入一句提示词和可选多张参考图，系统会自动拆成 1-2 张分镜图提示词，再生成最终的 Seedance 视频提示词草稿。
+              输入一句提示词和可选参考图、参考视频、参考音频，系统会自动拆成 1-2 张分镜图提示词，再生成最终的 Seedance 视频提示词草稿。
             </p>
           )}
           actions={(
@@ -567,6 +647,200 @@ export function FastInputView({
                   <div>
                     <div className="text-sm text-[var(--studio-text)]">新增参考视频区域</div>
                     <div className="mt-1 text-xs text-[var(--studio-dim)]">可选填视频 URL 作为生成参考，上限 15s 内。</div>
+                  </div>
+                  <div className="studio-button studio-button-secondary">
+                    <Upload className="w-4 h-4" />
+                    添加区域
+                  </div>
+                </button>
+              )}
+            </div>
+          </StudioPanel>
+
+          <StudioPanel className="p-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1 text-sm font-medium text-[var(--studio-text)]">
+                  参考音频
+                </div>
+                <div className="mt-1 text-xs leading-5 text-[var(--studio-dim)]">可选，支持外链音频或上传到同一套云端对象存储。适合给节奏、对白、音乐或音效做参考驱动。</div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-black/10 p-4">
+              {(input.referenceAudios || []).length > 0 ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4">
+                    {(input.referenceAudios || []).map((reference, index) => (
+                      <StudioPanel key={reference.id} className="p-4" tone="soft">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm text-[var(--studio-text)]">参考音频 {index + 1}</div>
+                            <div className="mt-1 text-xs text-[var(--studio-dim)]">仅支持有效外链。如果是本地音频，当前上传仅支持 MP3 / WAV。</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveReferenceAudio(reference.id)}
+                            className="rounded-lg p-2 text-[var(--studio-dim)] transition-colors hover:bg-white/6 hover:text-[var(--studio-text)]"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="mt-3 rounded-xl border border-white/10 bg-black/30 px-3 py-3">
+                          {reference.audioUrl ? (
+                            <audio
+                              key={reference.audioUrl}
+                              src={reference.audioUrl}
+                              controls
+                              preload="metadata"
+                              className="w-full"
+                              onLoadedMetadata={(event) => {
+                                const duration = event.currentTarget.duration;
+                                if (Number.isFinite(duration)) {
+                                  if (!validateAudioDuration(reference.id, duration, reference.audioUrl)) {
+                                    return;
+                                  }
+                                }
+                                onUpdateReferenceAudio(reference.id, {
+                                  audioMeta: Number.isFinite(duration)
+                                    ? { durationSec: Math.max(0, duration) }
+                                    : null,
+                                });
+                              }}
+                              onError={() => {
+                                onUpdateReferenceAudio(reference.id, {
+                                  audioMeta: null,
+                                });
+                              }}
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center gap-2 py-5 text-xs text-zinc-500">
+                              <Volume2 className="h-4 w-4" />
+                              暂无音频预览
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/6 px-3 py-2 text-xs leading-5 text-emerald-200">
+                          {AUDIO_FORMAT_HINT}
+                        </div>
+
+                        {audioValidationErrors[reference.id] && (
+                          <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/8 px-3 py-2.5 text-xs leading-5 text-red-300">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
+                            {audioValidationErrors[reference.id]}
+                          </div>
+                        )}
+
+                        <label className="block mt-3">
+                          <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">音频外链地址</span>
+                          <div className="flex items-center gap-2 mt-2">
+                            <input
+                              value={reference.audioUrl}
+                              onChange={(event) => {
+                                clearAudioValidationError(reference.id);
+                                onUpdateReferenceAudio(reference.id, {
+                                  audioUrl: event.target.value,
+                                  audioMeta: null,
+                                });
+                              }}
+                              placeholder="粘贴 http:// 或 https:// 开头的 mp3/wav 音频链接"
+                              className="studio-input flex-1"
+                            />
+                            {!isTosConfigComplete(onTosUploadConfig) ? (
+                              <button
+                                type="button"
+                                onClick={onOpenApiConfig}
+                                className="studio-button studio-button-secondary shrink-0 text-amber-500 hover:text-amber-600"
+                              >
+                                <Settings2 className="w-4 h-4" />
+                                去配置云端 KEY
+                              </button>
+                            ) : (
+                              <label className={`studio-button studio-button-secondary shrink-0 ${uploadingAudioIds[reference.id] ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                                {uploadingAudioIds[reference.id] ? (
+                                  <img src="./assets/loading.gif" alt="" className="w-4 h-4" />
+                                ) : (
+                                  <Upload className="w-4 h-4" />
+                                )}
+                                {uploadingAudioIds[reference.id] ? '正在上传...' : '上传到云端'}
+                                {!uploadingAudioIds[reference.id] && (
+                                  <input
+                                    type="file"
+                                    accept={AUDIO_UPLOAD_ACCEPT}
+                                    className="hidden"
+                                    disabled={uploadingAudioIds[reference.id]}
+                                    onChange={async (event) => {
+                                      const file = event.target.files?.[0];
+                                      if (!file) return;
+                                      if (!validateAudioFileFormat(reference.id, file)) {
+                                        event.target.value = '';
+                                        return;
+                                      }
+                                      try {
+                                        setUploadingAudioIds(prev => ({ ...prev, [reference.id]: true }));
+                                        const { url } = await uploadFileToTos(file, onTosUploadConfig, {
+                                          mediaLabel: '音频',
+                                          defaultPrefix: 'reference-audios',
+                                        });
+                                        const isValid = await checkUploadedAudioDuration(reference.id, url);
+                                        if (!isValid) return;
+                                        onUpdateReferenceAudio(reference.id, { audioUrl: url, audioMeta: null });
+                                      } catch (err) {
+                                        console.error(err);
+                                        if (isLikelyTosCorsError(err)) {
+                                          setTosCorsModalState({
+                                            origin: typeof window !== 'undefined' ? window.location.origin : '',
+                                            message: err.message,
+                                          });
+                                        } else {
+                                          alert('上传音频失败: ' + (err instanceof Error ? err.message : String(err)));
+                                        }
+                                      } finally {
+                                        setUploadingAudioIds(prev => ({ ...prev, [reference.id]: false }));
+                                        event.target.value = '';
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </label>
+                            )}
+                          </div>
+                        </label>
+
+                        <label className="block mt-3">
+                          <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">参考音频说明（可选）</span>
+                          <textarea
+                            value={reference.description || ''}
+                            onChange={(event) => onUpdateReferenceAudio(reference.id, { description: event.target.value })}
+                            rows={2}
+                            placeholder="描述希望参考的节奏、对白、音乐氛围或音效特征..."
+                            className="studio-textarea mt-2"
+                          />
+                        </label>
+                      </StudioPanel>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={onAddReferenceAudio}
+                    className="studio-button studio-button-secondary"
+                    disabled={(input.referenceAudios || []).length >= 3}
+                  >
+                    <Upload className="w-4 h-4" />
+                    {(input.referenceAudios || []).length >= 3 ? '最多支持添加 3 个音频参考' : '继续添加参考音频'}
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={onAddReferenceAudio} className="flex w-full cursor-pointer flex-col items-center justify-center gap-3 py-10 text-center">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-300 flex items-center justify-center">
+                    <Volume2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="text-sm text-[var(--studio-text)]">新增参考音频区域</div>
+                    <div className="mt-1 text-xs text-[var(--studio-dim)]">可选填音频 URL 或上传到云端，上传仅支持 MP3 / WAV。</div>
                   </div>
                   <div className="studio-button studio-button-secondary">
                     <Upload className="w-4 h-4" />

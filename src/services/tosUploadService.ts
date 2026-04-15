@@ -84,17 +84,30 @@ export type TosUploadFileMeta = {
   type?: string;
 };
 
+const MIME_EXTENSION_OVERRIDES: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/x-wav': 'wav',
+  'video/quicktime': 'mov',
+};
+
 function getFileExtension(file: TosUploadFileMeta): string {
   const nameParts = file.name.split('.');
   if (nameParts.length > 1) {
     return nameParts[nameParts.length - 1].toLowerCase();
   }
-  const typeParts = String(file.type || '').split('/');
+  const normalizedType = String(file.type || '').trim().toLowerCase();
+  if (normalizedType && MIME_EXTENSION_OVERRIDES[normalizedType]) {
+    return MIME_EXTENSION_OVERRIDES[normalizedType];
+  }
+  const typeParts = normalizedType.split('/');
   return typeParts.length > 1 ? typeParts[1] : 'mp4';
 }
 
-export function buildTosObjectKey(config: TosConfig, file: TosUploadFileMeta): string {
-  const prefix = (config.pathPrefix || 'reference-videos').replace(/\/+$/u, '');
+export function buildTosObjectKey(config: TosConfig, file: TosUploadFileMeta, defaultPrefix = 'reference-videos'): string {
+  const prefix = (config.pathPrefix || defaultPrefix).replace(/\/+$/u, '');
   const id = generateId();
   const ext = getFileExtension(file);
   return `${prefix}/${id}.${ext}`;
@@ -107,11 +120,16 @@ export function resolveTosUrl(config: TosConfig, objectKey: string): string {
   return `${url.protocol}//${config.bucket}.${url.host}/${objectKey}`;
 }
 
-export async function uploadVideoToTos(
+export async function uploadFileToTos(
   file: File,
   config: TosConfig,
+  options?: {
+    mediaLabel?: string;
+    defaultPrefix?: string;
+  },
   onProgress?: (percent: number) => void,
 ): Promise<{ url: string; key: string }> {
+  const mediaLabel = options?.mediaLabel || '文件';
   try {
     if (typeof window !== 'undefined' && typeof window.electronAPI?.uploadVideoToTos === 'function' && window.electronAPI.isElectron) {
       const result = await window.electronAPI.uploadVideoToTos({
@@ -125,7 +143,7 @@ export async function uploadVideoToTos(
     }
 
     const client = createTosClient(config);
-    const objectKey = buildTosObjectKey(config, file);
+    const objectKey = buildTosObjectKey(config, file, options?.defaultPrefix || 'reference-videos');
 
     // Generate a presigned PUT URL using the SDK (correct slash handling in path)
     const presignedUrl = (client as any).getPreSignedUrl({
@@ -160,10 +178,21 @@ export async function uploadVideoToTos(
     if (err instanceof TypeError && /Failed to fetch/i.test(message)) {
       const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
       const originHint = currentOrigin ? `请将 ${currentOrigin} 加入 Bucket CORS 的 AllowedOrigin。` : '请将当前应用域名加入 Bucket CORS 的 AllowedOrigin。';
-      throw new TosUploadError(`上传视频失败：浏览器无法直传到 TOS，疑似 Bucket 跨域配置缺失。${originHint}`, err, 'cors');
+      throw new TosUploadError(`上传${mediaLabel}失败：浏览器无法直传到 TOS，疑似 Bucket 跨域配置缺失。${originHint}`, err, 'cors');
     }
-    throw new TosUploadError(`上传视频失败：${message}`, err);
+    throw new TosUploadError(`上传${mediaLabel}失败：${message}`, err);
   }
+}
+
+export async function uploadVideoToTos(
+  file: File,
+  config: TosConfig,
+  onProgress?: (percent: number) => void,
+) {
+  return uploadFileToTos(file, config, {
+    mediaLabel: '视频',
+    defaultPrefix: 'reference-videos',
+  }, onProgress);
 }
 
 /** Check if TOS config is complete enough to upload */

@@ -2,7 +2,7 @@ import type { ChangeEvent, ReactNode } from 'react';
 
 import type { ApiSettings, Project } from '../../../types.ts';
 import type { WorkspaceThemeMode, WorkspaceView } from '../../../components/studio/WorkspaceViews.tsx';
-import type { SeedanceHealth, FastReferenceImage, FastReferenceVideo, FastSceneDraft, FastVideoInput, FastVideoPromptDraft } from '../types/fastTypes.ts';
+import type { SeedanceHealth, FastReferenceAudio, FastReferenceImage, FastReferenceVideo, FastSceneDraft, FastVideoInput, FastVideoPromptDraft } from '../types/fastTypes.ts';
 import type { SeedanceDraft } from '../../seedance/types.ts';
 import { FastInputView } from './FastInputView.tsx';
 import { FastStoryboardView } from './FastStoryboardView.tsx';
@@ -39,6 +39,9 @@ type FastFlowWorkspaceProps = {
   onUpdateReferenceVideo: (referenceId: string, patch: Partial<FastReferenceVideo>) => void;
   onRemoveReferenceVideo: (referenceId: string) => void;
   onToggleReferenceVideoSelection: (referenceId: string) => void;
+  onAddReferenceAudio: () => void;
+  onUpdateReferenceAudio: (referenceId: string, patch: Partial<FastReferenceAudio>) => void;
+  onRemoveReferenceAudio: (referenceId: string) => void;
   onUpdateScene: (sceneId: string, patch: Partial<FastSceneDraft>) => void;
   onGenerateSceneImage: (sceneId: string, mode: 'text-only' | 'previous-scene') => void | Promise<void>;
   onToggleSceneLock: (sceneId: string) => void;
@@ -56,6 +59,7 @@ type FastFlowWorkspaceProps = {
   onRefreshStatus: () => void | Promise<void>;
   onCancelTask: () => void | Promise<void>;
   onToggleReferenceSelection: (referenceId: string) => void;
+  onToggleReferenceAudioSelection: (referenceId: string) => void;
   onToggleSceneSelection: (sceneId: string) => void;
 };
 
@@ -88,6 +92,9 @@ export function FastFlowWorkspace({
   onUpdateReferenceVideo,
   onRemoveReferenceVideo,
   onToggleReferenceVideoSelection,
+  onAddReferenceAudio,
+  onUpdateReferenceAudio,
+  onRemoveReferenceAudio,
   onUpdateScene,
   onGenerateSceneImage,
   onToggleSceneLock,
@@ -102,6 +109,7 @@ export function FastFlowWorkspace({
   onRefreshStatus,
   onCancelTask,
   onToggleReferenceSelection,
+  onToggleReferenceAudioSelection,
   onToggleSceneSelection,
 }: FastFlowWorkspaceProps) {
   if (view === 'fastInput') {
@@ -122,6 +130,9 @@ export function FastFlowWorkspace({
         onUpdateReferenceVideo={onUpdateReferenceVideo}
         onRemoveReferenceVideo={onRemoveReferenceVideo}
         onToggleReferenceVideoSelection={onToggleReferenceVideoSelection}
+        onAddReferenceAudio={onAddReferenceAudio}
+        onUpdateReferenceAudio={onUpdateReferenceAudio}
+        onRemoveReferenceAudio={onRemoveReferenceAudio}
         onTosUploadConfig={tosConfig}
         onOpenApiConfig={onOpenApiConfig}
         operationPanel={operationPanel}
@@ -179,6 +190,7 @@ export function FastFlowWorkspace({
         onPreviewImage={(url) => onPreviewImage(url)}
         onToggleReferenceSelection={onToggleReferenceSelection}
         onToggleReferenceVideoSelection={onToggleReferenceVideoSelection}
+        onToggleReferenceAudioSelection={onToggleReferenceAudioSelection}
         onToggleSceneSelection={onToggleSceneSelection}
         themeMode={themeMode}
         healthPanel={(

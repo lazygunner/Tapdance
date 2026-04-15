@@ -25,13 +25,19 @@ export function ImagePreviewModal({
           <div className="relative max-w-7xl max-h-full flex flex-col items-center justify-center" onClick={(event) => event.stopPropagation()}>
             <div className="absolute top-4 right-4 flex gap-2 z-10">
               <button
-                onClick={() => onDownload(previewImage, 'generated-image.png')}
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onDownload(previewImage, 'generated-image.png');
+                }}
                 className="p-2 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-sm transition-colors"
                 title="下载图片"
               >
                 <Upload className="w-5 h-5 rotate-180" />
               </button>
               <button
+                type="button"
                 onClick={onClose}
                 className="p-2 bg-black/50 hover:bg-black/80 text-white rounded-full backdrop-blur-sm transition-colors"
                 title="关闭预览"

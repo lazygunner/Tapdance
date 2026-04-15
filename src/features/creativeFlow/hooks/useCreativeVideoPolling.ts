@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 
 import { getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { fetchSeedanceTask } from '../../fastVideoFlow/services/seedanceBridgeClient.ts';
-import { mapRemoteSeedanceStatus } from '../../fastVideoFlow/utils/fastVideoTask.ts';
+import { buildSeedanceCliFailure, mapRemoteSeedanceStatus } from '../../fastVideoFlow/utils/fastVideoTask.ts';
 import type { Project } from '../../../types.ts';
 import { getMockVideoUrl } from '../../../services/mockMedia.ts';
 import { getShotVideoOperationKey, getTransitionVideoOperationKey } from '../utils/creativeFlowHelpers.ts';
@@ -73,9 +73,7 @@ async function pollSeedanceOperation(operation: any, seedanceBridgeUrl: string):
       }
 
       if (mappedStatus === 'failed') {
-        const raw = result?.raw as Record<string, any> | undefined;
-        const errMsg = raw?.error?.message || raw?.error || '视频生成失败。';
-        return { done: true, error: String(errMsg) };
+        return { done: true, error: buildSeedanceCliFailure(result?.raw, '视频生成失败。').detail };
       }
 
       if (mappedStatus === 'cancelled') {

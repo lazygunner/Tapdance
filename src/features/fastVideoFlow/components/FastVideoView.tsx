@@ -1235,7 +1235,7 @@ function SeedanceTaskLoadingDisplay({ task }: { task: SeedanceTask }) {
       ? '正在等待即梦开始生成'
       : '正在同步即梦生成进度';
   const description = task.status === 'submitting'
-    ? '系统正在整理分镜图、写入本地临时文件，并调用 dreamina multimodal2video 发起任务。'
+    ? '系统正在整理素材并写入本地临时文件，然后调用 dreamina text2video 或 multimodal2video 发起任务。'
     : queue.label === '排队中'
       ? '任务已提交，当前处于队列等待阶段。页面会自动刷新状态，开始生成后会继续同步并在完成后下载视频。'
       : '任务已进入处理阶段，系统会持续同步云端状态，并在成功后自动下载视频文件。';
@@ -1688,7 +1688,7 @@ export function FastVideoView({
             <p className="text-sm uppercase tracking-[0.28em] text-rose-400/80">Seedance Execution</p>
             <h2 className="text-2xl xl:text-3xl font-bold text-white mt-2">视频生成</h2>
             <p className="text-sm text-zinc-400 mt-2 max-w-3xl">
-              使用已确认的分镜图与视频提示词提交 Seedance。支持 Ark API 与本地 `dreamina multimodal2video` 两种执行器。
+              使用已确认的素材与视频提示词提交 Seedance。支持 Ark API 与本地 `dreamina text2video / multimodal2video` 两种执行器。
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">

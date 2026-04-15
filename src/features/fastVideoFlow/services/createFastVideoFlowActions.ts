@@ -29,10 +29,12 @@ import { validateSeedanceDraft } from '../../seedance/services/seedanceDraft.ts'
 import type { SeedanceBaseTemplateId, SeedanceDraft } from '../../seedance/types.ts';
 import { SEEDANCE_TEMPLATE_REGISTRY } from '../../seedance/config/seedanceTemplateRegistry.ts';
 import {
+  buildSeedanceCliFailure,
   buildFastProjectName,
   getFastVideoTaskId,
   inferFastFlowTemplateId,
   isSeedanceAssetServiceUnavailable,
+  isSeedanceConcurrencyLimitError,
   isSeedanceRealPersonRejection,
   mapRemoteSeedanceStatus,
   resolveSeedanceFinishedAt,
@@ -685,12 +687,6 @@ export function createFastVideoFlowActions({
   };
 
   const handleUpdateFastExecutionConfig = (patch: Partial<Project['fastFlow']['executionConfig']>) => {
-    const seedancePatch = {
-      ...(patch.executor ? { defaultExecutor: patch.executor } : {}),
-      ...(patch.cliModelVersion ? { cliModelVersion: patch.cliModelVersion } : {}),
-      ...(typeof patch.pollIntervalSec === 'number' ? { pollIntervalSec: patch.pollIntervalSec } : {}),
-    };
-
     setFastFlow((current) => ({
       ...current,
       executionConfig: {
@@ -702,7 +698,9 @@ export function createFastVideoFlowActions({
       ...prev,
       seedance: {
         ...prev.seedance,
-        ...seedancePatch,
+        ...(patch.executor ? { defaultExecutor: patch.executor } : {}),
+        ...(patch.cliModelVersion ? { cliModelVersion: patch.cliModelVersion } : {}),
+        ...(typeof patch.pollIntervalSec === 'number' ? { pollIntervalSec: patch.pollIntervalSec } : {}),
       },
     }));
   };
@@ -880,7 +878,7 @@ export function createFastVideoFlowActions({
           remoteStatus: result.genStatus || current.task.remoteStatus,
           queueStatus: result.queueInfo?.queue_status || current.task.queueStatus,
           raw: result.raw,
-          error: normalizedStatus === 'failed' ? 'Seedance 任务失败，请查看日志。' : '',
+          error: normalizedStatus === 'failed' ? buildSeedanceCliFailure(result.raw).detail : '',
           videoUrl: persistedVideo?.url || current.task.videoUrl,
           videoStorageKey: '',
           lastCheckedAt: nowIso,
@@ -988,9 +986,11 @@ export function createFastVideoFlowActions({
 
   const handleSubmitFastVideo = async () => {
     const draft = syncFastFlowSeedanceDraft(project.fastFlow);
+    const submitExecutor = project.fastFlow.executionConfig.executor;
     const validation = validateSeedanceDraft(draft);
-    const cliExtraErrors = project.fastFlow.executionConfig.executor === 'cli' && draft.assets.filter((asset) => asset.kind === 'image').length === 0
-      ? ['CLI 执行器至少需要 1 张图片素材。']
+    const cliVisualAssetCount = draft.assets.filter((asset) => asset.kind === 'image' || asset.kind === 'video').length;
+    const cliExtraErrors = submitExecutor === 'cli' && draft.baseTemplateId !== 'free_text' && cliVisualAssetCount === 0
+      ? ['CLI 执行器至少需要 1 个图片或视频素材。']
       : [];
     const submitErrors = [...validation.errors, ...cliExtraErrors];
     if (submitErrors.length > 0) {
@@ -1008,7 +1008,7 @@ export function createFastVideoFlowActions({
       ...current,
       task: {
         ...current.task,
-        provider: current.executionConfig.executor,
+        provider: submitExecutor,
         status: 'submitting',
         error: '',
         startedAt: submitStartedAt,
@@ -1027,9 +1027,9 @@ export function createFastVideoFlowActions({
           ...current,
           task: {
             ...current.task,
-            provider: current.executionConfig.executor,
+            provider: submitExecutor,
             taskId: mockTaskId,
-            submitId: current.executionConfig.executor === 'cli' ? mockTaskId : '',
+            submitId: submitExecutor === 'cli' ? mockTaskId : '',
             status: 'completed',
             remoteStatus: 'success',
             queueStatus: 'MockDone',
@@ -1044,7 +1044,7 @@ export function createFastVideoFlowActions({
         return;
       }
 
-      if (project.fastFlow.executionConfig.executor === 'ark') {
+      if (submitExecutor === 'ark') {
         const submitRequestLog = buildSeedanceSubmitLogRequest(draft, 'ark');
         const arkModelMeta = getSeedanceArkModelMeta(project.fastFlow.executionConfig.apiModelKey);
         const result = await createSeedanceTask(draft, project.fastFlow.executionConfig.apiModelKey);
@@ -1082,11 +1082,21 @@ export function createFastVideoFlowActions({
           .filter((asset) => asset.kind === 'image')
           .map((asset) => asset.urlOrData)
           .filter(Boolean);
+        const videoSources = draft.assets
+          .filter((asset) => asset.kind === 'video')
+          .map((asset) => asset.urlOrData)
+          .filter(Boolean);
+        const audioSources = draft.assets
+          .filter((asset) => asset.kind === 'audio')
+          .map((asset) => asset.urlOrData)
+          .filter(Boolean);
         const submitRequestLog = buildSeedanceSubmitLogRequest(draft, 'cli');
         const result = await submitSeedanceTask({
           projectId: project.id,
           prompt: draft.prompt.rawPrompt,
           imageSources,
+          videoSources,
+          audioSources,
           options: {
             modelVersion: project.fastFlow.executionConfig.cliModelVersion,
             ratio: draft.options.ratio === 'adaptive' || draft.options.ratio === '3:4' || draft.options.ratio === '21:9'
@@ -1097,6 +1107,14 @@ export function createFastVideoFlowActions({
           },
           baseUrl: apiSettings.seedance.bridgeUrl,
         });
+        const submitStatus = mapRemoteSeedanceStatus(result.genStatus);
+        if (submitStatus === 'failed') {
+          const failure = buildSeedanceCliFailure(result.raw, '提交 Seedance 失败。');
+          const submitError = new Error(failure.detail);
+          (submitError as any).userMessage = failure.userMessage;
+          (submitError as any).response = result;
+          throw submitError;
+        }
 
         appendSeedanceLog({
           operation: 'seedanceSubmit',
@@ -1105,6 +1123,8 @@ export function createFastVideoFlowActions({
           request: {
             ...submitRequestLog,
             imageCount: imageSources.length,
+            videoCount: videoSources.length,
+            audioCount: audioSources.length,
             ratio: draft.options.ratio,
             duration: draft.options.duration || project.fastFlow.input.durationSec,
             resolution: draft.options.resolution,
@@ -1135,12 +1155,17 @@ export function createFastVideoFlowActions({
     } catch (error: any) {
       console.error('Failed to submit fast video task:', error);
       const errorMessage = error?.message || '提交 Seedance 失败。';
-      const submitExecutor = project.fastFlow.executionConfig.executor;
+      const userMessage = error?.userMessage || (
+        isSeedanceConcurrencyLimitError(errorMessage)
+          ? '视频提交失败：当前并发任务数已达上限，请等待已有任务完成后重试。'
+          : '视频提交失败，请检查当前提示词、参考图或执行器配置后重试。'
+      );
       appendSeedanceLog({
         operation: 'seedanceSubmit',
         status: 'error',
         executor: submitExecutor,
         request: buildSeedanceSubmitLogRequest(draft, submitExecutor),
+        response: error?.response,
         error: errorMessage,
       });
       setFastFlow((current) => ({
@@ -1148,6 +1173,10 @@ export function createFastVideoFlowActions({
         task: {
           ...current.task,
           status: 'failed',
+          submitId: typeof error?.response?.submitId === 'string' ? error.response.submitId : current.task.submitId,
+          remoteStatus: typeof error?.response?.genStatus === 'string' ? error.response.genStatus : current.task.remoteStatus,
+          queueStatus: typeof error?.response?.genStatus === 'string' ? error.response.genStatus : current.task.queueStatus,
+          raw: error?.response?.raw ?? current.task.raw,
           error: errorMessage,
           lastCheckedAt: new Date().toISOString(),
           startedAt: current.task.startedAt || submitStartedAt,
@@ -1172,7 +1201,7 @@ export function createFastVideoFlowActions({
         openSeedanceErrorModal({
           eyebrow: 'Seedance',
           title: '提交 Seedance 失败',
-          message: '视频提交失败，请检查当前提示词、参考图或执行器配置后重试。',
+          message: userMessage,
           detail: errorMessage,
         });
       }

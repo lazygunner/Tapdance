@@ -16,6 +16,7 @@ import { createSeedanceTask, deleteSeedanceTask } from '../../seedance/services/
 import { submitSeedanceTask } from '../../fastVideoFlow/services/seedanceBridgeClient.ts';
 import type { SeedanceDraft } from '../../seedance/types.ts';
 import { buildShotSeedanceDraft, buildTransitionSeedanceDraft } from './creativeFlowSeedanceDraft.ts';
+import { buildSeedanceCliFailure, mapRemoteSeedanceStatus } from '../../fastVideoFlow/utils/fastVideoTask.ts';
 import {
   buildDualModeVideoPrompts,
   getShotImagePromptBySource,
@@ -665,6 +666,12 @@ export function createCreativeFlowActions({
           },
           baseUrl: apiSettings.seedance.bridgeUrl,
         });
+        if (mapRemoteSeedanceStatus(result.genStatus) === 'failed') {
+          const failure = buildSeedanceCliFailure(result.raw, '启动视频生成失败。');
+          const submitError = new Error(failure.detail);
+          (submitError as any).userMessage = failure.userMessage;
+          throw submitError;
+        }
         operation = { provider: 'cli', taskId: result.submitId, submitId: result.submitId };
         appendSeedanceLog({
           operation: 'seedanceSubmit',
@@ -727,7 +734,7 @@ export function createCreativeFlowActions({
       if (isPermissionError(error)) {
         setHasKey(false);
       } else {
-        alert('启动视频生成失败。');
+        alert(error?.userMessage || error?.message || '启动视频生成失败。');
       }
     }
   };
@@ -924,6 +931,12 @@ export function createCreativeFlowActions({
           },
           baseUrl: apiSettings.seedance.bridgeUrl,
         });
+        if (mapRemoteSeedanceStatus(result.genStatus) === 'failed') {
+          const failure = buildSeedanceCliFailure(result.raw, '启动转场视频生成失败。');
+          const submitError = new Error(failure.detail);
+          (submitError as any).userMessage = failure.userMessage;
+          throw submitError;
+        }
         operation = { provider: 'cli', taskId: result.submitId, submitId: result.submitId };
         appendSeedanceLog({
           operation: 'seedanceSubmit',
@@ -991,7 +1004,7 @@ export function createCreativeFlowActions({
       if (isPermissionError(error)) {
         setHasKey(false);
       } else {
-        alert('启动转场视频生成失败。');
+        alert(error?.userMessage || error?.message || '启动转场视频生成失败。');
       }
     }
   };

@@ -276,10 +276,14 @@ function getMimeExtension(mimeType, kind) {
   if (normalized.includes('webp')) return 'webp';
   if (normalized.includes('gif')) return 'gif';
   if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
+  if (normalized.includes('mpeg') || normalized.includes('mp3')) return 'mp3';
+  if (normalized.includes('wav') || normalized.includes('wave')) return 'wav';
   if (normalized.includes('mp4')) return 'mp4';
   if (normalized.includes('quicktime')) return 'mov';
   if (normalized.includes('webm')) return 'webm';
-  return kind === 'video' ? 'mp4' : 'png';
+  if (kind === 'video') return 'mp4';
+  if (kind === 'audio') return 'mp3';
+  return 'png';
 }
 
 function inferMimeTypeFromSourceUrl(sourceUrl, kind) {
@@ -289,9 +293,17 @@ function inferMimeTypeFromSourceUrl(sourceUrl, kind) {
     if (inferredType && inferredType !== 'application/octet-stream') {
       return inferredType;
     }
-    return kind === 'video' ? 'video/mp4' : 'image/png';
+    return kind === 'video'
+      ? 'video/mp4'
+      : kind === 'audio'
+        ? 'audio/mpeg'
+        : 'image/png';
   } catch {
-    return kind === 'video' ? 'video/mp4' : 'image/png';
+    return kind === 'video'
+      ? 'video/mp4'
+      : kind === 'audio'
+        ? 'audio/mpeg'
+        : 'image/png';
   }
 }
 
@@ -299,10 +311,18 @@ function validateAssetMimeType(kind, mimeType) {
   const normalized = String(mimeType || '').toLowerCase();
   const isExpectedType = kind === 'video'
     ? normalized.startsWith('video/')
-    : normalized.startsWith('image/');
+    : kind === 'audio'
+      ? normalized.startsWith('audio/')
+      : normalized.startsWith('image/');
 
   if (!isExpectedType) {
-    throw new Error(kind === 'video' ? '写入的资源不是视频文件。' : '写入的资源不是图片文件。');
+    throw new Error(
+      kind === 'video'
+        ? '写入的资源不是视频文件。'
+        : kind === 'audio'
+          ? '写入的资源不是音频文件。'
+          : '写入的资源不是图片文件。'
+    );
   }
 }
 
@@ -315,6 +335,8 @@ function detectContentType(fileName) {
   if (extension === '.mp4') return 'video/mp4';
   if (extension === '.mov') return 'video/quicktime';
   if (extension === '.webm') return 'video/webm';
+  if (extension === '.mp3') return 'audio/mpeg';
+  if (extension === '.wav') return 'audio/wav';
   return 'application/octet-stream';
 }
 
@@ -337,7 +359,13 @@ function extractBase64Payload(body, kind) {
   }
 
   return {
-    mimeType: String(body?.mimeType || '').trim() || (kind === 'video' ? 'video/mp4' : 'image/png'),
+    mimeType: String(body?.mimeType || '').trim() || (
+      kind === 'video'
+        ? 'video/mp4'
+        : kind === 'audio'
+          ? 'audio/mpeg'
+          : 'image/png'
+    ),
     dataBase64,
   };
 }
@@ -599,14 +627,17 @@ app.post('/api/seedance/submit', async (request, response) => {
     const duration = Math.max(4, Math.min(15, Number(request.body?.options?.duration) || 10));
     const videoResolution = request.body?.options?.videoResolution === '480p' ? '480p' : '720p';
     const images = Array.isArray(request.body?.images) ? request.body.images : [];
+    const videos = Array.isArray(request.body?.videos) ? request.body.videos : [];
+    const audios = Array.isArray(request.body?.audios) ? request.body.audios : [];
 
     if (!prompt) {
       response.status(400).json({ error: '视频提示词不能为空。' });
       return;
     }
 
-    if (images.length === 0) {
-      response.status(400).json({ error: '至少需要 1 张分镜图才能提交 Seedance。' });
+    const hasVisualAsset = images.length > 0 || videos.length > 0;
+    if (!hasVisualAsset && audios.length > 0) {
+      response.status(400).json({ error: '不能只提交音频，至少需要 1 个图片或视频素材。' });
       return;
     }
 
@@ -615,6 +646,8 @@ app.post('/api/seedance/submit', async (request, response) => {
     await ensureDir(workingDir);
 
     const imagePaths = [];
+    const videoPaths = [];
+    const audioPaths = [];
     for (let index = 0; index < images.length; index += 1) {
       const image = images[index];
       const { mimeType, dataBase64 } = await resolveAssetPayload(image, 'image', request);
@@ -624,10 +657,31 @@ app.post('/api/seedance/submit', async (request, response) => {
       await writeBase64File(targetPath, dataBase64);
       imagePaths.push(targetPath);
     }
+    for (let index = 0; index < videos.length; index += 1) {
+      const video = videos[index];
+      const { mimeType, dataBase64 } = await resolveAssetPayload(video, 'video', request);
+      validateAssetMimeType('video', mimeType);
+      const safeName = basename(buildUploadFileName(video, index, 'video', mimeType));
+      const targetPath = join(workingDir, safeName);
+      await writeBase64File(targetPath, dataBase64);
+      videoPaths.push(targetPath);
+    }
+    for (let index = 0; index < audios.length; index += 1) {
+      const audio = audios[index];
+      const { mimeType, dataBase64 } = await resolveAssetPayload(audio, 'audio', request);
+      validateAssetMimeType('audio', mimeType);
+      const safeName = basename(buildUploadFileName(audio, index, 'audio', mimeType));
+      const targetPath = join(workingDir, safeName);
+      await writeBase64File(targetPath, dataBase64);
+      audioPaths.push(targetPath);
+    }
 
+    const submitCommand = hasVisualAsset ? 'multimodal2video' : 'text2video';
     const args = [
-      'multimodal2video',
+      submitCommand,
       ...imagePaths.flatMap((imagePath) => ['--image', imagePath]),
+      ...videoPaths.flatMap((videoPath) => ['--video', videoPath]),
+      ...audioPaths.flatMap((audioPath) => ['--audio', audioPath]),
       `--prompt=${prompt}`,
       `--model_version=${modelVersion}`,
       `--ratio=${ratio}`,

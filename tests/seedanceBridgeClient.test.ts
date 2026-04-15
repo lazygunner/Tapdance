@@ -117,3 +117,51 @@ test('submitSeedanceTask keeps inline data URLs embedded in the submit payload',
     globalThis.fetch = originalFetch;
   }
 });
+
+test('submitSeedanceTask sends prompt-only and multimodal URL references without forcing image inputs', async () => {
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: Array<{ input: string; init?: RequestInit }> = [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    fetchCalls.push({ input: String(input), init });
+    return new Response(JSON.stringify({
+      submitId: 'submit-3',
+      genStatus: 'querying',
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }) as typeof fetch;
+
+  try {
+    await submitSeedanceTask({
+      projectId: 'project-3',
+      prompt: '只用文本生成视频',
+      imageSources: [],
+      videoSources: ['https://example.com/reference.mp4'],
+      audioSources: ['https://example.com/reference.mp3'],
+      options: {
+        modelVersion: 'seedance2.0fast',
+        ratio: '16:9',
+        duration: 4,
+        videoResolution: '720p',
+      },
+      baseUrl: 'http://127.0.0.1:3210/api/seedance',
+    });
+
+    const payload = JSON.parse(String(fetchCalls[0].init?.body || '{}'));
+    assert.deepEqual(payload.images, []);
+    assert.deepEqual(payload.videos, [{
+      filename: 'video-1',
+      sourceUrl: 'https://example.com/reference.mp4',
+    }]);
+    assert.deepEqual(payload.audios, [{
+      filename: 'audio-1',
+      sourceUrl: 'https://example.com/reference.mp3',
+    }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

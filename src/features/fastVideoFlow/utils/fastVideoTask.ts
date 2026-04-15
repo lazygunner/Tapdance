@@ -93,13 +93,49 @@ export function isSeedanceAssetServiceUnavailable(message?: string) {
     || normalized.includes('asset service');
 }
 
+export function isSeedanceConcurrencyLimitError(message?: string) {
+  const normalized = (message || '').toLowerCase();
+  return normalized.includes('exceedconcurrencylimit')
+    || normalized.includes('ret=1310');
+}
+
+export function extractSeedanceCliFailureDetail(raw?: unknown, fallback = 'Seedance 任务失败，请查看日志。') {
+  const payload = raw && typeof raw === 'object' ? raw as Record<string, any> : null;
+  const candidates = [
+    typeof payload?.fail_reason === 'string' ? payload.fail_reason : '',
+    typeof payload?.failReason === 'string' ? payload.failReason : '',
+    typeof payload?.error === 'string' ? payload.error : '',
+    typeof payload?.error?.message === 'string' ? payload.error.message : '',
+  ]
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return candidates[0] || fallback;
+}
+
+export function buildSeedanceCliFailure(raw?: unknown, fallback = 'Seedance 任务失败，请查看日志。') {
+  const detail = extractSeedanceCliFailureDetail(raw, fallback);
+  if (isSeedanceConcurrencyLimitError(detail)) {
+    return {
+      userMessage: '提交失败：当前并发任务数已达上限，请等待已有任务完成后重试。',
+      detail,
+    };
+  }
+
+  return {
+    userMessage: detail,
+    detail,
+  };
+}
+
 export function getFastVideoDraftState(project: Project) {
   const seedanceDraft = syncFastFlowSeedanceDraft(project.fastFlow);
   const draftValidation = validateSeedanceDraft(seedanceDraft);
+  const cliVisualAssetCount = seedanceDraft.assets.filter((asset) => asset.kind === 'image' || asset.kind === 'video').length;
   const draftIssues = [
     ...draftValidation.errors,
-    ...(project.fastFlow.executionConfig.executor === 'cli' && seedanceDraft.assets.filter((asset) => asset.kind === 'image').length === 0
-      ? ['CLI 执行器至少需要 1 张图片素材。']
+    ...(project.fastFlow.executionConfig.executor === 'cli' && seedanceDraft.baseTemplateId !== 'free_text' && cliVisualAssetCount === 0
+      ? ['CLI 执行器至少需要 1 个图片或视频素材。']
       : []),
   ];
 

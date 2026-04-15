@@ -71,7 +71,7 @@ export function createDefaultFastSeedanceDraft(input: FastVideoInput, videoPromp
     input.referenceVideos.some((item) => item.videoUrl.trim());
 
   return {
-    baseTemplateId: hasReferenceMedia ? 'multi_image_reference' : 'first_last_frame',
+    baseTemplateId: hasReferenceMedia ? 'multi_image_reference' : 'free_text',
     overlayTemplateIds: ['auto_audio'],
     assets: [],
     prompt: {
@@ -467,7 +467,49 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
     ? value.executionConfig.executor
     : base.executionConfig.executor;
   const normalizedReferenceImages = normalizeReferenceImages(input.referenceImages, typeof legacyInput.referenceImageUrl === 'string' ? legacyInput.referenceImageUrl : '');
-
+  const fallbackSeedanceDraft = createDefaultFastSeedanceDraft(
+    {
+      ...base.input,
+      ...input,
+    },
+    value?.videoPrompt?.prompt,
+  );
+  const normalizedSeedanceDraft = value?.seedanceDraft
+    ? {
+      ...fallbackSeedanceDraft,
+      ...value.seedanceDraft,
+      baseTemplateId: value.seedanceDraft.baseTemplateId === 'audio_guided'
+        ? 'multi_image_reference'
+        : value.seedanceDraft.baseTemplateId,
+      prompt: {
+        ...fallbackSeedanceDraft.prompt,
+        ...(value.seedanceDraft.prompt || {}),
+        diagnostics: normalizeStringList(value.seedanceDraft.prompt?.diagnostics),
+      },
+      options: {
+        ...fallbackSeedanceDraft.options,
+        ...(value.seedanceDraft.options || {}),
+        resolution: value.seedanceDraft.options?.resolution === '480p' ? '480p' as const : '720p' as const,
+      },
+      assets: Array.isArray(value.seedanceDraft.assets)
+        ? value.seedanceDraft.assets
+          .filter((asset) => asset && typeof asset === 'object')
+          .map((asset, index) => ({
+            id: typeof asset.id === 'string' && asset.id.trim() ? asset.id : `seedance-asset-${index + 1}`,
+            kind: asset.kind === 'video' || asset.kind === 'audio'
+              ? asset.kind as 'video' | 'audio'
+              : 'image' as const,
+            source: asset.source === 'url' || asset.source === 'asset'
+              ? asset.source as 'url' | 'asset'
+              : 'upload' as const,
+            urlOrData: typeof asset.urlOrData === 'string' ? asset.urlOrData : '',
+            role: asset.role || 'reference_image',
+            label: typeof asset.label === 'string' ? asset.label : '',
+          }))
+        : [],
+      overlayTemplateIds: normalizeOverlayTemplateIds(value.seedanceDraft.overlayTemplateIds),
+    }
+    : null;
   return {
     input: {
       prompt: typeof input.prompt === 'string' ? input.prompt : base.input.prompt,
@@ -491,56 +533,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
         promptZh: typeof value.videoPrompt.promptZh === 'string' ? value.videoPrompt.promptZh : '',
       }
       : null,
-    seedanceDraft: value?.seedanceDraft
-      ? {
-        ...createDefaultFastSeedanceDraft(
-          {
-            ...base.input,
-            ...input,
-          },
-          value?.videoPrompt?.prompt,
-        ),
-        ...value.seedanceDraft,
-        baseTemplateId: value.seedanceDraft.baseTemplateId === 'audio_guided'
-          ? 'multi_image_reference'
-          : value.seedanceDraft.baseTemplateId,
-        prompt: {
-          ...createDefaultFastSeedanceDraft(
-            {
-              ...base.input,
-              ...input,
-            },
-            value?.videoPrompt?.prompt,
-          ).prompt,
-          ...(value.seedanceDraft.prompt || {}),
-          diagnostics: normalizeStringList(value.seedanceDraft.prompt?.diagnostics),
-        },
-        options: {
-          ...createDefaultFastSeedanceDraft(
-            {
-              ...base.input,
-              ...input,
-            },
-            value?.videoPrompt?.prompt,
-          ).options,
-          ...(value.seedanceDraft.options || {}),
-          resolution: value.seedanceDraft.options?.resolution === '480p' ? '480p' : '720p',
-        },
-        assets: Array.isArray(value.seedanceDraft.assets)
-          ? value.seedanceDraft.assets
-            .filter((asset) => asset && typeof asset === 'object')
-            .map((asset, index) => ({
-              id: typeof asset.id === 'string' && asset.id.trim() ? asset.id : `seedance-asset-${index + 1}`,
-              kind: asset.kind === 'video' || asset.kind === 'audio' ? asset.kind : 'image',
-              source: asset.source === 'url' || asset.source === 'asset' ? asset.source : 'upload',
-              urlOrData: typeof asset.urlOrData === 'string' ? asset.urlOrData : '',
-              role: asset.role || 'reference_image',
-              label: typeof asset.label === 'string' ? asset.label : '',
-            }))
-          : [],
-        overlayTemplateIds: normalizeOverlayTemplateIds(value.seedanceDraft.overlayTemplateIds),
-      }
-      : null,
+    seedanceDraft: normalizedSeedanceDraft,
     executionConfig: {
       executor: executionExecutor,
       apiModelKey: value?.executionConfig?.apiModelKey === 'fast' ? 'fast' : 'standard',

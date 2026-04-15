@@ -105,15 +105,33 @@ test('fast video defaults to Ark executor and auto-audio overlay', () => {
   assert.equal(project.input.quickCutEnabled, false);
   assert.equal(project.executionConfig.executor, 'ark');
   assert.equal(project.task.provider, 'ark');
+  assert.equal(draft.baseTemplateId, 'free_text');
   assert.deepEqual(draft.overlayTemplateIds, ['auto_audio']);
   assert.equal(draft.options.generateAudio, true);
   assert.equal(draft.options.watermark, false);
+});
+
+test('createDefaultFastSeedanceDraft uses multi-image mode when reference media exists', () => {
+  const draft = createDefaultFastSeedanceDraft({
+    ...createEmptyFastVideoProject().input,
+    referenceImages: [{
+      id: 'ref-1',
+      imageUrl: 'https://example.com/reference.png',
+      assetId: '',
+      referenceType: 'other',
+      description: '',
+      selectedForVideo: true,
+    }],
+  });
+
+  assert.equal(draft.baseTemplateId, 'multi_image_reference');
 });
 
 test('normalizeFastVideoProject preserves CLI executor, supported CLI vip model versions, and 480p resolution', () => {
   const normalized = normalizeFastVideoProject({
     seedanceDraft: {
       ...createDefaultFastSeedanceDraft(createEmptyFastVideoProject().input),
+      baseTemplateId: 'first_frame',
       options: {
         ...createDefaultFastSeedanceDraft(createEmptyFastVideoProject().input).options,
         resolution: '480p',
@@ -132,6 +150,24 @@ test('normalizeFastVideoProject preserves CLI executor, supported CLI vip model 
   assert.equal(normalized.executionConfig.cliModelVersion, 'seedance2.0fast_vip');
   assert.equal(normalized.seedanceDraft?.options.resolution, '480p');
   assert.equal(normalized.executionConfig.videoResolution, '720p');
+});
+
+test('normalizeFastVideoProject preserves CLI executor for persisted free-text drafts', () => {
+  const normalized = normalizeFastVideoProject({
+    seedanceDraft: {
+      ...createDefaultFastSeedanceDraft(createEmptyFastVideoProject().input),
+      baseTemplateId: 'free_text',
+    },
+    executionConfig: {
+      executor: 'cli',
+      apiModelKey: 'standard',
+      cliModelVersion: 'seedance2.0',
+      pollIntervalSec: 15,
+      videoResolution: '720p',
+    },
+  });
+
+  assert.equal(normalized.executionConfig.executor, 'cli');
 });
 
 test('normalizeFastVideoProject infers human face mosaic state from prompt suffix', () => {

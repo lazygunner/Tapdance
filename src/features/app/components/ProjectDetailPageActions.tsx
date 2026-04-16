@@ -100,7 +100,7 @@ export function ProjectDetailPageActions({
   if (view === 'fastVideo') {
     const videoPrompt = project.fastFlow.videoPrompt;
     const task = project.fastFlow.task;
-    const taskActive = task.status === 'submitting' || task.status === 'generating';
+    const taskActive = task.status === 'queued' || task.status === 'submitting' || task.status === 'generating';
     const canSubmit = draftIssueCount === 0
       && Boolean(videoPrompt?.prompt.trim())
       && !isSubmittingFastVideo

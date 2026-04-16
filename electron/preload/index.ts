@@ -1,4 +1,5 @@
 import type { TosConfig } from '../../src/types.ts'
+import type { MockApiScenario } from '../../src/types.ts'
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
@@ -8,6 +9,10 @@ const api = {
   platform: process.platform,
   getBridgeUrl: () => ipcRenderer.invoke('bridge:getUrl'),
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getMockApiStatus: () => ipcRenderer.invoke('mock-api:status'),
+  startMockApiServer: (options?: { port?: number; scenario?: MockApiScenario }) => ipcRenderer.invoke('mock-api:start', options),
+  stopMockApiServer: () => ipcRenderer.invoke('mock-api:stop'),
+  setMockApiScenario: (scenario: MockApiScenario) => ipcRenderer.invoke('mock-api:setScenario', scenario),
   setWindowAppearance: (themeMode: 'light' | 'dark') => ipcRenderer.invoke('window:setAppearance', themeMode),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   uploadVideoToTos: (payload: {

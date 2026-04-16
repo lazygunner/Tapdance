@@ -3,7 +3,7 @@ import type { SeedanceApiModelKey, SeedanceDraft, SeedanceExecutorId, SeedanceMo
 
 export type FastSceneCountPreference = 'auto' | 1 | 2;
 export type FastAssetStatus = 'idle' | 'generating' | 'completed' | 'failed';
-export type FastTaskStatus = 'idle' | 'submitting' | 'generating' | 'completed' | 'failed' | 'cancelled';
+export type FastTaskStatus = 'idle' | 'queued' | 'submitting' | 'generating' | 'completed' | 'failed' | 'cancelled';
 export type SeedanceHealthStatus = 'unknown' | 'logged_in' | 'logged_out' | 'error';
 export type FastReferenceImageType = 'person' | 'scene' | 'product' | 'style' | 'other';
 

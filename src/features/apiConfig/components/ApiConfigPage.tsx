@@ -1,6 +1,6 @@
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 
-import { AlertTriangle, Clapperboard, Database, Loader2, MessageSquareText, Plus, Settings2, Trash2, Upload, Video } from 'lucide-react';
+import { AlertTriangle, Clapperboard, Database, Loader2, MessageSquareText, Plus, Power, RefreshCw, Server, Settings2, Trash2, Upload, Video } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { StudioModal, StudioSelect } from '../../../components/studio/StudioPrimitives.tsx';
@@ -16,6 +16,12 @@ import {
   type ModelProviderId,
   type ModelRole,
 } from '../../../services/apiConfig.ts';
+import {
+  MOCK_API_SCENARIO_OPTIONS,
+  buildMockSeedanceBridgeUrl,
+  buildMockVolcengineBaseUrl,
+  type MockApiServerStatus,
+} from '../../../services/mockApiConfig.ts';
 import { clearModelInvocationLogs, type ModelInvocationLogEntry } from '../../../services/modelInvocationLog.ts';
 import type { SeedanceHealth } from '../../fastVideoFlow/types/fastTypes.ts';
 import {
@@ -38,6 +44,11 @@ type ApiConfigPageProps = {
   usdToCnyRate: number;
   modelInvocationLogs: ModelInvocationLogEntry[];
   onRestoreDefaults: () => void;
+  mockApiStatus: MockApiServerStatus;
+  isMockApiBusy: boolean;
+  onStartMockApi: (scenario: ApiSettings['mockApi']['scenario']) => void | Promise<void>;
+  onStopMockApi: () => void | Promise<void>;
+  onRefreshMockApiStatus: () => void | Promise<void>;
   onInitializeDatabase: () => void | Promise<void>;
   isInitializingDatabase: boolean;
   getSourceProviderKey: (sourceId: ModelSourceId) => ModelProviderId;
@@ -138,6 +149,11 @@ export function ApiConfigPage({
   usdToCnyRate,
   modelInvocationLogs,
   onRestoreDefaults,
+  mockApiStatus,
+  isMockApiBusy,
+  onStartMockApi,
+  onStopMockApi,
+  onRefreshMockApiStatus,
   onInitializeDatabase,
   isInitializingDatabase,
   getSourceProviderKey,
@@ -151,6 +167,12 @@ export function ApiConfigPage({
   const [customModelDraft, setCustomModelDraft] = useState<CustomModelDraft>(() => createCustomModelDraft('gemini'));
   const [customModelError, setCustomModelError] = useState('');
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const isDevEnvironment = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+  const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI?.isElectron);
+  const mockApiRunning = Boolean(mockApiStatus?.running);
+  const mockApiBaseUrl = mockApiStatus?.baseUrl || apiSettings.mockApi.baseUrl;
+  const mockVolcengineBaseUrl = mockApiStatus?.volcengineBaseUrl || buildMockVolcengineBaseUrl(mockApiBaseUrl);
+  const mockSeedanceBridgeUrl = mockApiStatus?.seedanceBridgeUrl || buildMockSeedanceBridgeUrl(mockApiBaseUrl);
 
   const openCustomModelModal = (providerId: ModelProviderId) => {
     setCustomModelDraft(createCustomModelDraft(providerId));
@@ -368,21 +390,136 @@ export function ApiConfigPage({
         </div>
       </div>
 
-      <div className="flex items-center justify-between mb-8 gap-4 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-bold text-white">连接配置</h2>
-          <p className="text-zinc-400 text-sm mt-1">管理 Gemini、火山云和 Seedance CLI 的连接方式与默认参数。配置会自动保存在当前浏览器。</p>
-        </div>
-        <button
-          onClick={onRestoreDefaults}
-          className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          恢复默认值
-        </button>
-      </div>
+      {isDevEnvironment ? (
+        <>
+          <div className="flex items-center justify-between mb-8 gap-4 flex-wrap">
+            <div>
+              <h2 className="text-2xl font-bold text-white">连接配置</h2>
+              <p className="text-zinc-400 text-sm mt-1">管理 Gemini、火山云和 Seedance CLI 的连接方式与默认参数。配置会自动保存在当前浏览器。</p>
+            </div>
+            <button
+              onClick={onRestoreDefaults}
+              className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              恢复默认值
+            </button>
+          </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {(['gemini', 'volcengine'] as ModelProviderId[]).map((providerId) => {
+          <section className="mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/6 p-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
+                  <Server className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-semibold text-white">本地 MOCK API Server</h3>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] ${mockApiRunning ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-400'}`}>
+                      {mockApiRunning ? '运行中' : '未启动'}
+                    </span>
+                    {apiSettings.mockApi.enabled ? (
+                      <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-200">配置已切到 MOCK</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-zinc-400">
+                    启动后会把火山 Ark Base URL 和 Seedance CLI bridge 切到本机接口，走真实 HTTP 调用链，不消耗真实 token。
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void onRefreshMockApiStatus()}
+                  disabled={isMockApiBusy}
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isMockApiBusy ? 'animate-spin' : ''}`} />
+                  刷新
+                </button>
+                {mockApiRunning || apiSettings.mockApi.enabled ? (
+                  <button
+                    type="button"
+                    onClick={() => void onStopMockApi()}
+                    disabled={isMockApiBusy}
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Power className="h-4 w-4" />
+                    停止并恢复
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void onStartMockApi(apiSettings.mockApi.scenario)}
+                    disabled={isMockApiBusy || !isElectron}
+                    className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/15 px-3 py-2 text-sm font-medium text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Power className="h-4 w-4" />
+                    启动并切换
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 lg:grid-cols-[0.34fr_0.66fr] gap-4">
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">返回场景</span>
+                <StudioSelect
+                  value={apiSettings.mockApi.scenario}
+                  onChange={(event) => {
+                    const scenario = event.target.value as ApiSettings['mockApi']['scenario'];
+                    setApiSettings((prev) => ({
+                      ...prev,
+                      mockApi: {
+                        ...prev.mockApi,
+                        scenario,
+                      },
+                    }));
+                    if (mockApiRunning) {
+                      void onStartMockApi(scenario);
+                    }
+                  }}
+                  className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-cyan-500"
+                >
+                  {MOCK_API_SCENARIO_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </StudioSelect>
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  {MOCK_API_SCENARIO_OPTIONS.find((option) => option.value === apiSettings.mockApi.scenario)?.description}
+                </p>
+              </label>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <div className="font-semibold uppercase tracking-wider text-zinc-500">Ark / OpenAI 兼容地址</div>
+                    <div className="mt-1 break-all font-mono text-cyan-200">{mockVolcengineBaseUrl || '启动后自动生成'}</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold uppercase tracking-wider text-zinc-500">Seedance CLI Bridge 地址</div>
+                    <div className="mt-1 break-all font-mono text-cyan-200">{mockSeedanceBridgeUrl || '启动后自动生成'}</div>
+                  </div>
+                </div>
+                {isElectron ? (
+                  <p className="mt-3 text-xs leading-5 text-zinc-500">
+                    Electron app 会自动启动本机服务。普通浏览器调试可先运行 <span className="font-mono text-zinc-300">npm run dev:mock-api</span>，再手动填写上述地址。
+                  </p>
+                ) : (
+                  <p className="mt-3 text-xs leading-5 text-amber-200">
+                    当前是浏览器环境，不能直接启动本机进程。请在终端运行 <span className="font-mono">npm run dev:mock-api</span> 后手动切换 Base URL。
+                  </p>
+                )}
+                {mockApiStatus.error ? (
+                  <p className="mt-3 text-xs leading-5 text-red-300">{mockApiStatus.error}</p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {(['gemini', 'volcengine'] as ModelProviderId[]).map((providerId) => {
           const isVolcengine = providerId === 'volcengine';
           const meta = PROVIDER_CARD_META[providerId];
           const modelFieldGroups = providerId === 'gemini' ? GEMINI_PROVIDER_MODEL_FIELDS : VOLCENGINE_PROVIDER_MODEL_FIELDS;
@@ -668,8 +805,10 @@ export function ApiConfigPage({
               </div>
             </section>
           );
-        })}
-      </div>
+            })}
+          </div>
+        </>
+      ) : null}
 
       <section className="mt-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">

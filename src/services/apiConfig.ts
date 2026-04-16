@@ -168,6 +168,12 @@ export const defaultApiSettings: ApiSettings = {
     pollIntervalSec: 15,
     bridgeUrl: '',
   },
+  mockApi: {
+    enabled: false,
+    baseUrl: '',
+    scenario: 'success',
+    previousSettings: null,
+  },
   tos: {
     enabled: false,
     region: 'cn-beijing',
@@ -516,6 +522,27 @@ function normalizeApiSettings(settings: ApiSettings): ApiSettings {
         : defaultApiSettings.seedance.pollIntervalSec,
       bridgeUrl: typeof settings.seedance?.bridgeUrl === 'string' ? settings.seedance.bridgeUrl : defaultApiSettings.seedance.bridgeUrl,
     },
+    mockApi: {
+      enabled: Boolean(settings.mockApi?.enabled),
+      baseUrl: typeof settings.mockApi?.baseUrl === 'string' ? settings.mockApi.baseUrl : '',
+      scenario: settings.mockApi?.scenario === 'slow_success'
+        || settings.mockApi?.scenario === 'concurrency_once'
+        || settings.mockApi?.scenario === 'concurrency_always'
+        || settings.mockApi?.scenario === 'submit_fail'
+        ? settings.mockApi.scenario
+        : 'success',
+      previousSettings: settings.mockApi?.previousSettings && typeof settings.mockApi.previousSettings === 'object'
+        ? {
+          volcengineApiKey: typeof settings.mockApi.previousSettings.volcengineApiKey === 'string' ? settings.mockApi.previousSettings.volcengineApiKey : '',
+          volcengineBaseUrl: typeof settings.mockApi.previousSettings.volcengineBaseUrl === 'string' ? settings.mockApi.previousSettings.volcengineBaseUrl : defaultApiSettings.volcengine.baseUrl,
+          seedanceBridgeUrl: typeof settings.mockApi.previousSettings.seedanceBridgeUrl === 'string' ? settings.mockApi.previousSettings.seedanceBridgeUrl : defaultApiSettings.seedance.bridgeUrl,
+          defaultModels: {
+            ...defaultApiSettings.defaultModels,
+            ...(settings.mockApi.previousSettings.defaultModels || {}),
+          },
+        }
+        : null,
+    },
     tos: {
       enabled: Boolean(settings.tos?.enabled),
       region: typeof settings.tos?.region === 'string' ? settings.tos.region : defaultApiSettings.tos!.region,
@@ -541,6 +568,10 @@ function mergeApiSettings(parsed?: Partial<ApiSettings>): ApiSettings {
     seedance: {
       ...defaultApiSettings.seedance,
       ...(parsed?.seedance || {}),
+    },
+    mockApi: {
+      ...defaultApiSettings.mockApi,
+      ...(parsed?.mockApi || {}),
     },
     tos: {
       ...defaultApiSettings.tos,

@@ -116,6 +116,22 @@ export interface SeedanceApiConfig {
   bridgeUrl: string;
 }
 
+export type MockApiScenario = 'success' | 'slow_success' | 'concurrency_once' | 'concurrency_always' | 'submit_fail';
+
+export interface MockApiPreviousSettings {
+  volcengineApiKey: string;
+  volcengineBaseUrl: string;
+  seedanceBridgeUrl: string;
+  defaultModels: DefaultModelSettings;
+}
+
+export interface MockApiConfig {
+  enabled: boolean;
+  baseUrl: string;
+  scenario: MockApiScenario;
+  previousSettings?: MockApiPreviousSettings | null;
+}
+
 export type ModelSourceId =
   | ''
   | 'gemini.textModel'
@@ -147,6 +163,7 @@ export interface ApiSettings {
   gemini: GeminiApiConfig;
   volcengine: VolcengineApiConfig;
   seedance: SeedanceApiConfig;
+  mockApi: MockApiConfig;
   tos?: TosConfig;
   defaultModels: DefaultModelSettings;
 }

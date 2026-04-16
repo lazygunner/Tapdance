@@ -6,6 +6,7 @@ import { SeedanceHealthPanel } from '../../fastVideoFlow/components/SeedanceHeal
 import type { SeedanceHealth } from '../../fastVideoFlow/types/fastTypes.ts';
 import type { ModelProviderId, ModelRole } from '../../../services/apiConfig.ts';
 import type { ModelInvocationLogEntry } from '../../../services/modelInvocationLog.ts';
+import type { MockApiServerStatus } from '../../../services/mockApiConfig.ts';
 
 type ApiConfigWorkspaceProps = {
   apiSettings: ApiSettings;
@@ -16,6 +17,11 @@ type ApiConfigWorkspaceProps = {
   usdToCnyRate: number;
   modelInvocationLogs: ModelInvocationLogEntry[];
   onRestoreDefaults: () => void;
+  mockApiStatus: MockApiServerStatus;
+  isMockApiBusy: boolean;
+  onStartMockApi: (scenario: ApiSettings['mockApi']['scenario']) => void | Promise<void>;
+  onStopMockApi: () => void | Promise<void>;
+  onRefreshMockApiStatus: () => void | Promise<void>;
   onInitializeDatabase: () => void | Promise<void>;
   isInitializingDatabase: boolean;
   getSourceProviderKey: (sourceId: ModelSourceId) => ModelProviderId;
@@ -34,6 +40,11 @@ export function ApiConfigWorkspace({
   usdToCnyRate,
   modelInvocationLogs,
   onRestoreDefaults,
+  mockApiStatus,
+  isMockApiBusy,
+  onStartMockApi,
+  onStopMockApi,
+  onRefreshMockApiStatus,
   onInitializeDatabase,
   isInitializingDatabase,
   getSourceProviderKey,
@@ -57,6 +68,11 @@ export function ApiConfigWorkspace({
       usdToCnyRate={usdToCnyRate}
       modelInvocationLogs={modelInvocationLogs}
       onRestoreDefaults={onRestoreDefaults}
+      mockApiStatus={mockApiStatus}
+      isMockApiBusy={isMockApiBusy}
+      onStartMockApi={onStartMockApi}
+      onStopMockApi={onStopMockApi}
+      onRefreshMockApiStatus={onRefreshMockApiStatus}
       onInitializeDatabase={onInitializeDatabase}
       isInitializingDatabase={isInitializingDatabase}
       getSourceProviderKey={getSourceProviderKey}

@@ -15,6 +15,7 @@ import type {
   FastVideoInput,
   FastVideoPromptDraft,
 } from '../types/fastTypes.ts';
+import type { SeedanceCliQueueEnqueueInput } from '../types/queueTypes.ts';
 import {
   createDefaultFastSeedanceDraft,
   createEmptySeedanceTask,
@@ -107,6 +108,7 @@ type FastVideoFlowActionDeps = {
   };
   buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: 'ark' | 'cli') => Record<string, unknown>;
   appendSeedanceLog: (entry: SeedanceLogEntry) => void;
+  onCliConcurrencyLimit?: (input: SeedanceCliQueueEnqueueInput) => void;
 };
 
 function isPermissionError(error: any) {
@@ -147,6 +149,7 @@ export function createFastVideoFlowActions({
   getSeedanceArkModelMeta,
   buildSeedanceSubmitLogRequest,
   appendSeedanceLog,
+  onCliConcurrencyLimit,
 }: FastVideoFlowActionDeps) {
   const handleFastInputChange = (patch: Partial<FastVideoInput>) => {
     setFastFlow((current) => ({
@@ -997,6 +1000,14 @@ export function createFastVideoFlowActions({
     const submitExecutor = project.fastFlow.executionConfig.executor;
     const validation = validateSeedanceDraft(draft);
     const cliVisualAssetCount = draft.assets.filter((asset) => asset.kind === 'image' || asset.kind === 'video').length;
+    const cliOptions: SeedanceCliQueueEnqueueInput['cliOptions'] = {
+      modelVersion: project.fastFlow.executionConfig.cliModelVersion,
+      ratio: draft.options.ratio === 'adaptive' || draft.options.ratio === '3:4' || draft.options.ratio === '21:9'
+        ? project.fastFlow.input.aspectRatio
+        : draft.options.ratio,
+      duration: draft.options.duration || project.fastFlow.input.durationSec,
+      videoResolution: draft.options.resolution === '480p' ? '480p' : '720p',
+    };
     const cliExtraErrors = submitExecutor === 'cli' && draft.baseTemplateId !== 'free_text' && cliVisualAssetCount === 0
       ? ['CLI 执行器至少需要 1 个图片或视频素材。']
       : [];
@@ -1105,14 +1116,7 @@ export function createFastVideoFlowActions({
           imageSources,
           videoSources,
           audioSources,
-          options: {
-            modelVersion: project.fastFlow.executionConfig.cliModelVersion,
-            ratio: draft.options.ratio === 'adaptive' || draft.options.ratio === '3:4' || draft.options.ratio === '21:9'
-              ? project.fastFlow.input.aspectRatio
-              : draft.options.ratio,
-            duration: draft.options.duration || project.fastFlow.input.durationSec,
-            videoResolution: draft.options.resolution === '480p' ? '480p' : '720p',
-          },
+          options: cliOptions,
           baseUrl: apiSettings.seedance.bridgeUrl,
         });
         const submitStatus = mapRemoteSeedanceStatus(result.genStatus);
@@ -1204,6 +1208,13 @@ export function createFastVideoFlowActions({
           message: '当前账号还没有开通火山引擎 Asset Service，所以 `asset://...` 素材无法用于 Seedance 请求。你可以先去控制台开通服务，或者返回极速输入页清空这张图的 assetId，改为直接使用图片提交。',
           detail: errorMessage,
           action: 'edit-references',
+        });
+      } else if (submitExecutor === 'cli' && isSeedanceConcurrencyLimitError(errorMessage) && onCliConcurrencyLimit) {
+        onCliConcurrencyLimit({
+          project,
+          draft,
+          cliOptions,
+          sourceFailureDetail: errorMessage,
         });
       } else {
         openSeedanceErrorModal({

@@ -1,18 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import packageMetadata from '../package.json';
-import { Brief, Asset, Shot, Project, ProjectType, ModelSourceId, PromptLanguage, AspectRatio } from './types';
+import { Brief, Asset, Shot, Project, ProjectType, ModelSourceId, PromptLanguage, AspectRatio, type MockApiScenario } from './types';
 import type { SeedanceDraft, SeedanceOverlayTemplateId } from './features/seedance/types.ts';
 import { generateBriefWithModel } from './services/modelService';
 import { Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defaultApiSettings, DEFAULT_MODEL_ROLE_META, formatConfiguredModelDisplay, formatModelPricing, getDefaultModelSource, getModelBillingRule, getModelPricingLabel, getModelRoleFromSourceId, getPricedModelEntries, getProviderDisplayLabel, getProviderModelCatalog, getProviderPromptLanguageCatalog, getUsdToCnyExchangeRate, resolveModelSource, type ModelProviderId, type ModelRole } from './services/apiConfig';
+import {
+  MOCK_API_DEFAULT_PORT,
+  applyMockApiSettings,
+  restoreMockApiSettings,
+  type MockApiServerStatus,
+} from './services/mockApiConfig.ts';
 import { getProjectGroupImageAssets, getProjectGroupSummary, type ProjectGroupImageAsset, type ProjectGroupSummary } from './services/projectGroups.ts';
 import { applyStyleGuideToPrompt, buildStyleGuideText, findStylePresetById, getStylePresets, matchStylePreset } from './services/styleCatalog';
 import { FastFlowWorkspace } from './features/fastVideoFlow/components/FastFlowWorkspace.tsx';
+import { SeedanceCliQueueWorkspace } from './features/fastVideoFlow/components/SeedanceCliQueueWorkspace.tsx';
 import { createFastVideoFlowActions } from './features/fastVideoFlow/services/createFastVideoFlowActions.ts';
 import { useSeedanceRuntime } from './features/fastVideoFlow/hooks/useSeedanceRuntime.ts';
+import { useSeedanceCliQueue } from './features/fastVideoFlow/hooks/useSeedanceCliQueue.ts';
+import type { SeedanceCliQueueEnqueueInput } from './features/fastVideoFlow/types/queueTypes.ts';
 import { FAST_FLOW_TEMPLATE_IDS, SEEDANCE_TEMPLATE_REGISTRY } from './features/seedance/config/seedanceTemplateRegistry.ts';
-import { StudioMetricCard, StudioPage, StudioPageHeader, StudioPanel, StudioSelect } from './components/studio/StudioPrimitives.tsx';
+import { StudioMetricCard, StudioModal, StudioPage, StudioPageHeader, StudioPanel, StudioSelect } from './components/studio/StudioPrimitives.tsx';
 import {
   AppChromeBar,
   ProjectDetailHeader,
@@ -145,7 +154,7 @@ export default function App() {
   const [view, setView] = useState<View>('home');
   const [isReinitializingAppDatabase, setIsReinitializingAppDatabase] = useState(false);
   const { themeMode, setThemeMode, isThemeModeLoaded } = useThemeModeStorage('dark', isReinitializingAppDatabase);
-  const { apiSettings, setApiSettings } = useApiSettingsStorage(isReinitializingAppDatabase);
+  const { apiSettings, setApiSettings, isApiSettingsLoaded } = useApiSettingsStorage(isReinitializingAppDatabase);
   const { modelInvocationLogs } = useModelInvocationLogs();
   const [idea, setIdea] = useState('');
   const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
@@ -176,6 +185,9 @@ export default function App() {
   const [isSubmittingFastVideo, setIsSubmittingFastVideo] = useState(false);
   const [isRefreshingFastVideoTask, setIsRefreshingFastVideoTask] = useState(false);
   const [isCancellingFastVideoTask, setIsCancellingFastVideoTask] = useState(false);
+  const [pendingCliQueueRequest, setPendingCliQueueRequest] = useState<SeedanceCliQueueEnqueueInput | null>(null);
+  const [mockApiStatus, setMockApiStatus] = useState<MockApiServerStatus>({ running: false, baseUrl: '' });
+  const [isMockApiBusy, setIsMockApiBusy] = useState(false);
   const [appVersion, setAppVersion] = useState(packageMetadata.version);
   const isRefreshingFastVideoTaskRef = useRef(false);
 
@@ -303,6 +315,23 @@ export default function App() {
       fastFlow: updater(prev.fastFlow),
     }));
   };
+
+  const {
+    queueState: seedanceCliQueueState,
+    queueToasts: seedanceCliQueueToasts,
+    activeCount: seedanceCliQueueActiveCount,
+    waitingCount: seedanceCliQueueWaitingCount,
+    countAhead: countSeedanceCliQueueAhead,
+    enqueueFastVideo: enqueueFastVideoCliTask,
+    cancelItem: cancelSeedanceCliQueueItem,
+    removeItem: removeSeedanceCliQueueItem,
+    clearTerminalItems: clearTerminalSeedanceCliQueueItems,
+    clearWaitingItems: clearWaitingSeedanceCliQueueItems,
+  } = useSeedanceCliQueue({
+    apiSettings,
+    useMockMode,
+    updateProjectRecord: updateProjectById,
+  });
 
   const {
     isOperationCancelPending,
@@ -478,6 +507,7 @@ export default function App() {
     getSeedanceArkModelMeta,
     buildSeedanceSubmitLogRequest,
     appendSeedanceLog,
+    onCliConcurrencyLimit: setPendingCliQueueRequest,
   });
 
   useCreativeVideoPolling({
@@ -567,6 +597,83 @@ export default function App() {
     ? <StartupSplash onEnter={handleEnterStartupSplash} />
     : null;
 
+  const refreshMockApiStatus = async () => {
+    if (typeof window === 'undefined' || !window.electronAPI?.isElectron) {
+      setMockApiStatus({
+        running: false,
+        baseUrl: apiSettings.mockApi.baseUrl,
+        error: '当前环境不能从应用内启动本机 MOCK API Server。',
+      });
+      return;
+    }
+
+    setIsMockApiBusy(true);
+    try {
+      const status = await window.electronAPI.getMockApiStatus();
+      setMockApiStatus(status);
+    } catch (error: any) {
+      setMockApiStatus({
+        running: false,
+        baseUrl: apiSettings.mockApi.baseUrl,
+        error: error?.message || '读取 MOCK API Server 状态失败。',
+      });
+    } finally {
+      setIsMockApiBusy(false);
+    }
+  };
+
+  const handleStartMockApi = async (scenario: MockApiScenario) => {
+    if (typeof window === 'undefined' || !window.electronAPI?.isElectron) {
+      alert('当前浏览器环境不能直接启动本机进程。请在终端运行 npm run dev:mock-api 后手动填写本地地址。');
+      return;
+    }
+
+    setIsMockApiBusy(true);
+    try {
+      const status = await window.electronAPI.startMockApiServer({
+        port: MOCK_API_DEFAULT_PORT,
+        scenario,
+      });
+      setMockApiStatus(status);
+      setApiSettings((prev) => applyMockApiSettings(prev, {
+        baseUrl: status.baseUrl || `http://127.0.0.1:${MOCK_API_DEFAULT_PORT}`,
+        scenario: status.scenario || scenario,
+      }));
+    } catch (error: any) {
+      const message = error?.message || '启动 MOCK API Server 失败。';
+      setMockApiStatus({
+        running: false,
+        baseUrl: apiSettings.mockApi.baseUrl,
+        error: message,
+      });
+      alert(message);
+    } finally {
+      setIsMockApiBusy(false);
+    }
+  };
+
+  const handleStopMockApi = async () => {
+    setIsMockApiBusy(true);
+    try {
+      if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+        const status = await window.electronAPI.stopMockApiServer();
+        setMockApiStatus(status);
+      } else {
+        setMockApiStatus({ running: false, baseUrl: '' });
+      }
+      setApiSettings((prev) => restoreMockApiSettings(prev));
+    } catch (error: any) {
+      const message = error?.message || '停止 MOCK API Server 失败。';
+      setMockApiStatus((current) => ({
+        ...current,
+        error: message,
+      }));
+      alert(message);
+    } finally {
+      setIsMockApiBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!isThemeModeLoaded || typeof window === 'undefined' || !window.electronAPI?.isElectron) {
       return;
@@ -596,6 +703,48 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isApiSettingsLoaded || !apiSettings.mockApi.enabled) {
+      return;
+    }
+
+    if (typeof window === 'undefined' || !window.electronAPI?.isElectron) {
+      return;
+    }
+
+    let cancelled = false;
+    setIsMockApiBusy(true);
+    void window.electronAPI.startMockApiServer({
+      port: MOCK_API_DEFAULT_PORT,
+      scenario: apiSettings.mockApi.scenario,
+    }).then((status) => {
+      if (cancelled) {
+        return;
+      }
+      setMockApiStatus(status);
+      setApiSettings((prev) => applyMockApiSettings(prev, {
+        baseUrl: status.baseUrl || prev.mockApi.baseUrl || `http://127.0.0.1:${MOCK_API_DEFAULT_PORT}`,
+        scenario: status.scenario || apiSettings.mockApi.scenario,
+      }));
+    }).catch((error: any) => {
+      if (!cancelled) {
+        setMockApiStatus({
+          running: false,
+          baseUrl: apiSettings.mockApi.baseUrl,
+          error: error?.message || '自动启动 MOCK API Server 失败。',
+        });
+      }
+    }).finally(() => {
+      if (!cancelled) {
+        setIsMockApiBusy(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiSettings.mockApi.enabled, apiSettings.mockApi.scenario, isApiSettingsLoaded, setApiSettings]);
 
   if (hasKey === null) {
     return (
@@ -704,7 +853,7 @@ export default function App() {
     }
   };
 
-  const handleNavigatePrimaryView = (targetView: 'home' | 'assetLibrary' | 'portraitLibrary') => {
+  const handleNavigatePrimaryView = (targetView: 'home' | 'assetLibrary' | 'portraitLibrary' | 'cliQueue') => {
     setSelectedGroupId(null);
 
     if (targetView === 'home') {
@@ -834,6 +983,11 @@ export default function App() {
           setApiSettings(defaultApiSettings);
           resetFlowModelOverrides();
         }}
+        mockApiStatus={mockApiStatus}
+        isMockApiBusy={isMockApiBusy}
+        onStartMockApi={handleStartMockApi}
+        onStopMockApi={handleStopMockApi}
+        onRefreshMockApiStatus={() => void refreshMockApiStatus()}
         onInitializeDatabase={() => void handleInitializeAppDatabase()}
         isInitializingDatabase={isReinitializingAppDatabase}
         getSourceProviderKey={getSourceProviderKey}
@@ -843,6 +997,18 @@ export default function App() {
         updateGeminiRoleModel={updateGeminiRoleModel}
       />
     )
+    : view === 'cliQueue'
+      ? (
+        <SeedanceCliQueueWorkspace
+          items={seedanceCliQueueState.items}
+          activeCount={seedanceCliQueueActiveCount}
+          waitingCount={seedanceCliQueueWaitingCount}
+          onCancelItem={cancelSeedanceCliQueueItem}
+          onRemoveItem={removeSeedanceCliQueueItem}
+          onClearTerminalItems={clearTerminalSeedanceCliQueueItems}
+          onClearWaitingItems={clearWaitingSeedanceCliQueueItems}
+        />
+      )
     : view === 'fastInput' || view === 'fastStoryboard' || view === 'fastVideo'
       ? (
         <FastFlowWorkspace
@@ -1041,6 +1207,8 @@ export default function App() {
           view={view}
           projectCount={projects.length}
           mediaCount={projectMediaCounts.total}
+          queueCount={seedanceCliQueueActiveCount}
+          isMockModeEnabled={useMockMode || apiSettings.mockApi.enabled}
           themeMode={themeMode}
           onNavigate={handleNavigatePrimaryView}
           onThemeModeChange={setThemeMode}
@@ -1094,6 +1262,52 @@ export default function App() {
         </main>
       </div>
 
+      <StudioModal
+        open={Boolean(pendingCliQueueRequest)}
+        onClose={() => setPendingCliQueueRequest(null)}
+        className="max-w-xl p-0"
+        themeMode={themeMode}
+      >
+        {pendingCliQueueRequest ? (
+          <div className="p-6">
+            <div className="studio-eyebrow">Seedance CLI Queue</div>
+            <h3 className="mt-3 text-2xl font-semibold text-[var(--studio-text)]">CLI 并发已满，是否加入本地队列？</h3>
+            <p className="mt-3 text-sm leading-6 text-[var(--studio-muted)]">
+              当前即梦 CLI 返回并发上限错误。加入本地队列后，会在前序任务完成后自动提交这个 fast-video 任务。
+            </p>
+            <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              队列中前方还有 {countSeedanceCliQueueAhead()} 个任务。
+              {countSeedanceCliQueueAhead() === 0 ? ' 如果仍然并发占用，可能是 Dreamina Web 或其他工具中有任务正在运行。' : ''}
+            </div>
+            {pendingCliQueueRequest.sourceFailureDetail ? (
+              <div className="mt-4 rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">接口返回</div>
+                <div className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[var(--studio-muted)]">{pendingCliQueueRequest.sourceFailureDetail}</div>
+              </div>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingCliQueueRequest(null)}
+                className="studio-button studio-button-secondary"
+              >
+                取消提交
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void enqueueFastVideoCliTask(pendingCliQueueRequest);
+                  setPendingCliQueueRequest(null);
+                }}
+                className="studio-button studio-button-primary"
+              >
+                加入队列
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </StudioModal>
+
       <ImagePreviewModal
         previewImage={previewImage}
         onClose={() => setPreviewImage(null)}
@@ -1138,6 +1352,26 @@ export default function App() {
           setHistoryMaterialPicker(null);
         }}
       />
+
+      {seedanceCliQueueToasts.length > 0 ? (
+        <div className="pointer-events-none fixed right-5 top-20 z-[60] flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-3">
+          {seedanceCliQueueToasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-xl ${
+                toast.tone === 'success'
+                  ? 'border-emerald-500/20 bg-emerald-500/12 text-emerald-100'
+                  : toast.tone === 'error'
+                    ? 'border-red-500/20 bg-red-500/12 text-red-100'
+                    : 'border-sky-500/20 bg-sky-500/12 text-sky-100'
+              }`}
+            >
+              <div className="text-sm font-semibold">{toast.title}</div>
+              <div className="mt-1 text-xs leading-5 opacity-85">{toast.message}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {startupSplashOverlay}
     </div>
   );

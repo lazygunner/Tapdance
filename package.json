@@ -17,6 +17,7 @@
     "dev:bridge": "node server/seedanceBridge.mjs",
     "predev:bridge:watch": "node scripts/ensure-node-native-modules.mjs",
     "dev:bridge:watch": "node --watch-path=server/seedanceBridge.mjs --watch-path=server/appStateStore.mjs --watch-path=server/betterSqlite3NativePaths.mjs --watch-preserve-output server/seedanceBridge.mjs",
+    "dev:mock-api": "node server/mockApiServer.mjs",
     "predev:electron": "node scripts/ensure-electron-native-modules.mjs",
     "dev:electron": "electron-vite dev",
     "build": "vite build",

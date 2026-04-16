@@ -4,8 +4,10 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import type { TosConfig } from '../../src/types.ts'
 import { buildTosObjectKey, createTosClient, resolveTosUrl } from '../../src/services/tosUploadService.ts'
 import { startBridge } from './bridge'
+import { startMockApiServer } from '../../server/mockApiServer.mjs'
 
 let bridgeServer: any = null
+let mockApiServer: any = null
 let mainWindow: BrowserWindow | null = null
 
 const iconPath = join(__dirname, '../../public/assets/tapdance_logo.png')
@@ -17,6 +19,11 @@ type TosUploadPayload = {
   fileName: string
   fileType?: string
   data: ArrayBuffer
+}
+
+type MockApiStartOptions = {
+  port?: number
+  scenario?: string
 }
 
 function normalizeErrorMessage(error: unknown): string {
@@ -167,6 +174,53 @@ app.whenReady().then(async () => {
     return app.getVersion()
   })
 
+  ipcMain.handle('mock-api:status', () => {
+    if (!mockApiServer) {
+      return {
+        running: false,
+        baseUrl: '',
+      }
+    }
+    return mockApiServer.getStatus()
+  })
+
+  ipcMain.handle('mock-api:start', async (_, options?: MockApiStartOptions) => {
+    if (!mockApiServer) {
+      const port = Number(options?.port || process.env.MOCK_API_PORT || 3220)
+      mockApiServer = await startMockApiServer({
+        port,
+        scenario: options?.scenario,
+      })
+      console.log(`Mock API server started on ${mockApiServer.baseUrl}`)
+    } else if (options?.scenario && typeof mockApiServer.setScenario === 'function') {
+      mockApiServer.setScenario(options.scenario)
+    }
+    return mockApiServer.getStatus()
+  })
+
+  ipcMain.handle('mock-api:stop', async () => {
+    if (mockApiServer && typeof mockApiServer.close === 'function') {
+      await mockApiServer.close()
+      mockApiServer = null
+    }
+    return {
+      running: false,
+      baseUrl: '',
+    }
+  })
+
+  ipcMain.handle('mock-api:setScenario', async (_, scenario: string) => {
+    if (!mockApiServer) {
+      mockApiServer = await startMockApiServer({
+        port: Number(process.env.MOCK_API_PORT || 3220),
+        scenario,
+      })
+    } else if (typeof mockApiServer.setScenario === 'function') {
+      mockApiServer.setScenario(scenario)
+    }
+    return mockApiServer.getStatus()
+  })
+
   ipcMain.handle('window:setAppearance', (_, mode: WindowAppearanceMode) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return false
@@ -249,5 +303,8 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   if (bridgeServer && typeof bridgeServer.close === 'function') {
     bridgeServer.close()
+  }
+  if (mockApiServer && typeof mockApiServer.close === 'function') {
+    void mockApiServer.close()
   }
 })

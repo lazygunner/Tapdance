@@ -1137,6 +1137,13 @@ function getTaskTone(remoteStatus?: string, hasSubmission = false) {
       badgeClass: 'border-zinc-600 bg-zinc-900 text-zinc-200',
     };
   }
+  if (normalized === 'local_queued' || normalized === 'local_retry_wait' || normalized === 'local_queue_submitting') {
+    return {
+      shellClass: 'border-sky-500/20 bg-zinc-950/80',
+      accentClass: 'text-sky-200',
+      badgeClass: 'border-sky-500/20 bg-sky-500/10 text-sky-100',
+    };
+  }
   if (normalized === 'querying') {
     return {
       shellClass: 'border-amber-500/20 bg-zinc-950/80',
@@ -1179,6 +1186,15 @@ function formatGenStatus(value?: string) {
   }
   if (normalized === 'cancelled' || normalized === 'canceled') {
     return { label: '已取消', raw: value || '' };
+  }
+  if (normalized === 'local_queued') {
+    return { label: '本地排队', raw: value || '' };
+  }
+  if (normalized === 'local_retry_wait') {
+    return { label: '等待重试', raw: value || '' };
+  }
+  if (normalized === 'local_queue_submitting') {
+    return { label: '自动提交中', raw: value || '' };
   }
   return { label: value || '未返回', raw: value || '' };
 }
@@ -1478,7 +1494,7 @@ export function FastVideoView({
   const finishedAtMs = parseTimestampMs(task.finishedAt);
   const elapsedMs = startedAtMs ? Math.max(0, (finishedAtMs ?? nowMs) - startedAtMs) : 0;
   const elapsedLabel = startedAtMs ? formatElapsedTime(elapsedMs) : '尚未开始';
-  const isTaskActive = task.status === 'submitting' || task.status === 'generating';
+  const isTaskActive = task.status === 'queued' || task.status === 'submitting' || task.status === 'generating';
 
   useEffect(() => {
     if (!isTaskActive) {

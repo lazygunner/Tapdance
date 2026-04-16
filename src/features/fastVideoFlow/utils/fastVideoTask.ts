@@ -71,7 +71,7 @@ export function getFastVideoTaskId(task: Project['fastFlow']['task']) {
 }
 
 function isFastVideoTaskActive(task: Project['fastFlow']['task']) {
-  return task.status === 'submitting' || task.status === 'generating';
+  return task.status === 'queued' || task.status === 'submitting' || task.status === 'generating';
 }
 
 export function canCancelFastVideoTask(task: Project['fastFlow']['task']) {

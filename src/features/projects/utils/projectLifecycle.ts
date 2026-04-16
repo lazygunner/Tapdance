@@ -45,7 +45,12 @@ export function createEmptyProject(projectType: ProjectType = 'creative-video'):
 }
 
 export function isProjectDetailView(view: WorkspaceView) {
-  return view !== 'home' && view !== 'assetLibrary' && view !== 'portraitLibrary' && view !== 'groupDetail' && view !== 'apiConfig';
+  return view !== 'home'
+    && view !== 'assetLibrary'
+    && view !== 'portraitLibrary'
+    && view !== 'cliQueue'
+    && view !== 'groupDetail'
+    && view !== 'apiConfig';
 }
 
 export function isProjectEmpty(project: Project): boolean {
@@ -77,6 +82,7 @@ export function getProjectResumeView(project: Project): WorkspaceView {
     const hasGeneratedVideo = Boolean(project.fastFlow.task.videoUrl)
       || Boolean(project.fastFlow.task.taskId)
       || Boolean(project.fastFlow.task.submitId)
+      || project.fastFlow.task.status === 'queued'
       || project.fastFlow.task.status === 'generating'
       || project.fastFlow.task.status === 'completed';
 

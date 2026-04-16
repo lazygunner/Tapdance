@@ -4,6 +4,7 @@ import {
   Clapperboard,
   FileText,
   Film,
+  ListOrdered,
   Image as ImageIcon,
   LayoutDashboard,
   Moon,
@@ -27,6 +28,7 @@ export type WorkspaceView =
   | 'home'
   | 'assetLibrary'
   | 'portraitLibrary'
+  | 'cliQueue'
   | 'groupDetail'
   | 'input'
   | 'brief'
@@ -186,6 +188,15 @@ export function getWorkspaceSurfaceMeta(view: WorkspaceView, project: Project): 
         chipClassName: 'studio-accent-chip-amber',
         badgeLabel: 'Portraits',
       };
+    case 'cliQueue':
+      return {
+        eyebrow: 'Local Queue',
+        title: '任务队列',
+        description: '管理本地排队与自动提交',
+        icon: ListOrdered,
+        chipClassName: 'studio-accent-chip-sky',
+        badgeLabel: 'Queue',
+      };
     case 'groupDetail':
       return {
         eyebrow: 'Collection',
@@ -242,7 +253,9 @@ type StudioSidebarProps = {
   projectCount: number;
   mediaCount: number;
   themeMode: WorkspaceThemeMode;
-  onNavigate: (view: 'home' | 'assetLibrary' | 'portraitLibrary') => void;
+  queueCount: number;
+  isMockModeEnabled?: boolean;
+  onNavigate: (view: 'home' | 'assetLibrary' | 'portraitLibrary' | 'cliQueue') => void;
   onThemeModeChange: (mode: WorkspaceThemeMode) => void;
   onOpenApiConfig: () => void;
 };
@@ -251,15 +264,23 @@ export function StudioSidebar({
   view,
   projectCount,
   mediaCount,
+  queueCount,
+  isMockModeEnabled = false,
   themeMode,
   onNavigate,
   onThemeModeChange,
   onOpenApiConfig,
 }: StudioSidebarProps) {
-  const activePrimaryView: 'home' | 'assetLibrary' | 'portraitLibrary' =
-    view === 'assetLibrary' ? 'assetLibrary' : view === 'portraitLibrary' ? 'portraitLibrary' : 'home';
+  const activePrimaryView: 'home' | 'assetLibrary' | 'portraitLibrary' | 'cliQueue' =
+    view === 'assetLibrary'
+      ? 'assetLibrary'
+      : view === 'portraitLibrary'
+        ? 'portraitLibrary'
+        : view === 'cliQueue'
+          ? 'cliQueue'
+          : 'home';
   const primaryNavItems: Array<{
-    view: 'home' | 'assetLibrary' | 'portraitLibrary';
+    view: 'home' | 'assetLibrary' | 'portraitLibrary' | 'cliQueue';
     label: string;
     description: string;
     countLabel: string;
@@ -285,6 +306,13 @@ export function StudioSidebar({
         description: '平台公开与真人人像',
         countLabel: '公开 + 真人',
         icon: Users,
+      },
+      {
+        view: 'cliQueue',
+        label: '任务队列',
+        description: '本地排队与自动提交',
+        countLabel: `${queueCount} 个任务`,
+        icon: ListOrdered,
       },
     ];
 
@@ -392,7 +420,14 @@ export function StudioSidebar({
           </div>
 
           <button type="button" onClick={onOpenApiConfig} className="studio-button studio-button-secondary w-full justify-between">
-            <span>API 配置</span>
+            <span className="flex items-center gap-2">
+              API 配置
+              {isMockModeEnabled ? (
+                <span className="rounded-full border border-cyan-500/25 bg-cyan-500/12 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">
+                  MOCK
+                </span>
+              ) : null}
+            </span>
             <Settings2 className="h-4 w-4 text-[var(--studio-dim)]" />
           </button>
         </StudioPanel>

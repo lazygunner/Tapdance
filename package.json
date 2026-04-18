@@ -30,6 +30,8 @@
     "preview": "vite preview",
     "test": "node --experimental-transform-types --test tests/*.test.ts",
     "test:e2e": "playwright test",
+    "pretest:e2e:prod": "npm run build",
+    "test:e2e:prod": "playwright test --config=playwright.production.config.ts",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "version:check-tag": "node scripts/check-version-tag.mjs",

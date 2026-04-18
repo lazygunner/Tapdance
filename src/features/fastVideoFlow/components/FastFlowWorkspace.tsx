@@ -1,6 +1,7 @@
 import type { ChangeEvent, ReactNode } from 'react';
 
 import type { ApiSettings, Project } from '../../../types.ts';
+import type { ProjectGroupImageAsset, ProjectGroupMediaAsset } from '../../../services/projectGroups.ts';
 import type { WorkspaceThemeMode, WorkspaceView } from '../../../components/studio/WorkspaceViews.tsx';
 import type { SeedanceHealth, FastReferenceAudio, FastReferenceImage, FastReferenceVideo, FastSceneDraft, FastVideoInput, FastVideoPromptDraft } from '../types/fastTypes.ts';
 import type { SeedanceDraft } from '../../seedance/types.ts';
@@ -15,6 +16,8 @@ type FastFlowWorkspaceProps = {
   project: Project;
   themeMode: WorkspaceThemeMode;
   tosConfig: ApiSettings['tos'];
+  historyImageMaterials: ProjectGroupImageAsset[];
+  historyMediaMaterials: ProjectGroupMediaAsset[];
   seedanceHealth: SeedanceHealth | null;
   isRefreshingSeedanceHealth: boolean;
   isGeneratingFastPlan: boolean;
@@ -30,16 +33,22 @@ type FastFlowWorkspaceProps = {
   onGenerateFastPlan: () => void | Promise<void>;
   onGoFastVideo: () => void;
   onOpenApiConfig: () => void;
-  onAddReferenceImage: () => void;
+  onAddReferenceImage: () => string | void;
+  onAddReferenceImagesFromHistory: (materials: ProjectGroupImageAsset[]) => string[] | void;
+  onReplaceReferenceImageFromHistory: (referenceId: string, material: ProjectGroupImageAsset) => void;
+  onAddReferenceVideosFromHistory: (materials: ProjectGroupMediaAsset[]) => string[] | void;
+  onReplaceReferenceVideoFromHistory: (referenceId: string, material: ProjectGroupMediaAsset) => void;
+  onAddReferenceAudiosFromHistory: (materials: ProjectGroupMediaAsset[]) => string[] | void;
+  onReplaceReferenceAudioFromHistory: (referenceId: string, material: ProjectGroupMediaAsset) => void;
   onUploadReferenceImage: (event: ChangeEvent<HTMLInputElement>, referenceId: string) => void | Promise<void>;
   onPasteReferenceImage: (file: File, referenceId: string) => void | Promise<void>;
   onUpdateReferenceImage: (referenceId: string, patch: Partial<FastReferenceImage>) => void;
   onRemoveReferenceImage: (referenceId: string) => void;
-  onAddReferenceVideo: () => void;
+  onAddReferenceVideo: () => string | void;
   onUpdateReferenceVideo: (referenceId: string, patch: Partial<FastReferenceVideo>) => void;
   onRemoveReferenceVideo: (referenceId: string) => void;
   onToggleReferenceVideoSelection: (referenceId: string) => void;
-  onAddReferenceAudio: () => void;
+  onAddReferenceAudio: () => string | void;
   onUpdateReferenceAudio: (referenceId: string, patch: Partial<FastReferenceAudio>) => void;
   onRemoveReferenceAudio: (referenceId: string) => void;
   onUpdateScene: (sceneId: string, patch: Partial<FastSceneDraft>) => void;
@@ -68,6 +77,8 @@ export function FastFlowWorkspace({
   project,
   themeMode,
   tosConfig,
+  historyImageMaterials,
+  historyMediaMaterials,
   seedanceHealth,
   isRefreshingSeedanceHealth,
   isGeneratingFastPlan,
@@ -84,6 +95,12 @@ export function FastFlowWorkspace({
   onGoFastVideo,
   onOpenApiConfig,
   onAddReferenceImage,
+  onAddReferenceImagesFromHistory,
+  onReplaceReferenceImageFromHistory,
+  onAddReferenceVideosFromHistory,
+  onReplaceReferenceVideoFromHistory,
+  onAddReferenceAudiosFromHistory,
+  onReplaceReferenceAudioFromHistory,
   onUploadReferenceImage,
   onPasteReferenceImage,
   onUpdateReferenceImage,
@@ -118,10 +135,20 @@ export function FastFlowWorkspace({
         input={project.fastFlow.input}
         isGenerating={isGeneratingFastPlan}
         hasPlan={project.fastFlow.scenes.length > 0}
+        projectId={project.id}
+        currentGroupId={project.groupId || ''}
+        historyImageMaterials={historyImageMaterials}
+        historyMediaMaterials={historyMediaMaterials}
         onChange={onChangeFastInput}
         onGenerate={onGenerateFastPlan}
         onSkipStoryboard={onSkipStoryboard}
         onAddReferenceImage={onAddReferenceImage}
+        onAddReferenceImagesFromHistory={onAddReferenceImagesFromHistory}
+        onReplaceReferenceImageFromHistory={onReplaceReferenceImageFromHistory}
+        onAddReferenceVideosFromHistory={onAddReferenceVideosFromHistory}
+        onReplaceReferenceVideoFromHistory={onReplaceReferenceVideoFromHistory}
+        onAddReferenceAudiosFromHistory={onAddReferenceAudiosFromHistory}
+        onReplaceReferenceAudioFromHistory={onReplaceReferenceAudioFromHistory}
         onUploadReferenceImage={onUploadReferenceImage}
         onPasteReferenceImage={onPasteReferenceImage}
         onUpdateReferenceImage={onUpdateReferenceImage}

@@ -12,7 +12,7 @@ import {
   restoreMockApiSettings,
   type MockApiServerStatus,
 } from './services/mockApiConfig.ts';
-import { getProjectGroupImageAssets, getProjectGroupSummary, type ProjectGroupImageAsset, type ProjectGroupSummary } from './services/projectGroups.ts';
+import { collectProjectGeneratedImageAssets, collectProjectGeneratedMediaAssets, getProjectGroupImageAssets, getProjectGroupSummary, type ProjectGroupImageAsset, type ProjectGroupMediaAsset, type ProjectGroupSummary } from './services/projectGroups.ts';
 import { applyStyleGuideToPrompt, buildStyleGuideText, findStylePresetById, getStylePresets, matchStylePreset } from './services/styleCatalog';
 import { FastFlowWorkspace } from './features/fastVideoFlow/components/FastFlowWorkspace.tsx';
 import { SeedanceCliQueueWorkspace } from './features/fastVideoFlow/components/SeedanceCliQueueWorkspace.tsx';
@@ -104,6 +104,7 @@ type CreateProjectDraft = WorkspaceCreateProjectDraft;
 const EMPTY_PROJECT_GROUPS: ProjectGroupSummary[] = [];
 const EMPTY_ASSET_LIBRARY_ITEMS: AssetLibraryStatusItem[] = [];
 const EMPTY_PROJECT_GROUP_IMAGE_ASSETS: ProjectGroupImageAsset[] = [];
+const EMPTY_PROJECT_GROUP_MEDIA_ASSETS: ProjectGroupMediaAsset[] = [];
 const PROJECT_LIST_SYNC_DELAY_MS = 240;
 const PROJECT_PERSIST_DELAY_MS = 800;
 const STARTUP_SPLASH_SESSION_KEY = 'tapdance-startup-dismissed';
@@ -249,7 +250,10 @@ export default function App() {
   const projectGroups = shouldComputeProjectGroups ? getProjectGroupSummary(projects) : EMPTY_PROJECT_GROUPS;
   const projectMediaCounts = countProjectMediaItems(projects);
   const shouldComputeAssetLibraryItems = view === 'assetLibrary';
-  const assetLibraryItems = shouldComputeAssetLibraryItems ? buildAssetLibraryStatusItems(projects) : EMPTY_ASSET_LIBRARY_ITEMS;
+  const assetLibrarySourceProjects = shouldComputeAssetLibraryItems
+    ? Array.from(new Map([...projects, project].map((candidate) => [candidate.id, candidate])).values())
+    : projects;
+  const assetLibraryItems = shouldComputeAssetLibraryItems ? buildAssetLibraryStatusItems(assetLibrarySourceProjects) : EMPTY_ASSET_LIBRARY_ITEMS;
   const libraryImageItems = shouldComputeAssetLibraryItems ? assetLibraryItems.filter((item) => item.kind === 'image') : EMPTY_ASSET_LIBRARY_ITEMS;
   const libraryVideoItems = shouldComputeAssetLibraryItems ? assetLibraryItems.filter((item) => item.kind === 'video') : EMPTY_ASSET_LIBRARY_ITEMS;
   const savedAssetLibraryCount = shouldComputeAssetLibraryItems ? assetLibraryItems.filter((item) => item.savedToLibrary).length : 0;
@@ -259,6 +263,79 @@ export default function App() {
   const currentGroupImageAssets = shouldComputeCurrentGroupImageAssets
     ? getProjectGroupImageAssets(project.groupId || '', projects)
     : EMPTY_PROJECT_GROUP_IMAGE_ASSETS;
+  const shouldComputeFastHistoryImageAssets = view === 'fastInput';
+  const fastHistorySourceProjects = shouldComputeFastHistoryImageAssets
+    ? Array.from(new Map([...projects, project].map((candidate) => [candidate.id, candidate])).values())
+    : projects;
+  const fastHistoryImageAssets = shouldComputeFastHistoryImageAssets
+    ? fastHistorySourceProjects
+      .flatMap((candidate) => collectProjectGeneratedImageAssets(candidate))
+      .filter((item) => item.imageUrl.trim())
+      .sort((left, right) => {
+        const currentGroupId = project.groupId || '';
+        const leftSameGroup = Boolean(currentGroupId && left.groupId === currentGroupId);
+        const rightSameGroup = Boolean(currentGroupId && right.groupId === currentGroupId);
+        if (leftSameGroup !== rightSameGroup) {
+          return leftSameGroup ? -1 : 1;
+        }
+
+        const leftCurrentProject = left.projectId === project.id;
+        const rightCurrentProject = right.projectId === project.id;
+        if (leftCurrentProject !== rightCurrentProject) {
+          return leftCurrentProject ? -1 : 1;
+        }
+
+        return `${left.projectName}${left.title}`.localeCompare(`${right.projectName}${right.title}`, 'zh-Hans-CN');
+      })
+    : EMPTY_PROJECT_GROUP_IMAGE_ASSETS;
+  const fastHistoryProjectById = new Map<string, Project>(fastHistorySourceProjects.map((candidate) => [candidate.id, candidate]));
+  const fastHistoryMediaAssets = shouldComputeFastHistoryImageAssets
+    ? [
+      ...buildAssetLibraryStatusItems(fastHistorySourceProjects)
+        .filter((item) => item.kind === 'video' && item.savedToLibrary && item.url.trim())
+        .map((item): ProjectGroupMediaAsset => {
+          const sourceProject = fastHistoryProjectById.get(item.projectId);
+          return {
+            id: `asset-library:${item.id}`,
+            groupId: sourceProject?.groupId || '',
+            projectId: item.projectId,
+            projectName: item.projectName,
+            sourceType: 'asset-library-video',
+            title: item.title,
+            sourceLabel: `素材库 / ${item.sourceLabel}`,
+            kind: 'video',
+            url: item.url,
+          };
+        }),
+      ...fastHistorySourceProjects.flatMap((candidate) => collectProjectGeneratedMediaAssets(candidate)),
+    ]
+      .filter((item) => item.url.trim())
+      .filter((item, index, items) => {
+        const normalizedUrl = item.url.trim();
+        return items.findIndex((candidate) => candidate.kind === item.kind && candidate.url.trim() === normalizedUrl) === index;
+      })
+      .sort((left, right) => {
+        const currentGroupId = project.groupId || '';
+        const leftSameGroup = Boolean(currentGroupId && left.groupId === currentGroupId);
+        const rightSameGroup = Boolean(currentGroupId && right.groupId === currentGroupId);
+        if (leftSameGroup !== rightSameGroup) {
+          return leftSameGroup ? -1 : 1;
+        }
+
+        const leftCurrentProject = left.projectId === project.id;
+        const rightCurrentProject = right.projectId === project.id;
+        if (leftCurrentProject !== rightCurrentProject) {
+          return leftCurrentProject ? -1 : 1;
+        }
+
+        const kindOrder = { image: 0, video: 1, audio: 2 } as const;
+        if (kindOrder[left.kind] !== kindOrder[right.kind]) {
+          return kindOrder[left.kind] - kindOrder[right.kind];
+        }
+
+        return `${left.projectName}${left.title}`.localeCompare(`${right.projectName}${right.title}`, 'zh-Hans-CN');
+      })
+    : EMPTY_PROJECT_GROUP_MEDIA_ASSETS;
   const {
     frameEditPrompts,
     setFrameEditPrompts,
@@ -451,6 +528,12 @@ export default function App() {
   const {
     handleFastInputChange,
     handleAddFastReferenceImage,
+    handleAddFastReferenceImagesFromHistory,
+    handleReplaceFastReferenceImageFromHistory,
+    handleAddFastReferenceVideosFromHistory,
+    handleReplaceFastReferenceVideoFromHistory,
+    handleAddFastReferenceAudiosFromHistory,
+    handleReplaceFastReferenceAudioFromHistory,
     handleUploadFastReferenceImage,
     handlePasteFastReferenceImage,
     handleUpdateFastReferenceImage,
@@ -1016,6 +1099,8 @@ export default function App() {
           project={project}
           themeMode={themeMode}
           tosConfig={apiSettings.tos}
+          historyImageMaterials={fastHistoryImageAssets}
+          historyMediaMaterials={fastHistoryMediaAssets}
           seedanceHealth={seedanceHealth}
           isRefreshingSeedanceHealth={isRefreshingSeedanceHealth}
           isGeneratingFastPlan={isGeneratingFastPlan}
@@ -1024,7 +1109,7 @@ export default function App() {
           isRefreshingFastVideoTask={isRefreshingFastVideoTask}
           isCancellingFastVideoTask={isCancellingFastVideoTask}
           isRegeneratingFastVideoPrompt={isRegeneratingFastVideoPrompt}
-          operationPanel={renderOperationModelPanel('fast-plan', 'text')}
+          operationPanel={renderCompactOperationModelPanel('fast-plan', 'text', undefined, { showCategoryTag: false })}
           renderImageModelPanel={(sceneId) => renderCompactOperationModelPanel(`fast-scene-image-${sceneId}`, 'image')}
           onRefreshSeedanceHealth={() => void refreshSeedanceHealth()}
           onChangeFastInput={handleFastInputChange}
@@ -1032,6 +1117,12 @@ export default function App() {
           onGoFastVideo={() => setView('fastVideo')}
           onOpenApiConfig={() => setView('apiConfig')}
           onAddReferenceImage={handleAddFastReferenceImage}
+          onAddReferenceImagesFromHistory={handleAddFastReferenceImagesFromHistory}
+          onReplaceReferenceImageFromHistory={handleReplaceFastReferenceImageFromHistory}
+          onAddReferenceVideosFromHistory={handleAddFastReferenceVideosFromHistory}
+          onReplaceReferenceVideoFromHistory={handleReplaceFastReferenceVideoFromHistory}
+          onAddReferenceAudiosFromHistory={handleAddFastReferenceAudiosFromHistory}
+          onReplaceReferenceAudioFromHistory={handleReplaceFastReferenceAudioFromHistory}
           onUploadReferenceImage={handleUploadFastReferenceImage}
           onPasteReferenceImage={handlePasteFastReferenceImage}
           onUpdateReferenceImage={handleUpdateFastReferenceImage}

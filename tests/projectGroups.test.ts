@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createEmptyFastVideoProject } from '../src/features/fastVideoFlow/services/fastFlowMappers.ts';
-import { buildDefaultGroupName, collectProjectGeneratedImageAssets, getNormalizedProjectGroupFields, getProjectGroupImageAssets, getProjectGroupSummary } from '../src/services/projectGroups.ts';
+import { buildDefaultGroupName, collectProjectGeneratedImageAssets, collectProjectGeneratedMediaAssets, getNormalizedProjectGroupFields, getProjectGroupImageAssets, getProjectGroupSummary } from '../src/services/projectGroups.ts';
 import type { Project } from '../src/types.ts';
 
 function createProject(overrides: Partial<Project> = {}): Project {
@@ -148,6 +148,52 @@ test('collectProjectGeneratedImageAssets collects assets and first/last frames',
   assert.ok(images.some((item) => item.sourceType === 'asset'));
   assert.ok(images.some((item) => item.sourceType === 'shot-first'));
   assert.ok(images.some((item) => item.sourceType === 'shot-last'));
+});
+
+test('collectProjectGeneratedMediaAssets includes historical video and audio references', () => {
+  const fastFlow = createEmptyFastVideoProject();
+  fastFlow.input.referenceVideos = [{
+    id: 'reference-video-1',
+    videoUrl: 'https://example.com/reference.mp4',
+    referenceType: 'motion',
+    description: '动作参考',
+  }];
+  fastFlow.input.referenceAudios = [{
+    id: 'reference-audio-1',
+    audioUrl: 'https://example.com/reference.mp3',
+    referenceType: 'music',
+    description: '音乐参考',
+  }];
+  fastFlow.task.videoUrl = 'https://example.com/final.mp4';
+
+  const project = createProject({
+    id: 'project-1',
+    groupId: 'group-1',
+    groupName: '测试分组',
+    shots: [
+      {
+        id: 'shot-1',
+        shotNumber: 1,
+        duration: 3,
+        shotSize: '中景',
+        cameraAngle: '平视',
+        cameraMovement: '固定',
+        subject: '主角',
+        action: '动作 A',
+        mood: '兴奋',
+        transition: '硬切',
+        videoUrl: 'https://example.com/shot.mp4',
+      },
+    ],
+    fastFlow,
+  });
+
+  const media = collectProjectGeneratedMediaAssets(project);
+
+  assert.ok(media.some((item) => item.kind === 'video' && item.sourceType === 'shot-video'));
+  assert.ok(media.some((item) => item.kind === 'video' && item.sourceType === 'fast-reference-video'));
+  assert.ok(media.some((item) => item.kind === 'video' && item.sourceType === 'fast-task-video'));
+  assert.ok(media.some((item) => item.kind === 'audio' && item.sourceType === 'fast-reference-audio'));
 });
 
 test('getProjectGroupImageAssets filters images by group id', () => {

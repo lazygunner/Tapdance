@@ -17,10 +17,22 @@ export type ProjectGroupImageAsset = {
   groupId: string;
   projectId: string;
   projectName: string;
-  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-scene';
+  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-reference' | 'fast-scene' | 'fast-task-last-frame';
   title: string;
   sourceLabel: string;
   imageUrl: string;
+};
+
+export type ProjectGroupMediaAsset = {
+  id: string;
+  groupId: string;
+  projectId: string;
+  projectName: string;
+  sourceType: ProjectGroupImageAsset['sourceType'] | 'shot-video' | 'shot-transition-video' | 'fast-reference-video' | 'fast-reference-audio' | 'fast-task-video' | 'asset-library-video';
+  title: string;
+  sourceLabel: string;
+  kind: 'image' | 'video' | 'audio';
+  url: string;
 };
 
 export function normalizeProjectGroupName(groupName?: string) {
@@ -122,8 +134,8 @@ export function collectProjectPreviewImages(project: Project) {
 }
 
 export function collectProjectGeneratedImageAssets(project: Project): ProjectGroupImageAsset[] {
-  const groupId = project.groupId || '';
   const projectName = project.name || '未命名项目';
+  const { groupId } = getNormalizedProjectGroupFields(project, project.id, projectName);
   const images: ProjectGroupImageAsset[] = [];
 
   for (const asset of project.assets) {
@@ -170,6 +182,23 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
     }
   }
 
+  project.fastFlow.input.referenceImages.forEach((reference, index) => {
+    if (!reference.imageUrl) {
+      return;
+    }
+
+    images.push({
+      id: `${project.id}:fast-reference:${reference.id || index}`,
+      groupId,
+      projectId: project.id,
+      projectName,
+      sourceType: 'fast-reference',
+      title: reference.description || `参考图 ${index + 1}`,
+      sourceLabel: '极速参考图',
+      imageUrl: reference.imageUrl,
+    });
+  });
+
   for (const scene of project.fastFlow.scenes) {
     if (!scene.imageUrl) {
       continue;
@@ -187,7 +216,97 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
     });
   }
 
+  if (project.fastFlow.task.lastFrameUrl) {
+    images.push({
+      id: `${project.id}:fast-task:last-frame`,
+      groupId,
+      projectId: project.id,
+      projectName,
+      sourceType: 'fast-task-last-frame',
+      title: '极速视频尾帧',
+      sourceLabel: '极速视频结果',
+      imageUrl: project.fastFlow.task.lastFrameUrl,
+    });
+  }
+
   return images;
+}
+
+export function collectProjectGeneratedMediaAssets(project: Project): ProjectGroupMediaAsset[] {
+  const projectName = project.name || '未命名项目';
+  const { groupId } = getNormalizedProjectGroupFields(project, project.id, projectName);
+  const media: ProjectGroupMediaAsset[] = collectProjectGeneratedImageAssets(project).map((image) => ({
+    ...image,
+    kind: 'image',
+    url: image.imageUrl,
+  }));
+
+  const pushMedia = (item: Omit<ProjectGroupMediaAsset, 'groupId' | 'projectId' | 'projectName'>) => {
+    const url = item.url.trim();
+    if (!url) {
+      return;
+    }
+
+    media.push({
+      ...item,
+      url,
+      groupId,
+      projectId: project.id,
+      projectName,
+    });
+  };
+
+  for (const shot of project.shots) {
+    pushMedia({
+      id: `${project.id}:shot:${shot.id}:video`,
+      sourceType: 'shot-video',
+      title: `镜头 ${shot.shotNumber} 视频`,
+      sourceLabel: '创意镜头视频',
+      kind: 'video',
+      url: shot.videoUrl || '',
+    });
+    pushMedia({
+      id: `${project.id}:shot:${shot.id}:transition`,
+      sourceType: 'shot-transition-video',
+      title: `镜头 ${shot.shotNumber} 转场`,
+      sourceLabel: '创意转场视频',
+      kind: 'video',
+      url: shot.transitionVideoUrl || '',
+    });
+  }
+
+  project.fastFlow.input.referenceVideos.forEach((reference, index) => {
+    pushMedia({
+      id: `${project.id}:fast-reference-video:${reference.id || index}`,
+      sourceType: 'fast-reference-video',
+      title: reference.description || `参考视频 ${index + 1}`,
+      sourceLabel: '极速参考视频',
+      kind: 'video',
+      url: reference.videoUrl,
+    });
+  });
+
+  project.fastFlow.input.referenceAudios.forEach((reference, index) => {
+    pushMedia({
+      id: `${project.id}:fast-reference-audio:${reference.id || index}`,
+      sourceType: 'fast-reference-audio',
+      title: reference.description || `参考音频 ${index + 1}`,
+      sourceLabel: '极速参考音频',
+      kind: 'audio',
+      url: reference.audioUrl,
+    });
+  });
+
+  pushMedia({
+    id: `${project.id}:fast-task:video`,
+    sourceType: 'fast-task-video',
+    title: '极速视频成片',
+    sourceLabel: '极速视频结果',
+    kind: 'video',
+    url: project.fastFlow.task.videoUrl || '',
+  });
+
+  return media;
 }
 
 export function getProjectGroupImageAssets(groupId: string, projects: Project[]) {
@@ -203,6 +322,27 @@ export function getProjectGroupImageAssets(groupId: string, projects: Project[])
   const seen = new Set<string>();
   return items.filter((item) => {
     const dedupeKey = `${item.imageUrl}::${item.sourceLabel}`;
+    if (seen.has(dedupeKey)) {
+      return false;
+    }
+    seen.add(dedupeKey);
+    return true;
+  });
+}
+
+export function getProjectGroupMediaAssets(groupId: string, projects: Project[]) {
+  const normalizedGroupId = (groupId || '').trim();
+  if (!normalizedGroupId) {
+    return [];
+  }
+
+  const items = projects
+    .filter((project) => project.groupId === normalizedGroupId)
+    .flatMap((project) => collectProjectGeneratedMediaAssets(project));
+
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const dedupeKey = `${item.kind}::${item.url}::${item.sourceLabel}`;
     if (seen.has(dedupeKey)) {
       return false;
     }

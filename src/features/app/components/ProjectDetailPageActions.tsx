@@ -46,17 +46,17 @@ export function ProjectDetailPageActions({
           type="button"
           onClick={() => void onGenerateFastPlan()}
           disabled={!canGenerate}
-          className="studio-button studio-button-fast-plan px-4 py-2"
+          className="studio-button studio-button-fast-plan px-3 py-1.5 text-xs"
         >
-          {isGeneratingFastPlan ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4" />先生成分镜图</span>}
+          {isGeneratingFastPlan ? <span className="inline-flex items-center gap-1.5"><img src="./assets/loading.gif" alt="" className="w-3.5 h-3.5" />生成中</span> : <span className="inline-flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />生成分镜</span>}
         </button>
         <button
           type="button"
           onClick={onSkipFastStoryboard}
           disabled={!canGoDirectToVideo}
-          className="studio-button studio-button-direct-video px-4 py-2"
+          className="studio-button studio-button-direct-video px-3 py-1.5 text-xs"
         >
-          不生成分镜直接生成视频
+          直接生成视频
         </button>
       </>
     );

@@ -482,6 +482,71 @@ export function ProjectDetailHeader({
   const navItems = NAV_ITEMS_BY_PROJECT[workspaceProjectType];
   const activeIndex = navItems.findIndex((item) => item.view === activeView);
 
+  if (workspaceProjectType === 'fast-video') {
+    return (
+      <StudioPanel className="p-3" tone="soft">
+        <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
+          <button type="button" onClick={onGoHome} className="studio-button studio-button-secondary shrink-0 px-3 py-1.5 text-xs">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            返回
+          </button>
+
+          <div className={cx('inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium', projectMeta.chipClassName)}>
+            <ProjectIcon className="h-3.5 w-3.5" />
+            {projectMeta.eyebrow}
+          </div>
+
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <div className="flex min-w-max items-center gap-0">
+              {navItems.map((item, index) => {
+                const Icon = item.icon;
+                const isDisabled = isNavItemDisabled(project, item.view);
+                const isActive = activeView === item.view;
+                const isCompleted = !isDisabled && activeIndex > index;
+                const circleClassName = isDisabled
+                  ? 'border-[var(--studio-border)] bg-transparent text-[var(--studio-dim)]'
+                  : isActive
+                    ? projectMeta.chipClassName
+                    : isCompleted
+                      ? 'border-white/12 bg-white/8 text-[var(--studio-text)]'
+                      : 'border-[var(--studio-border)] bg-transparent text-[var(--studio-muted)]';
+                const itemClassName = isDisabled
+                  ? 'cursor-not-allowed opacity-50'
+                  : isActive
+                    ? 'text-[var(--studio-text)]'
+                    : 'text-[var(--studio-muted)] hover:text-[var(--studio-text)]';
+                const connectorClassName = isCompleted
+                  ? projectMeta.completedLineClassName
+                  : 'bg-[var(--studio-border-strong)]';
+
+                return (
+                  <div key={item.view} className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => onSelectView(item.view)}
+                      disabled={isDisabled}
+                      className={cx('flex items-center gap-2 rounded-xl px-1.5 py-1 text-left text-xs font-medium transition-colors', itemClassName)}
+                    >
+                      <span className={cx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors', circleClassName)}>
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="whitespace-nowrap">{item.label}</span>
+                    </button>
+                    {index < navItems.length - 1 ? (
+                      <span className={cx('mx-1.5 h-[2px] w-6 shrink-0 rounded-full transition-colors', connectorClassName)} />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {pageActions ? <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">{pageActions}</div> : null}
+        </div>
+      </StudioPanel>
+    );
+  }
+
   return (
     <StudioPanel className="space-y-4 p-4" tone="soft">
       <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap">

@@ -32,6 +32,10 @@ type RenderTimelineStripOptions = {
   onTransitionClick?: (fromShotId: string) => void;
 };
 
+type RenderCompactOperationModelPanelOptions = {
+  showCategoryTag?: boolean;
+};
+
 export function useModelSelectionPanels({
   apiSettings,
   themeMode,
@@ -95,7 +99,12 @@ export function useModelSelectionPanels({
     );
   };
 
-  const renderCompactOperationModelPanel = (operationKey: string, category: ModelCategory, units?: OperationCostUnits) => {
+  const renderCompactOperationModelPanel = (
+    operationKey: string,
+    category: ModelCategory,
+    units?: OperationCostUnits,
+    options?: RenderCompactOperationModelPanelOptions,
+  ) => {
     const rawSelected = operationModelOverrides[operationKey] || 'flow';
     const resolvedSelection = getOperationSelection(apiSettings, flowModelOverrides, operationModelOverrides, operationKey, category);
     const costEstimate = getEstimatedCost(apiSettings, resolvedSelection.sourceId, category, units, resolvedSelection.modelName);
@@ -109,6 +118,7 @@ export function useModelSelectionPanels({
         resolvedSelection={resolvedSelection}
         costEstimate={costEstimate}
         units={units}
+        showCategoryTag={options?.showCategoryTag}
         onChange={(value) => setOperationModelOverrides((prev) => ({ ...prev, [operationKey]: value as OperationModelSelection }))}
       />
     );

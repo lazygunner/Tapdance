@@ -1,7 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { createEmptyFastVideoProject } from '../src/features/fastVideoFlow/services/fastFlowMappers.ts';
+import { applyLibraryItemUrlToProject, buildAssetLibraryStatusItems, countProjectMediaItems } from '../src/features/assetLibrary/utils/assetLibraryItems.ts';
 import { saveMediaToAssetLibrary } from '../src/services/assetLibrary.ts';
+import type { Project } from '../src/types.ts';
+
+function createProject(overrides: Partial<Project> = {}): Project {
+  return {
+    id: 'project-1',
+    projectType: 'fast-video',
+    name: '测试项目',
+    nameCustomized: false,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    groupId: 'group-1',
+    groupName: '测试分组',
+    idea: '',
+    selectedStyleId: '',
+    customStyleDescription: '',
+    styleSelectionMode: 'manual',
+    inputAspectRatio: '16:9',
+    brief: null,
+    assets: [],
+    shots: [],
+    fastFlow: createEmptyFastVideoProject(),
+    ...overrides,
+  };
+}
 
 test('saveMediaToAssetLibrary delegates remote media downloads to the bridge', async () => {
   const originalFetch = globalThis.fetch;
@@ -84,4 +109,29 @@ test('saveMediaToAssetLibrary resolves relative bridge media URLs before delegat
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('asset library includes fast reference videos and writes saved urls back', () => {
+  const fastFlow = createEmptyFastVideoProject();
+  fastFlow.input.referenceVideos = [{
+    id: 'reference-video-1',
+    videoUrl: 'https://example.com/reference.mp4',
+    description: '动作参考视频',
+    referenceType: 'motion',
+  }];
+  const project = createProject({ fastFlow });
+
+  const items = buildAssetLibraryStatusItems([project]);
+  const referenceVideoItem = items.find((item) => item.id === 'project-1:fast-reference-video:reference-video-1');
+
+  assert.ok(referenceVideoItem);
+  assert.equal(referenceVideoItem.kind, 'video');
+  assert.equal(referenceVideoItem.url, 'https://example.com/reference.mp4');
+  assert.equal(referenceVideoItem.sourceLabel, '极速参考视频');
+  assert.deepEqual(countProjectMediaItems([project]), { total: 1, images: 0, videos: 1 });
+
+  const updatedProject = applyLibraryItemUrlToProject(project, referenceVideoItem.id, '/api/seedance/assets/file?path=reference.mp4');
+
+  assert.equal(updatedProject.fastFlow.input.referenceVideos[0].videoUrl, '/api/seedance/assets/file?path=reference.mp4');
+  assert.equal(updatedProject.fastFlow.input.referenceVideos[0].videoMeta, null);
 });

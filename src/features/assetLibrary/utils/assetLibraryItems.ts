@@ -97,6 +97,16 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
     });
   });
 
+  project.fastFlow.input.referenceVideos.forEach((reference, index) => {
+    pushItem({
+      id: `${project.id}:fast-reference-video:${reference.id || index}`,
+      kind: 'video',
+      url: reference.videoUrl,
+      title: reference.description || `参考视频 ${index + 1}`,
+      sourceLabel: '极速参考视频',
+    });
+  });
+
   project.fastFlow.scenes.forEach((scene, index) => {
     pushItem({
       id: `${project.id}:fast-scene:${scene.id}`,
@@ -151,6 +161,7 @@ export function countProjectMediaItems(projects: Project[]): ProjectMediaCounts 
     });
 
     project.fastFlow.input.referenceImages.forEach((reference) => countImage(reference.imageUrl));
+    project.fastFlow.input.referenceVideos.forEach((reference) => countVideo(reference.videoUrl));
     project.fastFlow.scenes.forEach((scene) => countImage(scene.imageUrl));
     countImage(project.fastFlow.task.lastFrameUrl);
     countVideo(project.fastFlow.task.videoUrl);
@@ -251,6 +262,24 @@ export function applyLibraryItemUrlToProject(project: Project, itemId: string, n
           referenceImages: project.fastFlow.input.referenceImages.map((reference, index) => (
             reference.id === referenceId || String(index) === referenceId
               ? { ...reference, imageUrl: nextUrl }
+              : reference
+          )),
+        },
+      },
+    };
+  }
+
+  if (itemId.startsWith(`${project.id}:fast-reference-video:`)) {
+    const referenceId = itemId.slice(`${project.id}:fast-reference-video:`.length);
+    return {
+      ...project,
+      fastFlow: {
+        ...project.fastFlow,
+        input: {
+          ...project.fastFlow.input,
+          referenceVideos: project.fastFlow.input.referenceVideos.map((reference, index) => (
+            reference.id === referenceId || String(index) === referenceId
+              ? { ...reference, videoUrl: nextUrl, videoMeta: null }
               : reference
           )),
         },

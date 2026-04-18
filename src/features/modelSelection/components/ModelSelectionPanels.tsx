@@ -91,6 +91,7 @@ type CompactOperationModelPanelProps = {
   costEstimate: CostEstimate;
   onChange: (value: string) => void;
   units?: OperationCostUnits;
+  showCategoryTag?: boolean;
 };
 
 export function CompactOperationModelPanel({
@@ -101,6 +102,7 @@ export function CompactOperationModelPanel({
   resolvedSelection,
   costEstimate,
   onChange,
+  showCategoryTag = true,
 }: CompactOperationModelPanelProps) {
   const categoryMeta = DEFAULT_MODEL_ROLE_META[category];
   const compactDisplayLabel = resolvedSelection.modelName.trim()
@@ -112,20 +114,25 @@ export function CompactOperationModelPanel({
       ? 'studio-accent-chip-amber'
       : 'studio-accent-chip-sky';
   const selectClass = themeMode === 'light'
-    ? 'w-full h-11 rounded-xl border border-[rgba(110,124,145,0.16)] bg-white/90 px-3 text-[12px] text-stone-900 outline-none focus:border-sky-500'
-    : 'w-full h-11 rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 text-[12px] text-white outline-none focus:border-violet-500';
+    ? 'w-full h-12 rounded-xl border border-[rgba(110,124,145,0.16)] bg-white/90 px-3 text-[12px] text-stone-900 outline-none focus:border-sky-500'
+    : 'w-full h-12 rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 text-[12px] text-white outline-none focus:border-violet-500';
   const priceClass = themeMode === 'light'
     ? 'text-[11px] font-medium text-emerald-700'
     : 'text-[11px] font-medium text-emerald-400';
+  const showHeader = showCategoryTag || Boolean(costEstimate.summary);
 
   return (
     <div className="space-y-2">
-      <div className="flex min-h-11 items-center justify-between gap-3">
-        <span className={`inline-flex min-h-[28px] shrink-0 items-center justify-center rounded-full border px-3 py-1 text-[10px] font-semibold whitespace-nowrap ${tagClass}`}>
-          {categoryMeta.title}
-        </span>
-        {costEstimate.summary ? <div className={`shrink-0 whitespace-nowrap ${priceClass}`}>{costEstimate.summary}</div> : null}
-      </div>
+      {showHeader ? (
+        <div className="flex min-h-11 items-center justify-between gap-3">
+          {showCategoryTag ? (
+            <span className={`inline-flex min-h-[28px] shrink-0 items-center justify-center rounded-full border px-3 py-1 text-[10px] font-semibold whitespace-nowrap ${tagClass}`}>
+              {categoryMeta.title}
+            </span>
+          ) : null}
+          {costEstimate.summary ? <div className={`shrink-0 whitespace-nowrap ${priceClass}`}>{costEstimate.summary}</div> : null}
+        </div>
+      ) : null}
       <StudioSelect
         value={rawSelected}
         displayValue={compactDisplayLabel}

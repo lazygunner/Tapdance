@@ -6,6 +6,7 @@ import {
   generateStoryboardImage,
 } from '../../../services/modelService';
 import type { ModelInvocationLogEntry } from '../../../services/modelInvocationLog';
+import type { ProjectGroupImageAsset, ProjectGroupMediaAsset } from '../../../services/projectGroups.ts';
 import type { ApiSettings, ModelSourceId, Project } from '../../../types.ts';
 import type {
   FastReferenceAudio,
@@ -111,6 +112,99 @@ type FastVideoFlowActionDeps = {
   onCliConcurrencyLimit?: (input: SeedanceCliQueueEnqueueInput) => void;
 };
 
+function inferFastReferenceImageTypeFromMaterial(material: ProjectGroupImageAsset): FastReferenceImage['referenceType'] {
+  const sourceText = `${material.sourceType} ${material.sourceLabel}`.toLowerCase();
+
+  if (sourceText.includes('character')) {
+    return 'person';
+  }
+  if (sourceText.includes('product')) {
+    return 'product';
+  }
+  if (sourceText.includes('style')) {
+    return 'style';
+  }
+  if (sourceText.includes('scene') || sourceText.includes('shot') || sourceText.includes('分镜') || sourceText.includes('首帧') || sourceText.includes('尾帧')) {
+    return 'scene';
+  }
+
+  return 'other';
+}
+
+function createFastReferenceImageFromMaterial(material: ProjectGroupImageAsset): FastReferenceImage {
+  return {
+    id: crypto.randomUUID?.() || `fast-reference-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    imageUrl: material.imageUrl,
+    assetId: '',
+    referenceType: inferFastReferenceImageTypeFromMaterial(material),
+    description: material.title || material.sourceLabel || '历史素材',
+    selectedForVideo: true,
+  };
+}
+
+function inferFastReferenceVideoTypeFromMaterial(material: ProjectGroupMediaAsset): FastReferenceVideo['referenceType'] {
+  const sourceText = `${material.sourceType} ${material.sourceLabel} ${material.title}`.toLowerCase();
+
+  if (sourceText.includes('transition') || sourceText.includes('转场') || sourceText.includes('edit') || sourceText.includes('剪辑')) {
+    return 'edit';
+  }
+  if (sourceText.includes('camera') || sourceText.includes('运镜')) {
+    return 'camera';
+  }
+  if (sourceText.includes('effect') || sourceText.includes('特效')) {
+    return 'effect';
+  }
+  if (sourceText.includes('extend') || sourceText.includes('延长')) {
+    return 'extend';
+  }
+  if (sourceText.includes('shot') || sourceText.includes('镜头') || sourceText.includes('video') || sourceText.includes('视频')) {
+    return 'motion';
+  }
+
+  return 'other';
+}
+
+function inferFastReferenceAudioTypeFromMaterial(material: ProjectGroupMediaAsset): FastReferenceAudio['referenceType'] {
+  const sourceText = `${material.sourceType} ${material.sourceLabel} ${material.title}`.toLowerCase();
+
+  if (sourceText.includes('dialogue') || sourceText.includes('对白') || sourceText.includes('台词')) {
+    return 'dialogue';
+  }
+  if (sourceText.includes('effect') || sourceText.includes('音效')) {
+    return 'effect';
+  }
+  if (sourceText.includes('rhythm') || sourceText.includes('节奏')) {
+    return 'rhythm';
+  }
+  if (sourceText.includes('music') || sourceText.includes('音乐')) {
+    return 'music';
+  }
+
+  return 'other';
+}
+
+function createFastReferenceVideoFromMaterial(material: ProjectGroupMediaAsset): FastReferenceVideo {
+  return {
+    id: crypto.randomUUID?.() || `fast-reference-video-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    videoUrl: material.url,
+    referenceType: inferFastReferenceVideoTypeFromMaterial(material),
+    description: material.title || material.sourceLabel || '历史素材',
+    selectedForVideo: true,
+    videoMeta: null,
+  };
+}
+
+function createFastReferenceAudioFromMaterial(material: ProjectGroupMediaAsset): FastReferenceAudio {
+  return {
+    id: crypto.randomUUID?.() || `fast-reference-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    audioUrl: material.url,
+    referenceType: inferFastReferenceAudioTypeFromMaterial(material),
+    description: material.title || material.sourceLabel || '历史素材',
+    selectedForVideo: true,
+    audioMeta: null,
+  };
+}
+
 function isPermissionError(error: any) {
   return Boolean(
     error?.message?.includes('Requested entity was not found')
@@ -162,6 +256,7 @@ export function createFastVideoFlowActions({
   };
 
   const handleAddFastReferenceImage = () => {
+    const referenceId = crypto.randomUUID?.() || `fast-reference-${Date.now()}`;
     setFastFlow((current) => ({
       ...current,
       input: {
@@ -169,7 +264,7 @@ export function createFastVideoFlowActions({
         referenceImages: [
           ...current.input.referenceImages,
           {
-            id: crypto.randomUUID?.() || `fast-reference-${Date.now()}`,
+            id: referenceId,
             imageUrl: '',
             assetId: '',
             referenceType: 'other',
@@ -179,6 +274,7 @@ export function createFastVideoFlowActions({
         ],
       },
     }));
+    return referenceId;
   };
 
   const handleUpdateFastReferenceImage = (referenceId: string, patch: Partial<FastReferenceImage>) => {
@@ -189,6 +285,186 @@ export function createFastVideoFlowActions({
         referenceImages: current.input.referenceImages.map((item) => item.id === referenceId ? { ...item, ...patch } : item),
       },
     }));
+  };
+
+  const handleAddFastReferenceImagesFromHistory = (materials: ProjectGroupImageAsset[]) => {
+    const existingUrls = new Set(project.fastFlow.input.referenceImages.map((item) => item.imageUrl.trim()).filter(Boolean));
+    const referencesToAdd = materials
+      .filter((material) => material.imageUrl.trim())
+      .filter((material) => {
+        const url = material.imageUrl.trim();
+        if (existingUrls.has(url)) {
+          return false;
+        }
+        existingUrls.add(url);
+        return true;
+      })
+      .map((material) => createFastReferenceImageFromMaterial(material));
+
+    if (referencesToAdd.length === 0) {
+      return [];
+    }
+
+    setFastFlow((current) => {
+      const currentUrls = new Set(current.input.referenceImages.map((item) => item.imageUrl.trim()).filter(Boolean));
+      const dedupedReferences = referencesToAdd.filter((reference) => {
+        const url = reference.imageUrl.trim();
+        if (!url || currentUrls.has(url)) {
+          return false;
+        }
+        currentUrls.add(url);
+        return true;
+      });
+
+      if (dedupedReferences.length === 0) {
+        return current;
+      }
+
+      return {
+        ...current,
+        input: {
+          ...current.input,
+          referenceImages: [
+            ...current.input.referenceImages,
+            ...dedupedReferences,
+          ],
+        },
+      };
+    });
+
+    return referencesToAdd.map((reference) => reference.id);
+  };
+
+  const handleReplaceFastReferenceImageFromHistory = (referenceId: string, material: ProjectGroupImageAsset) => {
+    handleUpdateFastReferenceImage(referenceId, {
+      imageUrl: material.imageUrl,
+      assetId: '',
+      referenceType: inferFastReferenceImageTypeFromMaterial(material),
+      description: material.title || material.sourceLabel || '历史素材',
+      selectedForVideo: true,
+    });
+  };
+
+  const handleAddFastReferenceVideosFromHistory = (materials: ProjectGroupMediaAsset[]) => {
+    const existingUrls = new Set((project.fastFlow.input.referenceVideos || []).map((item) => item.videoUrl.trim()).filter(Boolean));
+    const referencesToAdd = materials
+      .filter((material) => material.kind === 'video' && material.url.trim())
+      .filter((material) => {
+        const url = material.url.trim();
+        if (existingUrls.has(url)) {
+          return false;
+        }
+        existingUrls.add(url);
+        return true;
+      })
+      .map((material) => createFastReferenceVideoFromMaterial(material));
+
+    if (referencesToAdd.length === 0) {
+      return [];
+    }
+
+    setFastFlow((current) => {
+      const currentUrls = new Set((current.input.referenceVideos || []).map((item) => item.videoUrl.trim()).filter(Boolean));
+      const dedupedReferences = referencesToAdd.filter((reference) => {
+        const url = reference.videoUrl.trim();
+        if (!url || currentUrls.has(url)) {
+          return false;
+        }
+        currentUrls.add(url);
+        return true;
+      });
+
+      if (dedupedReferences.length === 0) {
+        return current;
+      }
+
+      return {
+        ...current,
+        input: {
+          ...current.input,
+          referenceVideos: [
+            ...(current.input.referenceVideos || []),
+            ...dedupedReferences,
+          ],
+        },
+      };
+    });
+
+    return referencesToAdd.map((reference) => reference.id);
+  };
+
+  const handleReplaceFastReferenceVideoFromHistory = (referenceId: string, material: ProjectGroupMediaAsset) => {
+    if (material.kind !== 'video') {
+      return;
+    }
+    handleUpdateFastReferenceVideo(referenceId, {
+      videoUrl: material.url,
+      referenceType: inferFastReferenceVideoTypeFromMaterial(material),
+      description: material.title || material.sourceLabel || '历史素材',
+      selectedForVideo: true,
+      videoMeta: null,
+    });
+  };
+
+  const handleAddFastReferenceAudiosFromHistory = (materials: ProjectGroupMediaAsset[]) => {
+    const existingUrls = new Set((project.fastFlow.input.referenceAudios || []).map((item) => item.audioUrl.trim()).filter(Boolean));
+    const referencesToAdd = materials
+      .filter((material) => material.kind === 'audio' && material.url.trim())
+      .filter((material) => {
+        const url = material.url.trim();
+        if (existingUrls.has(url)) {
+          return false;
+        }
+        existingUrls.add(url);
+        return true;
+      })
+      .map((material) => createFastReferenceAudioFromMaterial(material));
+
+    if (referencesToAdd.length === 0) {
+      return [];
+    }
+
+    setFastFlow((current) => {
+      const currentUrls = new Set((current.input.referenceAudios || []).map((item) => item.audioUrl.trim()).filter(Boolean));
+      const dedupedReferences = referencesToAdd.filter((reference) => {
+        const url = reference.audioUrl.trim();
+        if (!url || currentUrls.has(url)) {
+          return false;
+        }
+        currentUrls.add(url);
+        return true;
+      });
+
+      if (dedupedReferences.length === 0) {
+        return current;
+      }
+
+      return {
+        ...current,
+        input: {
+          ...current.input,
+          referenceAudios: [
+            ...(current.input.referenceAudios || []),
+            ...dedupedReferences,
+          ],
+        },
+      };
+    });
+
+    return referencesToAdd.map((reference) => reference.id);
+  };
+
+  const handleReplaceFastReferenceAudioFromHistory = (referenceId: string, material: ProjectGroupMediaAsset) => {
+    if (material.kind !== 'audio') {
+      return;
+    }
+    handleUpdateFastReferenceAudio(referenceId, {
+      audioUrl: material.url,
+      referenceType: inferFastReferenceAudioTypeFromMaterial(material),
+      description: material.title || material.sourceLabel || '历史素材',
+      selectedForVideo: true,
+      audioMeta: null,
+    });
   };
 
   const handleUploadFastReferenceImage = async (event: ChangeEvent<HTMLInputElement>, referenceId: string) => {
@@ -268,6 +544,7 @@ export function createFastVideoFlowActions({
   };
 
   const handleAddFastReferenceVideo = () => {
+    const referenceId = crypto.randomUUID?.() || `fast-reference-video-${Date.now()}`;
     setFastFlow((current) => ({
       ...current,
       input: {
@@ -275,7 +552,7 @@ export function createFastVideoFlowActions({
         referenceVideos: [
           ...(current.input.referenceVideos || []),
           {
-            id: crypto.randomUUID?.() || `fast-reference-video-${Date.now()}`,
+            id: referenceId,
             videoUrl: '',
             referenceType: 'other',
             description: '',
@@ -284,6 +561,7 @@ export function createFastVideoFlowActions({
         ],
       },
     }));
+    return referenceId;
   };
 
   const handleUpdateFastReferenceVideo = (referenceId: string, patch: Partial<FastReferenceVideo>) => {
@@ -320,6 +598,7 @@ export function createFastVideoFlowActions({
   };
 
   const handleAddFastReferenceAudio = () => {
+    const referenceId = crypto.randomUUID?.() || `fast-reference-audio-${Date.now()}`;
     setFastFlow((current) => ({
       ...current,
       input: {
@@ -327,7 +606,7 @@ export function createFastVideoFlowActions({
         referenceAudios: [
           ...(current.input.referenceAudios || []),
           {
-            id: crypto.randomUUID?.() || `fast-reference-audio-${Date.now()}`,
+            id: referenceId,
             audioUrl: '',
             referenceType: 'other',
             description: '',
@@ -336,6 +615,7 @@ export function createFastVideoFlowActions({
         ],
       },
     }));
+    return referenceId;
   };
 
   const handleUpdateFastReferenceAudio = (referenceId: string, patch: Partial<FastReferenceAudio>) => {
@@ -1232,6 +1512,12 @@ export function createFastVideoFlowActions({
   return {
     handleFastInputChange,
     handleAddFastReferenceImage,
+    handleAddFastReferenceImagesFromHistory,
+    handleReplaceFastReferenceImageFromHistory,
+    handleAddFastReferenceVideosFromHistory,
+    handleReplaceFastReferenceVideoFromHistory,
+    handleAddFastReferenceAudiosFromHistory,
+    handleReplaceFastReferenceAudioFromHistory,
     handleUploadFastReferenceImage,
     handlePasteFastReferenceImage,
     handleUpdateFastReferenceImage,

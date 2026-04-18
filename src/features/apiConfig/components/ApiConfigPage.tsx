@@ -390,22 +390,21 @@ export function ApiConfigPage({
         </div>
       </div>
 
-      {isDevEnvironment ? (
-        <>
-          <div className="flex items-center justify-between mb-8 gap-4 flex-wrap">
-            <div>
-              <h2 className="text-2xl font-bold text-white">连接配置</h2>
-              <p className="text-zinc-400 text-sm mt-1">管理 Gemini、火山云和 Seedance CLI 的连接方式与默认参数。配置会自动保存在当前浏览器。</p>
-            </div>
-            <button
-              onClick={onRestoreDefaults}
-              className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              恢复默认值
-            </button>
-          </div>
+      <div className="flex items-center justify-between mb-8 gap-4 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-white">连接配置</h2>
+          <p className="text-zinc-400 text-sm mt-1">管理 Gemini、火山云和 Seedance CLI 的连接方式与默认参数。配置会自动保存在当前浏览器。</p>
+        </div>
+        <button
+          onClick={onRestoreDefaults}
+          className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          恢复默认值
+        </button>
+      </div>
 
-          <section className="mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/6 p-5">
+      {isDevEnvironment ? (
+        <section className="mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/6 p-5">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
@@ -516,9 +515,10 @@ export function ApiConfigPage({
                 ) : null}
               </div>
             </div>
-          </section>
+        </section>
+      ) : null}
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {(['gemini', 'volcengine'] as ModelProviderId[]).map((providerId) => {
           const isVolcengine = providerId === 'volcengine';
           const meta = PROVIDER_CARD_META[providerId];
@@ -806,9 +806,7 @@ export function ApiConfigPage({
             </section>
           );
             })}
-          </div>
-        </>
-      ) : null}
+      </div>
 
       <section className="mt-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">

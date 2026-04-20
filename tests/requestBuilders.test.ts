@@ -89,7 +89,7 @@ test('buildStoryboardGenerationInput keeps image parts in stable order and appen
   assert.deepEqual(input.parts[3], { text: 'hero portrait' });
 });
 
-test('buildVideoGenerationRequest preserves first frame and forces 720p when last frame is present', () => {
+test('buildVideoGenerationRequest preserves configured resolution when last frame is present', () => {
   const request = buildVideoGenerationRequest(
     createShot({
       duration: 6,
@@ -108,6 +108,10 @@ test('buildVideoGenerationRequest preserves first frame and forces 720p when las
         useFirstFrame: true,
         useLastFrame: true,
         useReferenceAssets: false,
+        generateAudio: false,
+        returnLastFrame: false,
+        useWebSearch: false,
+        watermark: false,
       },
     }),
     '16:9',
@@ -127,7 +131,38 @@ test('buildVideoGenerationRequest preserves first frame and forces 720p when las
   });
   assert.equal(request.config.durationSeconds, 8);
   assert.equal(request.config.aspectRatio, '9:16');
-  assert.equal(request.config.resolution, '720p');
+  assert.equal(request.config.resolution, '1080p');
+});
+
+test('buildVideoGenerationRequest forces first-last-frame interpolation to Gemini-supported 8s bucket', () => {
+  const request = buildVideoGenerationRequest(
+    createShot({
+      duration: 4,
+      imageUrl: PNG_DATA_URL,
+      lastFrameImageUrl: JPG_DATA_URL,
+      videoConfig: {
+        resolution: '720p',
+        frameRate: 24,
+        aspectRatio: '16:9',
+        useFirstFrame: true,
+        useLastFrame: true,
+        useReferenceAssets: false,
+        generateAudio: false,
+        returnLastFrame: false,
+        useWebSearch: false,
+        watermark: false,
+      },
+    }),
+    '16:9',
+    [],
+    'veo-3.1-generate-preview',
+  );
+
+  assert.equal(request.config.durationSeconds, 8);
+  assert.deepEqual(request.config.lastFrame, {
+    imageBytes: 'bGFzdA==',
+    mimeType: 'image/jpeg',
+  });
 });
 
 test('buildVideoGenerationRequest upgrades to pro model and trims reference images to three', () => {
@@ -142,6 +177,10 @@ test('buildVideoGenerationRequest upgrades to pro model and trims reference imag
         useFirstFrame: true,
         useLastFrame: true,
         useReferenceAssets: true,
+        generateAudio: false,
+        returnLastFrame: false,
+        useWebSearch: false,
+        watermark: false,
       },
     }),
     '9:16',
@@ -161,7 +200,7 @@ test('buildVideoGenerationRequest upgrades to pro model and trims reference imag
   });
   assert.equal(request.config.durationSeconds, 8);
   assert.equal(request.config.aspectRatio, '16:9');
-  assert.equal(request.config.resolution, '720p');
+  assert.equal(request.config.resolution, '1080p');
   assert.equal(request.config.referenceImages?.length, 3);
   assert.equal('lastFrame' in request.config, false);
 });
@@ -172,7 +211,7 @@ test('buildTransitionVideoGenerationRequest uses 720p and normalizes non-portrai
     JPG_DATA_URL,
     '1:1',
     undefined,
-    3,
+    4,
     'veo-3.1-generate-preview',
   );
 
@@ -180,7 +219,7 @@ test('buildTransitionVideoGenerationRequest uses 720p and normalizes non-portrai
   assert.equal(request.prompt, 'A smooth and natural transition between the two scenes');
   assert.equal(request.config.resolution, '720p');
   assert.equal(request.config.aspectRatio, '16:9');
-  assert.equal(request.config.durationSeconds, 4);
+  assert.equal(request.config.durationSeconds, 8);
   assert.deepEqual(request.image, {
     imageBytes: 'Zmlyc3Q=',
     mimeType: 'image/png',
@@ -216,6 +255,10 @@ test('buildVideoGenerationRequest normalizes 4:3 video requests to 16:9 provider
         useFirstFrame: false,
         useLastFrame: false,
         useReferenceAssets: false,
+        generateAudio: false,
+        returnLastFrame: false,
+        useWebSearch: false,
+        watermark: false,
       },
     }),
     '4:3',

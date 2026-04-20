@@ -1,24 +1,29 @@
 import type { ChangeEvent, Dispatch, SetStateAction } from 'react';
 
 import {
+  cancelVideoOperation,
   generateAssetImage,
   generateAssetPrompt,
   generatePromptsForShot,
   generateShotList,
   generateStoryboardImage,
   generateTransitionPrompt,
+  startVideoGeneration,
   translatePromptsToEnglish,
 } from '../../../services/modelService';
 import type { ModelInvocationLogEntry } from '../../../services/modelInvocationLog';
 import type { ProjectGroupImageAsset } from '../../../services/projectGroups.ts';
-import type { ApiSettings, Asset, Brief, ModelSourceId, Project, PromptLanguage, Shot } from '../../../types.ts';
+import { setCachedApiSettings } from '../../../services/apiConfig.ts';
+import type { ApiSettings, AspectRatio, Asset, Brief, ModelSourceId, Project, PromptLanguage, Shot, VideoConfig } from '../../../types.ts';
 import { createSeedanceTask, deleteSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { submitSeedanceTask } from '../../fastVideoFlow/services/seedanceBridgeClient.ts';
 import type { SeedanceDraft } from '../../seedance/types.ts';
-import { buildShotSeedanceDraft, buildTransitionSeedanceDraft } from './creativeFlowSeedanceDraft.ts';
+import { getSeedanceApiModelKeyForModelSourceId } from '../../seedance/modelVersions.ts';
+import { buildCreativeSeedanceOptionsFromVideoConfig, buildShotSeedanceDraft, buildTransitionSeedanceDraft } from './creativeFlowSeedanceDraft.ts';
 import { buildSeedanceCliFailure, mapRemoteSeedanceStatus } from '../../fastVideoFlow/utils/fastVideoTask.ts';
 import {
   buildDualModeVideoPrompts,
+  buildFallbackTransitionPrompt,
   getShotImagePromptBySource,
   getTransitionPromptBySource,
 } from '../utils/videoPromptBuilders.ts';
@@ -49,6 +54,22 @@ type SeedanceLogEntry = {
   executor?: 'ark' | 'cli';
   sourceId?: ModelInvocationLogEntry['sourceId'];
   modelName?: string;
+};
+
+type ForceCancelModalAction = 'force-cancel-creative-video' | 'force-cancel-creative-transition';
+
+type SeedanceErrorModalConfig = {
+  eyebrow?: string;
+  title: string;
+  message: string;
+  detail?: string;
+  action?: ForceCancelModalAction;
+  actionLabel?: string;
+  actionPayload?: {
+    projectId: string;
+    shotId: string;
+    operationKey: string;
+  };
 };
 
 type CreativeFlowActionDeps = {
@@ -101,9 +122,10 @@ type CreativeFlowActionDeps = {
     sourceId: ModelInvocationLogEntry['sourceId'];
     modelName: string;
   };
-  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: 'ark' | 'cli') => Record<string, unknown>;
+  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: 'ark' | 'cli', apiModelKey?: 'standard' | 'fast') => Record<string, unknown>;
   appendSeedanceLog: (entry: SeedanceLogEntry) => void;
   refreshSeedanceHealth: () => Promise<void>;
+  openSeedanceErrorModal: (config: SeedanceErrorModalConfig) => void;
 };
 
 function isPermissionError(error: any) {
@@ -113,6 +135,49 @@ function isPermissionError(error: any) {
     || error?.status === 403
     || error?.message?.includes('403'),
   );
+}
+
+function getTransitionVideoRuntimeConfig(
+  shot: Shot,
+  sourceId: ModelSourceId,
+  transitionConfig: { aspectRatio: AspectRatio; duration: number },
+): VideoConfig {
+  return {
+    resolution: shot.transitionVideoConfig?.resolution || '720p',
+    frameRate: shot.transitionVideoConfig?.frameRate || 24,
+    aspectRatio: shot.transitionVideoConfig?.aspectRatio || transitionConfig.aspectRatio,
+    useFirstFrame: shot.transitionVideoConfig?.useFirstFrame ?? true,
+    useLastFrame: shot.transitionVideoConfig?.useLastFrame ?? !sourceId.startsWith('gemini.'),
+    useReferenceAssets: shot.transitionVideoConfig?.useReferenceAssets ?? false,
+    generateAudio: shot.transitionVideoConfig?.generateAudio ?? false,
+    returnLastFrame: shot.transitionVideoConfig?.returnLastFrame ?? false,
+    useWebSearch: shot.transitionVideoConfig?.useWebSearch ?? false,
+    watermark: shot.transitionVideoConfig?.watermark ?? false,
+  };
+}
+
+function buildTransitionShotForVideoGeneration(
+  currentShot: Shot,
+  nextShot: Shot,
+  prompt: string,
+  transitionConfig: { aspectRatio: AspectRatio; duration: number },
+  videoConfig: VideoConfig,
+): Shot {
+  return {
+    ...currentShot,
+    id: `${currentShot.id}-transition-${nextShot.id}`,
+    duration: transitionConfig.duration,
+    action: prompt || currentShot.transitionVideoPrompt || 'A smooth and natural transition between the two scenes',
+    imageUrl: videoConfig.useFirstFrame ? currentShot.lastFrameImageUrl : undefined,
+    lastFrameImageUrl: videoConfig.useLastFrame ? nextShot.imageUrl : undefined,
+    videoPrompt: {
+      textToVideo: prompt,
+      imageToVideo: prompt,
+      textToVideoZh: currentShot.transitionVideoPromptZh || prompt,
+      imageToVideoZh: currentShot.transitionVideoPromptZh || prompt,
+    },
+    videoConfig,
+  };
 }
 
 function attachSceneAssetsToShots(shots: Shot[], assets: Asset[]) {
@@ -207,7 +272,12 @@ export function createCreativeFlowActions({
   buildSeedanceSubmitLogRequest,
   appendSeedanceLog,
   refreshSeedanceHealth,
+  openSeedanceErrorModal,
 }: CreativeFlowActionDeps) {
+  const syncApiSettingsForModelService = () => {
+    setCachedApiSettings(apiSettings);
+  };
+
   const toggleShotGroupReferenceImage = (shotId: string, imageId: string) => {
     setProject((prev) => ({
       ...prev,
@@ -598,7 +668,10 @@ export function createCreativeFlowActions({
     }
 
     const referenceAssets = project.assets.filter((asset) => shot.referenceAssets?.includes(asset.id));
-    const executor = apiSettings.seedance.defaultExecutor;
+    const videoSourceId = getOperationSourceId(operationKey, 'video');
+    const selectedSeedanceApiModelKey = getSeedanceApiModelKeyForModelSourceId(videoSourceId);
+    const isSeedanceVideoSource = Boolean(selectedSeedanceApiModelKey);
+    const executor = isSeedanceVideoSource ? 'ark' : apiSettings.seedance.defaultExecutor;
 
     setOperationCancelPending(operationKey, false);
     setOperationRecord(operationKey);
@@ -609,7 +682,7 @@ export function createCreativeFlowActions({
 
     try {
       const patchedVideoPrompt = buildDualModeVideoPrompts(shot, referenceAssets, withStyledPrompt);
-      const promptLanguage = getPromptLanguageBySourceId(getOperationSourceId(operationKey, 'video'));
+      const promptLanguage = getPromptLanguageBySourceId(videoSourceId);
       const selectedExecutionPrompt = promptLanguage === 'zh'
         ? (patchedVideoPrompt.imageToVideoZh || patchedVideoPrompt.textToVideoZh || patchedVideoPrompt.imageToVideo || patchedVideoPrompt.textToVideo || shot.action)
         : (patchedVideoPrompt.imageToVideo || patchedVideoPrompt.textToVideo || patchedVideoPrompt.imageToVideoZh || patchedVideoPrompt.textToVideoZh || shot.action);
@@ -623,7 +696,7 @@ export function createCreativeFlowActions({
         },
       });
 
-      if (useMockMode) {
+      if (isSeedanceVideoSource && useMockMode) {
         const mockOp = { provider: executor, taskId: `mock-shot-${shotId}-${Date.now()}`, submitId: executor === 'cli' ? `mock-shot-${shotId}-${Date.now()}` : '' };
         setOperationRecord(operationKey, mockOp);
         updateProjectRecord(targetProjectId, (current) => ({
@@ -633,13 +706,58 @@ export function createCreativeFlowActions({
         return;
       }
 
-      const draft = await buildShotSeedanceDraft(styledShot, project.brief.aspectRatio, referenceAssets);
+      if (!isSeedanceVideoSource) {
+        syncApiSettingsForModelService();
+        const operation = await startVideoGeneration(
+          styledShot,
+          project.brief.aspectRatio,
+          referenceAssets,
+          useMockMode,
+          getOperationModelName(operationKey, 'video'),
+          videoSourceId,
+        );
+        setOperationRecord(operationKey, operation);
+
+        if (hasPendingOperationCancel(operationKey)) {
+          try {
+            syncApiSettingsForModelService();
+            await cancelVideoOperation(operation, useMockMode);
+            setOperationRecord(operationKey);
+            updateProjectRecord(targetProjectId, (current) => ({
+              ...current,
+              shots: current.shots.map((item) => item.id === shotId
+                ? { ...item, videoStatus: 'cancelled', videoOperation: undefined, videoError: '' }
+                : item),
+            }));
+          } catch (error: any) {
+            console.error('Failed to cancel video generation after operation was created:', error);
+            updateProjectRecord(targetProjectId, (current) => ({
+              ...current,
+              shots: current.shots.map((item) => item.id === shotId ? { ...item, videoOperation: operation } : item),
+            }));
+            alert(error?.message || '取消视频生成失败。');
+          } finally {
+            setOperationCancelPending(operationKey, false);
+          }
+          return;
+        }
+
+        updateProjectRecord(targetProjectId, (current) => ({
+          ...current,
+          shots: current.shots.map((item) => item.id === shotId ? { ...item, videoOperation: operation } : item),
+        }));
+        return;
+      }
+
+      const seedanceOptions = buildCreativeSeedanceOptionsFromVideoConfig(styledShot.videoConfig);
+      const draft = await buildShotSeedanceDraft(styledShot, project.brief.aspectRatio, referenceAssets, seedanceOptions);
       await refreshSeedanceHealth();
 
       let operation: any;
       if (executor === 'ark') {
-        const arkModelMeta = getSeedanceArkModelMeta();
-        const result = await createSeedanceTask(draft);
+        const arkModelKey = selectedSeedanceApiModelKey || 'standard';
+        const arkModelMeta = getSeedanceArkModelMeta(arkModelKey);
+        const result = await createSeedanceTask(draft, arkModelKey);
         operation = { provider: 'ark', taskId: result.id, submitId: '' };
         appendSeedanceLog({
           operation: 'seedanceSubmit',
@@ -647,7 +765,7 @@ export function createCreativeFlowActions({
           executor: 'ark',
           sourceId: arkModelMeta.sourceId,
           modelName: arkModelMeta.modelName,
-          request: buildSeedanceSubmitLogRequest(draft, 'ark'),
+          request: buildSeedanceSubmitLogRequest(draft, 'ark', arkModelKey),
           response: result,
         });
       } else {
@@ -665,7 +783,7 @@ export function createCreativeFlowActions({
               ? project.brief.aspectRatio
               : draft.options.ratio,
             duration: draft.options.duration || Math.max(1, Math.round(shot.duration || 5)),
-            videoResolution: draft.options.resolution === '480p' ? '480p' : '720p',
+            videoResolution: draft.options.resolution,
           },
           baseUrl: apiSettings.seedance.bridgeUrl,
         });
@@ -723,13 +841,15 @@ export function createCreativeFlowActions({
       setOperationRecord(operationKey);
       setOperationCancelPending(operationKey, false);
       console.error('Failed to start video generation:', error);
-      appendSeedanceLog({
-        operation: 'seedanceSubmit',
-        status: 'error',
-        executor,
-        request: { shotId, executor },
-        error: error?.message || '启动视频生成失败。',
-      });
+      if (isSeedanceVideoSource) {
+        appendSeedanceLog({
+          operation: 'seedanceSubmit',
+          status: 'error',
+          executor,
+          request: { shotId, executor, sourceId: videoSourceId, modelName: getOperationModelName(operationKey, 'video') },
+          error: error?.message || '启动视频生成失败。',
+        });
+      }
       updateProjectRecord(targetProjectId, (current) => ({
         ...current,
         shots: current.shots.map((item) => item.id === shotId ? { ...item, videoStatus: 'failed', videoError: error.message || '启动生成失败。' } : item),
@@ -755,7 +875,15 @@ export function createCreativeFlowActions({
     if (!operation) {
       console.warn('No shot video operation found for cancellation', { shotId, operationKey });
       setOperationCancelPending(operationKey, false);
-      alert('当前还没有拿到可取消的任务 ID，请稍后再试。');
+      openSeedanceErrorModal({
+        eyebrow: 'Seedance',
+        title: '还没有拿到可取消的任务 ID',
+        message: '当前还没有拿到可取消的任务 ID，请稍后再试。你也可以强制取消本地生成状态，以便立即重新生成。',
+        detail: '强制取消只会停止当前页面继续等待这个任务，不会取消可能已经提交到远端的任务。',
+        action: 'force-cancel-creative-video',
+        actionLabel: '强制取消',
+        actionPayload: { projectId: targetProjectId, shotId, operationKey },
+      });
       return;
     }
     setOperationRecord(operationKey, operation);
@@ -765,16 +893,23 @@ export function createCreativeFlowActions({
         throw new Error('当前本地 CLI 执行器暂不支持取消已提交任务。');
       }
       const taskId = operation.taskId || '';
-      if (!taskId) {
-        throw new Error('缺少任务 ID，无法取消。');
+      if (operation.provider === 'ark' || !operation.provider) {
+        if (!taskId) {
+          throw new Error('缺少任务 ID，无法取消。');
+        }
+        await deleteSeedanceTask(taskId);
+      } else {
+        syncApiSettingsForModelService();
+        await cancelVideoOperation(operation, useMockMode);
       }
-      await deleteSeedanceTask(taskId);
-      appendSeedanceLog({
-        operation: 'seedanceCancel',
-        status: 'success',
-        executor: operation.provider || 'ark',
-        request: { taskId, executor: operation.provider || 'ark' },
-      });
+      if (operation.provider === 'ark' || !operation.provider) {
+        appendSeedanceLog({
+          operation: 'seedanceCancel',
+          status: 'success',
+          executor: operation.provider || 'ark',
+          request: { taskId, executor: operation.provider || 'ark' },
+        });
+      }
       setOperationRecord(operationKey);
       updateProjectRecord(targetProjectId, (current) => ({
         ...current,
@@ -788,14 +923,24 @@ export function createCreativeFlowActions({
       }));
     } catch (error: any) {
       console.error('Failed to cancel video generation:', error);
-      appendSeedanceLog({
-        operation: 'seedanceCancel',
-        status: 'error',
-        executor: operation.provider || 'ark',
-        request: { taskId: operation.taskId, executor: operation.provider || 'ark' },
-        error: error?.message || '取消视频生成失败。',
+      if (operation.provider === 'ark' || !operation.provider || operation.provider === 'cli') {
+        appendSeedanceLog({
+          operation: 'seedanceCancel',
+          status: 'error',
+          executor: operation.provider || 'ark',
+          request: { taskId: operation.taskId, executor: operation.provider || 'ark' },
+          error: error?.message || '取消视频生成失败。',
+        });
+      }
+      openSeedanceErrorModal({
+        eyebrow: 'Seedance',
+        title: '取消视频生成失败',
+        message: '取消视频生成失败。你可以强制取消本地生成状态，以便立即重新生成。',
+        detail: error?.message || '取消视频生成失败。',
+        action: 'force-cancel-creative-video',
+        actionLabel: '强制取消',
+        actionPayload: { projectId: targetProjectId, shotId, operationKey },
       });
-      alert(error?.message || '取消视频生成失败。');
     } finally {
       setOperationCancelPending(operationKey, false);
     }
@@ -850,7 +995,13 @@ export function createCreativeFlowActions({
       }));
     } catch (error) {
       console.error('Failed to generate transition prompt:', error);
-      alert('生成转场提示词失败。');
+      const fallback = buildFallbackTransitionPrompt(currentShot, nextShot, withStyledBrief(project.brief));
+      setProject((prev) => ({
+        ...prev,
+        shots: prev.shots.map((item) => item.id === currentShotId
+          ? { ...item, transitionVideoPrompt: fallback.prompt, transitionVideoPromptZh: fallback.promptZh }
+          : item),
+      }));
     } finally {
       setGeneratingPrompts((prev) => ({ ...prev, [`${currentShotId}_transition`]: false }));
     }
@@ -864,10 +1015,20 @@ export function createCreativeFlowActions({
     const operationKey = getTransitionVideoOperationKey(currentShotId);
     const currentShot = project.shots.find((item) => item.id === currentShotId);
     const nextShot = project.shots.find((item) => item.id === nextShotId);
-    const executor = apiSettings.seedance.defaultExecutor;
+    const transitionVideoSourceId = getOperationSourceId(operationKey, 'video');
+    const selectedSeedanceApiModelKey = getSeedanceApiModelKeyForModelSourceId(transitionVideoSourceId);
+    const isSeedanceVideoSource = Boolean(selectedSeedanceApiModelKey);
+    const executor = isSeedanceVideoSource ? 'ark' : apiSettings.seedance.defaultExecutor;
 
-    if (!currentShot || !nextShot || !currentShot.lastFrameImageUrl || !nextShot.imageUrl) {
-      alert('需要当前镜头的尾帧和下一个镜头的首帧才能生成转场视频。');
+    if (!currentShot || !nextShot) {
+      return;
+    }
+
+    const transitionConfig = getTransitionVideoConfig(currentShot);
+    const transitionVideoConfig = getTransitionVideoRuntimeConfig(currentShot, transitionVideoSourceId, transitionConfig);
+
+    if ((transitionVideoConfig.useFirstFrame && !currentShot.lastFrameImageUrl) || (transitionVideoConfig.useLastFrame && !nextShot.imageUrl)) {
+      alert('请先生成已勾选的转场参考帧。');
       return;
     }
 
@@ -876,14 +1037,12 @@ export function createCreativeFlowActions({
     setProject((prev) => ({
       ...prev,
       shots: prev.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoStatus: 'generating', transitionVideoError: '', transitionVideoOperation: undefined } : item),
-    }));
+      }));
 
     try {
-      const transitionVideoSourceId = getOperationSourceId(operationKey, 'video');
       const prompt = withStyledPrompt(getTransitionPromptBySource(apiSettings, currentShot, transitionVideoSourceId));
-      const transitionConfig = getTransitionVideoConfig(currentShot);
 
-      if (useMockMode) {
+      if (isSeedanceVideoSource && useMockMode) {
         const mockOp = { provider: executor, taskId: `mock-transition-${currentShotId}-${Date.now()}`, submitId: executor === 'cli' ? `mock-transition-${currentShotId}-${Date.now()}` : '' };
         setOperationRecord(operationKey, mockOp);
         updateProjectRecord(targetProjectId, (current) => ({
@@ -893,19 +1052,77 @@ export function createCreativeFlowActions({
         return;
       }
 
+      if (!isSeedanceVideoSource) {
+        syncApiSettingsForModelService();
+        const transitionShot = buildTransitionShotForVideoGeneration(
+          currentShot,
+          nextShot,
+          prompt,
+          transitionConfig,
+          transitionVideoConfig,
+        );
+        const referenceAssets = project.assets.filter((asset) => currentShot.referenceAssets?.includes(asset.id));
+        const operation = await startVideoGeneration(
+          transitionShot,
+          transitionVideoConfig.aspectRatio,
+          referenceAssets,
+          useMockMode,
+          getOperationModelName(operationKey, 'video'),
+          transitionVideoSourceId,
+        );
+        setOperationRecord(operationKey, operation);
+
+        if (hasPendingOperationCancel(operationKey)) {
+          try {
+            syncApiSettingsForModelService();
+            await cancelVideoOperation(operation, useMockMode);
+            setOperationRecord(operationKey);
+            updateProjectRecord(targetProjectId, (current) => ({
+              ...current,
+              shots: current.shots.map((item) => item.id === currentShotId
+                ? {
+                  ...item,
+                  transitionVideoStatus: 'cancelled',
+                  transitionVideoOperation: undefined,
+                  transitionVideoError: '',
+                } : item),
+            }));
+          } catch (error: any) {
+            console.error('Failed to cancel transition video generation after operation was created:', error);
+            updateProjectRecord(targetProjectId, (current) => ({
+              ...current,
+              shots: current.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: operation } : item),
+            }));
+            alert(error?.message || '取消转场视频生成失败。');
+          } finally {
+            setOperationCancelPending(operationKey, false);
+          }
+          return;
+        }
+
+        updateProjectRecord(targetProjectId, (current) => ({
+          ...current,
+          shots: current.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoOperation: operation } : item),
+        }));
+        return;
+      }
+
       const draft = await buildTransitionSeedanceDraft(
         currentShot.lastFrameImageUrl,
         nextShot.imageUrl,
-        transitionConfig.aspectRatio,
+        transitionVideoConfig.aspectRatio,
         prompt,
         transitionConfig.duration,
+        buildCreativeSeedanceOptionsFromVideoConfig(transitionVideoConfig),
+        transitionVideoConfig,
       );
       await refreshSeedanceHealth();
 
       let operation: any;
       if (executor === 'ark') {
-        const arkModelMeta = getSeedanceArkModelMeta();
-        const result = await createSeedanceTask(draft);
+        const arkModelKey = selectedSeedanceApiModelKey || 'standard';
+        const arkModelMeta = getSeedanceArkModelMeta(arkModelKey);
+        const result = await createSeedanceTask(draft, arkModelKey);
         operation = { provider: 'ark', taskId: result.id, submitId: '' };
         appendSeedanceLog({
           operation: 'seedanceSubmit',
@@ -913,7 +1130,7 @@ export function createCreativeFlowActions({
           executor: 'ark',
           sourceId: arkModelMeta.sourceId,
           modelName: arkModelMeta.modelName,
-          request: buildSeedanceSubmitLogRequest(draft, 'ark'),
+          request: buildSeedanceSubmitLogRequest(draft, 'ark', arkModelKey),
           response: result,
         });
       } else {
@@ -928,10 +1145,10 @@ export function createCreativeFlowActions({
           options: {
             modelVersion: apiSettings.seedance.cliModelVersion,
             ratio: draft.options.ratio === 'adaptive' || draft.options.ratio === '3:4' || draft.options.ratio === '21:9'
-              ? transitionConfig.aspectRatio
+              ? transitionVideoConfig.aspectRatio
               : draft.options.ratio,
-            duration: draft.options.duration || Math.max(1, Math.round(transitionConfig.duration || 3)),
-            videoResolution: draft.options.resolution === '480p' ? '480p' : '720p',
+            duration: draft.options.duration || Math.max(4, Math.round(transitionConfig.duration || 4)),
+            videoResolution: draft.options.resolution,
           },
           baseUrl: apiSettings.seedance.bridgeUrl,
         });
@@ -993,13 +1210,15 @@ export function createCreativeFlowActions({
       setOperationRecord(operationKey);
       setOperationCancelPending(operationKey, false);
       console.error('Failed to start transition video generation:', error);
-      appendSeedanceLog({
-        operation: 'seedanceSubmit',
-        status: 'error',
-        executor,
-        request: { currentShotId, nextShotId, executor },
-        error: error?.message || '启动转场视频生成失败。',
-      });
+      if (isSeedanceVideoSource) {
+        appendSeedanceLog({
+          operation: 'seedanceSubmit',
+          status: 'error',
+          executor,
+          request: { currentShotId, nextShotId, executor, sourceId: transitionVideoSourceId, modelName: getOperationModelName(operationKey, 'video') },
+          error: error?.message || '启动转场视频生成失败。',
+        });
+      }
       updateProjectRecord(targetProjectId, (current) => ({
         ...current,
         shots: current.shots.map((item) => item.id === currentShotId ? { ...item, transitionVideoStatus: 'failed', transitionVideoError: error.message || '启动生成失败。' } : item),
@@ -1029,7 +1248,15 @@ export function createCreativeFlowActions({
     if (!operation) {
       console.warn('No transition video operation found for cancellation', { currentShotId, operationKey });
       setOperationCancelPending(operationKey, false);
-      alert('当前还没有拿到可取消的任务 ID，请稍后再试。');
+      openSeedanceErrorModal({
+        eyebrow: 'Seedance',
+        title: '还没有拿到可取消的任务 ID',
+        message: '当前还没有拿到可取消的任务 ID，请稍后再试。你也可以强制取消本地转场生成状态，以便立即重新生成。',
+        detail: '强制取消只会停止当前页面继续等待这个任务，不会取消可能已经提交到远端的任务。',
+        action: 'force-cancel-creative-transition',
+        actionLabel: '强制取消',
+        actionPayload: { projectId: targetProjectId, shotId: currentShotId, operationKey },
+      });
       return;
     }
     setOperationRecord(operationKey, operation);
@@ -1039,16 +1266,23 @@ export function createCreativeFlowActions({
         throw new Error('当前本地 CLI 执行器暂不支持取消已提交任务。');
       }
       const taskId = operation.taskId || '';
-      if (!taskId) {
-        throw new Error('缺少任务 ID，无法取消。');
+      if (operation.provider === 'ark' || !operation.provider) {
+        if (!taskId) {
+          throw new Error('缺少任务 ID，无法取消。');
+        }
+        await deleteSeedanceTask(taskId);
+      } else {
+        syncApiSettingsForModelService();
+        await cancelVideoOperation(operation, useMockMode);
       }
-      await deleteSeedanceTask(taskId);
-      appendSeedanceLog({
-        operation: 'seedanceCancel',
-        status: 'success',
-        executor: operation.provider || 'ark',
-        request: { taskId, executor: operation.provider || 'ark' },
-      });
+      if (operation.provider === 'ark' || !operation.provider) {
+        appendSeedanceLog({
+          operation: 'seedanceCancel',
+          status: 'success',
+          executor: operation.provider || 'ark',
+          request: { taskId, executor: operation.provider || 'ark' },
+        });
+      }
       setOperationRecord(operationKey);
       updateProjectRecord(targetProjectId, (current) => ({
         ...current,
@@ -1062,14 +1296,24 @@ export function createCreativeFlowActions({
       }));
     } catch (error: any) {
       console.error('Failed to cancel transition video generation:', error);
-      appendSeedanceLog({
-        operation: 'seedanceCancel',
-        status: 'error',
-        executor: operation.provider || 'ark',
-        request: { taskId: operation.taskId, executor: operation.provider || 'ark' },
-        error: error?.message || '取消转场视频生成失败。',
+      if (operation.provider === 'ark' || !operation.provider || operation.provider === 'cli') {
+        appendSeedanceLog({
+          operation: 'seedanceCancel',
+          status: 'error',
+          executor: operation.provider || 'ark',
+          request: { taskId: operation.taskId, executor: operation.provider || 'ark' },
+          error: error?.message || '取消转场视频生成失败。',
+        });
+      }
+      openSeedanceErrorModal({
+        eyebrow: 'Seedance',
+        title: '取消转场视频生成失败',
+        message: '取消转场视频生成失败。你可以强制取消本地转场生成状态，以便立即重新生成。',
+        detail: error?.message || '取消转场视频生成失败。',
+        action: 'force-cancel-creative-transition',
+        actionLabel: '强制取消',
+        actionPayload: { projectId: targetProjectId, shotId: currentShotId, operationKey },
       });
-      alert(error?.message || '取消转场视频生成失败。');
     } finally {
       setOperationCancelPending(operationKey, false);
     }

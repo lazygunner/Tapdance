@@ -1,9 +1,9 @@
 import express from 'express';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { cp, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import crypto from 'node:crypto';
 import { createAppStateStore } from './appStateStore.mjs';
 import { buildAssetLibraryFileName } from './assetLibraryNaming.mjs';
@@ -422,6 +422,25 @@ function resolveAssetLibraryAbsolutePath(rootPath, relativePath) {
   };
 }
 
+function getDownloadsDirectory() {
+  return resolve(process.env.XDG_DOWNLOAD_DIR || join(homedir(), 'Downloads'));
+}
+
+async function resolveAvailableDestination(directory, fileName, reservedNames = new Set()) {
+  const parsedExtension = extname(fileName);
+  const baseName = basename(fileName, parsedExtension) || 'video';
+  let candidateName = fileName;
+  let counter = 1;
+
+  while (reservedNames.has(candidateName) || await pathExists(join(directory, candidateName))) {
+    candidateName = `${baseName}-${counter}${parsedExtension}`;
+    counter += 1;
+  }
+
+  reservedNames.add(candidateName);
+  return join(directory, candidateName);
+}
+
 async function getAssetLibraryConfig() {
   await ensureDir(persistentDataRoot);
   const config = await loadBridgeConfig();
@@ -618,6 +637,48 @@ app.get('/api/seedance/assets/file', async (request, response) => {
   }
 });
 
+app.post('/api/seedance/assets/copy-to-downloads', async (request, response) => {
+  try {
+    const relativePaths = Array.isArray(request.body?.relativePaths)
+      ? request.body.relativePaths.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+
+    if (relativePaths.length === 0) {
+      throw new Error('没有可复制的视频文件。');
+    }
+
+    const { rootPath } = await getAssetLibraryConfig();
+    const downloadsDir = getDownloadsDirectory();
+    await ensureDir(downloadsDir);
+    const reservedNames = new Set();
+    const copiedFiles = [];
+
+    for (const relativePath of relativePaths) {
+      const { safeRelativePath, absolutePath } = resolveAssetLibraryAbsolutePath(rootPath, relativePath);
+      const fileStat = await stat(absolutePath);
+      if (!fileStat.isFile()) {
+        throw new Error(`资产不是文件：${safeRelativePath}`);
+      }
+      const destinationPath = await resolveAvailableDestination(downloadsDir, basename(absolutePath), reservedNames);
+      await copyFile(absolutePath, destinationPath);
+      copiedFiles.push({
+        relativePath: safeRelativePath,
+        destinationPath,
+        fileName: basename(destinationPath),
+      });
+    }
+
+    response.json({
+      downloadsDir,
+      copiedFiles,
+    });
+  } catch (error) {
+    response.status(500).json({
+      error: normalizeErrorMessage(error),
+    });
+  }
+});
+
 app.post('/api/seedance/submit', async (request, response) => {
   try {
     const projectId = String(request.body?.projectId || '').trim() || 'fast-project';
@@ -625,7 +686,8 @@ app.post('/api/seedance/submit', async (request, response) => {
     const modelVersion = normalizeModelVersion(request.body?.options?.modelVersion);
     const ratio = String(request.body?.options?.ratio || '16:9').trim() || '16:9';
     const duration = Math.max(4, Math.min(15, Number(request.body?.options?.duration) || 10));
-    const videoResolution = request.body?.options?.videoResolution === '480p' ? '480p' : '720p';
+    const requestedResolution = String(request.body?.options?.videoResolution || '720p').trim();
+    const videoResolution = requestedResolution === '480p' || requestedResolution === '1080p' ? requestedResolution : '720p';
     const images = Array.isArray(request.body?.images) ? request.body.images : [];
     const videos = Array.isArray(request.body?.videos) ? request.body.videos : [];
     const audios = Array.isArray(request.body?.audios) ? request.body.audios : [];

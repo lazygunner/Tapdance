@@ -12,6 +12,11 @@ import {
   type ModelProviderId,
   type ModelRole,
 } from '../../../services/apiConfig.ts';
+import {
+  SEEDANCE_API_MODEL_SOURCE_IDS,
+  getSeedanceApiModelLabelForSourceId,
+  isSeedanceApiModelSourceId,
+} from '../../seedance/modelVersions.ts';
 import { GEMINI_ROLE_SOURCE_OPTIONS, VOLCENGINE_ROLE_SOURCE_IDS } from '../../apiConfig/utils/apiConfigUi.ts';
 
 export type ModelCategory = 'text' | 'image' | 'video';
@@ -23,7 +28,7 @@ export type CostEstimate = {
 
 export type OperationCostUnits = {
   seconds?: number;
-  resolution?: '720p' | '1080p';
+  resolution?: '480p' | '720p' | '1080p';
   frameRate?: number;
   aspectRatio?: AspectRatio;
 };
@@ -46,10 +51,19 @@ type FlowModelOverrideMap = Record<ModelCategory, string>;
 type OperationModelOverrideMap = Record<string, string>;
 
 export function getSourceProviderKey(sourceId: ModelSourceId): ModelProviderId {
-  if (sourceId.startsWith('volcengine.')) {
+  if (sourceId.startsWith('volcengine.') || sourceId.startsWith('seedance.')) {
     return 'volcengine';
   }
   return 'gemini';
+}
+
+export function formatSelectionModelDisplay(sourceId: ModelSourceId, role: ModelRole, modelName: string) {
+  if (isSeedanceApiModelSourceId(sourceId)) {
+    const sourceLabel = getSeedanceApiModelLabelForSourceId(sourceId);
+    return modelName.trim() ? `${sourceLabel} (${modelName.trim()})` : sourceLabel;
+  }
+
+  return formatConfiguredModelDisplay(getSourceProviderKey(sourceId), role, modelName);
 }
 
 export function getSelectionDisplayLabel(sourceId: ModelSourceId, modelName: string) {
@@ -59,11 +73,19 @@ export function getSelectionDisplayLabel(sourceId: ModelSourceId, modelName: str
   }
 
   const role = getModelRoleFromSourceId(sourceId as Exclude<ModelSourceId, ''>);
+
+  if (isSeedanceApiModelSourceId(sourceId)) {
+    return [
+      formatSelectionModelDisplay(sourceId, role, normalizedModelName),
+      '火山引擎 Ark',
+    ].filter(Boolean).join(' · ');
+  }
+
   const providerId = getSourceProviderKey(sourceId);
   const priceLabel = getModelPricingLabel(providerId, role, normalizedModelName, true);
 
   return [
-    formatConfiguredModelDisplay(providerId, role, normalizedModelName),
+    formatSelectionModelDisplay(sourceId, role, normalizedModelName),
     getProviderDisplayLabel(providerId),
     priceLabel,
   ].filter(Boolean).join(' · ');
@@ -85,20 +107,40 @@ export function getPromptLanguageBySourceId(apiSettings: ApiSettings, sourceId: 
 }
 
 export function encodeSelectionValue(sourceId: ModelSourceId, modelName?: string) {
-  if (sourceId.startsWith('volcengine.') && modelName) {
+  if ((sourceId.startsWith('gemini.') || sourceId.startsWith('volcengine.')) && modelName) {
     return `${sourceId}::${modelName}`;
   }
   return sourceId;
 }
 
 export function getGeminiRoleModelOptions(apiSettings: ApiSettings, role: ModelRole) {
-  return GEMINI_ROLE_SOURCE_OPTIONS[role]
-    .map((sourceId) => ({
+  const primarySourceId = GEMINI_ROLE_SOURCE_OPTIONS[role][0];
+  const seen = new Set<string>();
+  const options: Array<{ value: string; sourceId: ModelSourceId; modelName: string; label: string }> = [];
+
+  const appendOption = (sourceId: ModelSourceId, modelName: string) => {
+    const normalizedModelName = modelName.trim();
+    const dedupeKey = normalizedModelName.toLowerCase();
+    if (!normalizedModelName || seen.has(dedupeKey)) {
+      return;
+    }
+
+    seen.add(dedupeKey);
+    options.push({
+      value: encodeSelectionValue(sourceId, normalizedModelName),
       sourceId,
-      modelName: resolveModelSource(apiSettings, sourceId),
-      label: getSourceDisplayLabel(apiSettings, sourceId),
-    }))
-    .filter((option) => option.label !== '未配置' && option.modelName.trim().length > 0);
+      modelName: normalizedModelName,
+      label: getSelectionDisplayLabel(sourceId, normalizedModelName),
+    });
+  };
+
+  getProviderModelCatalog('gemini', role, apiSettings)
+    .forEach((model) => appendOption(primarySourceId, model.modelId));
+
+  GEMINI_ROLE_SOURCE_OPTIONS[role]
+    .forEach((sourceId) => appendOption(sourceId, resolveModelSource(apiSettings, sourceId)));
+
+  return options;
 }
 
 export function getVolcengineRoleModelOptions(apiSettings: ApiSettings, role: ModelRole) {
@@ -154,7 +196,7 @@ export function getProviderRoleCatalogOptions(
 
 export function getRoleModelSelectionOptions(apiSettings: ApiSettings, role: ModelRole): ModelSelectionOption[] {
   const geminiOptions = getGeminiRoleModelOptions(apiSettings, role).map((option) => ({
-    value: option.sourceId,
+    value: option.value,
     sourceId: option.sourceId,
     modelName: option.modelName,
     label: option.label,
@@ -167,7 +209,18 @@ export function getRoleModelSelectionOptions(apiSettings: ApiSettings, role: Mod
     label: `${option.label} · 火山引擎 Ark`,
   }));
 
-  return [...geminiOptions, ...volcengineOptions];
+  const seedanceOptions = role === 'video' && apiSettings.seedance.enabled
+    ? SEEDANCE_API_MODEL_SOURCE_IDS
+      .map((sourceId) => ({
+        value: sourceId,
+        sourceId: sourceId as ModelSourceId,
+        modelName: resolveModelSource(apiSettings, sourceId as ModelSourceId),
+        label: getSourceDisplayLabel(apiSettings, sourceId as ModelSourceId),
+      }))
+      .filter((option) => option.label !== '未配置' && option.modelName.trim().length > 0)
+    : [];
+
+  return [...geminiOptions, ...volcengineOptions, ...seedanceOptions];
 }
 
 export function resolveSelectionValue(apiSettings: ApiSettings, role: ModelRole, selection: string): ResolvedModelSelection | null {
@@ -191,6 +244,17 @@ export function resolveSelectionValue(apiSettings: ApiSettings, role: ModelRole,
     if (!modelName) {
       return null;
     }
+    const catalogOption = getRoleModelSelectionOptions(apiSettings, role).find((option) => (
+      option.modelName === modelName && getSourceProviderKey(option.sourceId) === getSourceProviderKey(sourceId)
+    ));
+    if (catalogOption) {
+      return {
+        sourceId: catalogOption.sourceId,
+        modelName: catalogOption.modelName,
+        displayLabel: catalogOption.label,
+        selectionValue: catalogOption.value,
+      };
+    }
     return {
       sourceId,
       modelName,
@@ -201,6 +265,17 @@ export function resolveSelectionValue(apiSettings: ApiSettings, role: ModelRole,
 
   if (selection.includes('::')) {
     const [sourceId, modelName] = selection.split('::') as [ModelSourceId, string];
+    const catalogOption = getRoleModelSelectionOptions(apiSettings, role).find((option) => (
+      option.modelName === modelName && getSourceProviderKey(option.sourceId) === getSourceProviderKey(sourceId)
+    ));
+    if (catalogOption) {
+      return {
+        sourceId: catalogOption.sourceId,
+        modelName: catalogOption.modelName,
+        displayLabel: catalogOption.label,
+        selectionValue: catalogOption.value,
+      };
+    }
     return {
       sourceId,
       modelName,
@@ -266,7 +341,7 @@ export function getCompactOperationOptions(apiSettings: ApiSettings, category: M
     { value: 'flow', label: '跟随当前流程' },
     ...getRoleModelSelectionOptions(apiSettings, category).map((option) => ({
       value: option.value,
-      label: formatConfiguredModelDisplay(getSourceProviderKey(option.sourceId), category, option.modelName),
+      label: formatSelectionModelDisplay(option.sourceId, category, option.modelName),
     })),
   ];
 }
@@ -313,6 +388,25 @@ function getVideoDimensions(units?: OperationCostUnits) {
       return { width: 1080, height: 1440 };
     }
     return { width: 1920, height: 1080 };
+  }
+
+  if (resolution === '480p') {
+    if (aspectRatio === '21:9') {
+      return { width: 1120, height: 480 };
+    }
+    if (aspectRatio === '9:16') {
+      return { width: 480, height: 854 };
+    }
+    if (aspectRatio === '1:1') {
+      return { width: 480, height: 480 };
+    }
+    if (aspectRatio === '4:3') {
+      return { width: 640, height: 480 };
+    }
+    if (aspectRatio === '3:4') {
+      return { width: 480, height: 640 };
+    }
+    return { width: 854, height: 480 };
   }
 
   if (aspectRatio === '21:9') {
@@ -427,18 +521,16 @@ export function getVideoCostUnits(shot: Shot | undefined, defaultAspectRatio: As
     useReferenceAssets: false,
   };
 
-  const effectiveResolution = config.useLastFrame || config.useReferenceAssets ? '720p' : config.resolution;
-
   return {
     seconds: shot?.duration,
-    resolution: effectiveResolution,
+    resolution: config.resolution,
     frameRate: config.frameRate || 24,
     aspectRatio: config.useReferenceAssets ? '16:9' : config.aspectRatio,
   };
 }
 
 export function getTransitionVideoConfig(shot: Shot | undefined, defaultAspectRatio: AspectRatio) {
-  const aspectRatio = shot?.transitionVideoAspectRatio || defaultAspectRatio;
-  const duration = Math.max(1, Math.round(shot?.transitionVideoDuration || 3));
+  const aspectRatio = shot?.transitionVideoConfig?.aspectRatio || shot?.transitionVideoAspectRatio || defaultAspectRatio;
+  const duration = Math.max(4, Math.round(shot?.transitionVideoDuration || 4));
   return { aspectRatio, duration };
 }

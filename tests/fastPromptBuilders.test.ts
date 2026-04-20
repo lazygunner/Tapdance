@@ -25,6 +25,8 @@ test('buildFastVideoPlanPrompt injects quick-cut guidance when enabled', () => {
   assert.match(prompt, /Quick cut mode: enabled/);
   assert.match(prompt, /每2秒一次的快速节奏剪辑/);
   assert.match(prompt, /\[第 14-15 秒\]/);
+  assert.match(prompt, /Return scenes as an empty array/);
+  assert.match(prompt, /If Quick cut is enabled, scenes must be \[\]/);
 });
 
 test('buildFastVideoPlanPrompt omits quick-cut guidance when disabled', () => {
@@ -32,6 +34,16 @@ test('buildFastVideoPlanPrompt omits quick-cut guidance when disabled', () => {
 
   assert.doesNotMatch(prompt, /Quick cut mode: enabled/);
   assert.doesNotMatch(prompt, /每2秒一次的快速节奏剪辑/);
+});
+
+test('buildFastVideoPlanPrompt lets auto scene count be model-decided and keeps video prompt Chinese', () => {
+  const prompt = buildFastVideoPlanPrompt(createInput());
+
+  assert.match(prompt, /decide the scene count based on idea complexity/);
+  assert.match(prompt, /imagePrompt must be a professional English prompt/);
+  assert.match(prompt, /videoPrompt\.prompt and videoPrompt\.promptZh must both be Simplified Chinese/);
+  assert.doesNotMatch(prompt, /decide 1 or 2 scenes/);
+  assert.doesNotMatch(prompt, /imagePrompt and videoPrompt should be professional English/);
 });
 
 test('buildFastVideoPromptRegenerationPrompt keeps quick-cut guidance for final prompt regeneration', () => {

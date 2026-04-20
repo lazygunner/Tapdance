@@ -2,6 +2,7 @@ import type { ChangeEvent, Dispatch, MutableRefObject, ReactNode, SetStateAction
 
 import type { StylePreset } from '../../../services/styleCatalog.ts';
 import type { ProjectGroupImageAsset } from '../../../services/projectGroups.ts';
+import { copyAssetLibraryFilesToDownloads } from '../../../services/assetLibrary.ts';
 import type { AspectRatio, Asset, ModelSourceId, Project, PromptLanguage, Shot, VideoConfig } from '../../../types.ts';
 import type { WorkspaceThemeMode, WorkspaceView } from '../../../components/studio/WorkspaceViews.tsx';
 import { downloadMedia } from '../../app/utils/downloadMedia.ts';
@@ -20,7 +21,7 @@ type HistoryMaterialPickerState = {
 
 type OperationCostUnits = {
   seconds?: number;
-  resolution?: '720p' | '1080p';
+  resolution?: '480p' | '720p' | '1080p';
   frameRate?: number;
   aspectRatio?: AspectRatio;
 };
@@ -182,6 +183,15 @@ export function CreativeFlowWorkspace({
     downloadMedia(url, filename);
   };
 
+  const handleCopyVideosToDownloads = async (relativePaths: string[]) => {
+    try {
+      const result = await copyAssetLibraryFilesToDownloads({ relativePaths });
+      alert(`已复制 ${result.copiedFiles.length} 个视频到下载目录。`);
+    } catch (error: any) {
+      alert(error?.message || '复制视频到下载目录失败。');
+    }
+  };
+
   const updateShotVideoConfig = (shotId: string, configUpdates: Partial<VideoConfig>) => {
     setProject((prev) => ({
       ...prev,
@@ -197,6 +207,10 @@ export function CreativeFlowWorkspace({
           useFirstFrame: true,
           useLastFrame: true,
           useReferenceAssets: false,
+          generateAudio: false,
+          returnLastFrame: false,
+          useWebSearch: false,
+          watermark: false,
         };
 
         return { ...shot, videoConfig: { ...currentConfig, ...configUpdates } };
@@ -206,11 +220,18 @@ export function CreativeFlowWorkspace({
 
   const updateTransitionVideoConfig = (
     shotId: string,
-    updates: Partial<Pick<Shot, 'transitionVideoDuration' | 'transitionVideoAspectRatio'>>,
+    updates: Partial<Pick<Shot, 'transitionVideoDuration' | 'transitionVideoAspectRatio' | 'transitionVideoConfig'>>,
   ) => {
+    const normalizedUpdates = updates.transitionVideoDuration === undefined
+      ? updates
+      : {
+        ...updates,
+        transitionVideoDuration: Math.max(4, Math.round(Number(updates.transitionVideoDuration) || 4)),
+      };
+
     setProject((prev) => ({
       ...prev,
-      shots: prev.shots.map((shot) => (shot.id === shotId ? { ...shot, ...updates } : shot)),
+      shots: prev.shots.map((shot) => (shot.id === shotId ? { ...shot, ...normalizedUpdates } : shot)),
     }));
   };
 
@@ -336,6 +357,7 @@ export function CreativeFlowWorkspace({
         handleGenerateTransitionPrompt={(shotId, nextShotId) => void onGenerateTransitionPrompt(shotId, nextShotId)}
         handleGenerateTransitionVideo={(shotId, nextShotId) => void onGenerateTransitionVideo(shotId, nextShotId)}
         handleCancelTransitionVideo={(shotId) => void onCancelTransitionVideo(shotId)}
+        onCopyVideosToDownloads={(relativePaths) => void handleCopyVideosToDownloads(relativePaths)}
       />
     );
   }

@@ -38,7 +38,7 @@ export interface VideoGenerationRequest {
   prompt: string;
   config: {
     numberOfVideos: 1;
-    resolution: '720p' | '1080p';
+    resolution: '480p' | '720p' | '1080p';
     aspectRatio: '16:9' | '9:16';
     durationSeconds?: number;
     lastFrame?: InlineImageData;
@@ -248,7 +248,6 @@ export function buildVideoGenerationRequest(
     const lastFrame = parseInlineImageData(shot.lastFrameImageUrl);
     if (lastFrame) {
       request.config.lastFrame = lastFrame;
-      request.config.resolution = '720p';
     }
   }
 
@@ -265,14 +264,14 @@ export function buildVideoGenerationRequest(
     if (referenceImages.length > 0) {
       request.model = fallbackReferenceModelName;
       request.config.aspectRatio = '16:9';
-      request.config.resolution = '720p';
       request.config.referenceImages = referenceImages;
       delete request.config.lastFrame;
     }
   }
 
+  const hasLastFrameInput = videoConfig.useLastFrame && Boolean(shot.lastFrameImageUrl);
   request.config.durationSeconds = normalizeGeminiVideoDurationSeconds(shot.duration, {
-    requireEightSeconds: request.config.resolution !== '720p' || Boolean(request.config.referenceImages?.length) || Boolean(request.config.lastFrame),
+    requireEightSeconds: request.config.resolution !== '720p' || Boolean(request.config.referenceImages?.length) || hasLastFrameInput,
   });
 
   return request;
@@ -283,9 +282,10 @@ export function buildTransitionVideoGenerationRequest(
   lastFrameUrl: string,
   aspectRatio: AspectRatio,
   prompt: string = 'A smooth and natural transition between the two scenes',
-  durationSeconds: number = 3,
+  durationSeconds: number = 4,
   modelName: string = 'veo-3.1-fast-generate-preview',
 ): VideoGenerationRequest {
+  const hasLastFrameInput = Boolean(String(lastFrameUrl || '').trim());
   const request: VideoGenerationRequest = {
     model: modelName,
     prompt,
@@ -293,7 +293,9 @@ export function buildTransitionVideoGenerationRequest(
       numberOfVideos: 1,
       resolution: '720p',
       aspectRatio: normalizeVideoAspectRatio(aspectRatio),
-      durationSeconds: normalizeGeminiVideoDurationSeconds(durationSeconds),
+      durationSeconds: normalizeGeminiVideoDurationSeconds(durationSeconds, {
+        requireEightSeconds: hasLastFrameInput,
+      }),
     },
   };
 

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   createDefaultFastSeedanceDraft,
   createEmptyFastVideoProject,
+  createFallbackFastVideoPlan,
   normalizeFastVideoProject,
   resolveFastVideoTaskProvider,
   syncFastFlowSeedanceDraft,
@@ -127,7 +128,7 @@ test('createDefaultFastSeedanceDraft uses multi-image mode when reference media 
   assert.equal(draft.baseTemplateId, 'multi_image_reference');
 });
 
-test('normalizeFastVideoProject preserves CLI executor, supported CLI vip model versions, and 480p resolution', () => {
+test('normalizeFastVideoProject preserves CLI executor, supported CLI vip model versions, and non-default resolutions', () => {
   const normalized = normalizeFastVideoProject({
     seedanceDraft: {
       ...createDefaultFastSeedanceDraft(createEmptyFastVideoProject().input),
@@ -142,14 +143,14 @@ test('normalizeFastVideoProject preserves CLI executor, supported CLI vip model 
       apiModelKey: 'standard',
       cliModelVersion: 'seedance2.0fast_vip',
       pollIntervalSec: 15,
-      videoResolution: '720p',
+      videoResolution: '1080p',
     },
   });
 
   assert.equal(normalized.executionConfig.executor, 'cli');
   assert.equal(normalized.executionConfig.cliModelVersion, 'seedance2.0fast_vip');
   assert.equal(normalized.seedanceDraft?.options.resolution, '480p');
-  assert.equal(normalized.executionConfig.videoResolution, '720p');
+  assert.equal(normalized.executionConfig.videoResolution, '1080p');
 });
 
 test('normalizeFastVideoProject preserves CLI executor for persisted free-text drafts', () => {
@@ -258,6 +259,17 @@ test('normalizeFastVideoProject preserves quick-cut selection', () => {
   });
 
   assert.equal(normalized.input.quickCutEnabled, true);
+});
+
+test('createFallbackFastVideoPlan skips storyboard scenes in quick-cut mode', () => {
+  const plan = createFallbackFastVideoPlan({
+    ...createEmptyFastVideoProject().input,
+    prompt: '番茄炒蛋，高能量料理短片',
+    quickCutEnabled: true,
+  });
+
+  assert.equal(plan.scenes.length, 0);
+  assert.match(plan.videoPrompt.prompt, /快速剪辑节奏/);
 });
 
 test('syncFastFlowSeedanceDraft only includes checked references and storyboard images for multi-image mode', () => {

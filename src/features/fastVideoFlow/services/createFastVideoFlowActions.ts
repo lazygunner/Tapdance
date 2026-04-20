@@ -7,7 +7,7 @@ import {
 } from '../../../services/modelService';
 import type { ModelInvocationLogEntry } from '../../../services/modelInvocationLog';
 import type { ProjectGroupImageAsset, ProjectGroupMediaAsset } from '../../../services/projectGroups.ts';
-import type { ApiSettings, ModelSourceId, Project } from '../../../types.ts';
+import type { ApiSettings, Asset, ModelSourceId, Project } from '../../../types.ts';
 import type {
   FastReferenceAudio,
   FastReferenceImage,
@@ -30,6 +30,7 @@ import { createSeedanceTask, deleteSeedanceTask, getSeedanceTask } from '../../s
 import { validateSeedanceDraft } from '../../seedance/services/seedanceDraft.ts';
 import type { SeedanceBaseTemplateId, SeedanceDraft } from '../../seedance/types.ts';
 import { SEEDANCE_TEMPLATE_REGISTRY } from '../../seedance/config/seedanceTemplateRegistry.ts';
+import { FAST_VIDEO_PROMPT_CONFIG } from '../../../config/fastVideoPrompts.ts';
 import {
   buildSeedanceCliFailure,
   buildFastProjectName,
@@ -107,7 +108,7 @@ type FastVideoFlowActionDeps = {
     sourceId: ModelInvocationLogEntry['sourceId'];
     modelName: string;
   };
-  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: 'ark' | 'cli') => Record<string, unknown>;
+  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: 'ark' | 'cli', apiModelKey?: 'standard' | 'fast') => Record<string, unknown>;
   appendSeedanceLog: (entry: SeedanceLogEntry) => void;
   onCliConcurrencyLimit?: (input: SeedanceCliQueueEnqueueInput) => void;
 };
@@ -139,6 +140,89 @@ function createFastReferenceImageFromMaterial(material: ProjectGroupImageAsset):
     referenceType: inferFastReferenceImageTypeFromMaterial(material),
     description: material.title || material.sourceLabel || '历史素材',
     selectedForVideo: true,
+  };
+}
+
+const FAST_STORYBOARD_IMAGE_TOKEN_REGEX = /图片\s*([0-9０-９]+)/gu;
+
+function normalizeFastStoryboardImageTokenIndex(value: string) {
+  const normalized = value.replace(/[０-９]/gu, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0));
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed - 1 : null;
+}
+
+function getFastReferenceAssetType(referenceType?: FastReferenceImage['referenceType']): Asset['type'] {
+  if (referenceType === 'person') {
+    return 'character';
+  }
+  if (referenceType === 'scene') {
+    return 'scene';
+  }
+  if (referenceType === 'product') {
+    return 'product';
+  }
+  if (referenceType === 'style') {
+    return 'style';
+  }
+  return 'prop';
+}
+
+function resolveFastSceneReferenceAssets(input: FastVideoInput, prompt: string): Asset[] {
+  const readyReferenceImages = input.referenceImages.filter((reference) => reference.imageUrl.trim());
+  const referencedIndexes = new Set<number>();
+
+  for (const match of prompt.matchAll(FAST_STORYBOARD_IMAGE_TOKEN_REGEX)) {
+    const index = normalizeFastStoryboardImageTokenIndex(match[1] || '');
+    if (index !== null) {
+      referencedIndexes.add(index);
+    }
+  }
+
+  if (referencedIndexes.size === 0) {
+    return [];
+  }
+
+  return readyReferenceImages
+    .map((reference, index): Asset | null => {
+      if (!referencedIndexes.has(index)) {
+        return null;
+      }
+
+      const token = `图片${index + 1}`;
+      const title = reference.description?.trim() || `参考图 ${index + 1}`;
+      return {
+        id: reference.assetId?.trim() || reference.id || `fast-reference-${index + 1}`,
+        type: getFastReferenceAssetType(reference.referenceType),
+        name: `${token} · ${title}`,
+        description: title,
+        imageUrl: reference.imageUrl,
+      };
+    })
+    .filter((asset): asset is Asset => Boolean(asset));
+}
+
+function appendFastSceneReferenceHint(prompt: string, referenceAssets: Asset[]) {
+  if (referenceAssets.length === 0) {
+    return prompt;
+  }
+
+  return [
+    prompt,
+    `参考图说明：${referenceAssets.map((asset) => `${asset.name}: ${asset.description}`).join('；')}`,
+  ].join('\n\n');
+}
+
+function syncSeedanceDraftTemplateForScenes(current: Project['fastFlow'], scenes: FastSceneDraft[]) {
+  if (!current.seedanceDraft) {
+    return current.seedanceDraft;
+  }
+
+  const nextBaseTemplateId = inferFastFlowTemplateId(current.input, scenes.length);
+  const supportedOverlayIds = new Set(SEEDANCE_TEMPLATE_REGISTRY[nextBaseTemplateId].supportedOverlays);
+  return {
+    ...current.seedanceDraft,
+    baseTemplateId: nextBaseTemplateId,
+    overlayTemplateIds: current.seedanceDraft.overlayTemplateIds.filter((item) => supportedOverlayIds.has(item)),
   };
 }
 
@@ -708,7 +792,7 @@ export function createFastVideoFlowActions({
           },
         }),
       }));
-      setView('fastStoryboard');
+      setView(fastInput.quickCutEnabled ? 'fastVideo' : 'fastStoryboard');
     } catch (error: any) {
       console.error('Failed to generate fast video plan:', error);
       if (isPermissionError(error)) {
@@ -744,11 +828,54 @@ export function createFastVideoFlowActions({
     }));
   };
 
-  const handleToggleFastSceneLock = (sceneId: string) => {
-    setFastFlow((current) => ({
-      ...current,
-      scenes: current.scenes.map((scene) => scene.id === sceneId ? { ...scene, locked: !scene.locked } : scene),
-    }));
+  const handleAddFastScene = () => {
+    const sceneId = crypto.randomUUID?.() || `fast-scene-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setFastFlow((current) => {
+      const sceneNumber = current.scenes.length + 1;
+      const nextScenes: FastSceneDraft[] = [
+        ...current.scenes,
+        {
+          id: sceneId,
+          title: `分镜 ${sceneNumber}`,
+          summary: '',
+          imagePrompt: '',
+          humanFaceMosaic: false,
+          imagePromptZh: '',
+          negativePrompt: current.input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePrompt,
+          negativePromptZh: current.input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePromptZh,
+          continuityAnchors: [],
+          imageUrl: '',
+          imageStorageKey: '',
+          locked: false,
+          selectedForVideo: true,
+          status: 'idle',
+          error: '',
+        },
+      ];
+
+      return {
+        ...current,
+        scenes: nextScenes,
+        seedanceDraft: syncSeedanceDraftTemplateForScenes(current, nextScenes),
+      };
+    });
+    return sceneId;
+  };
+
+  const handleDeleteFastScene = (sceneId: string) => {
+    setFastFlow((current) => {
+      const nextScenes = current.scenes.filter((scene) => scene.id !== sceneId);
+      return {
+        ...current,
+        scenes: nextScenes,
+        seedanceDraft: syncSeedanceDraftTemplateForScenes(current, nextScenes),
+      };
+    });
+    setGeneratingFastSceneImages((prev) => {
+      const next = { ...prev };
+      delete next[sceneId];
+      return next;
+    });
   };
 
   const handleToggleFastSceneSelection = (sceneId: string) => {
@@ -773,7 +900,8 @@ export function createFastVideoFlowActions({
 
   const handleGenerateFastSceneImage = async (sceneId: string, mode: 'text-only' | 'previous-scene' = 'text-only') => {
     const scene = project.fastFlow.scenes.find((item) => item.id === sceneId);
-    if (!scene || !scene.imagePrompt.trim()) {
+    const prompt = scene?.imagePromptZh?.trim() || scene?.imagePrompt.trim() || '';
+    if (!scene || !prompt) {
       return;
     }
 
@@ -790,11 +918,13 @@ export function createFastVideoFlowActions({
     }));
     try {
       const imageSourceId = getOperationSourceId(`fast-scene-image-${sceneId}`, 'image');
+      const referenceAssets = resolveFastSceneReferenceAssets(project.fastFlow.input, prompt);
+      const promptWithReferenceHint = appendFastSceneReferenceHint(prompt, referenceAssets);
       const imageUrl = await generateStoryboardImage(
-        scene.imagePrompt,
+        promptWithReferenceHint,
         project.fastFlow.input.aspectRatio,
         getOperationModelName(`fast-scene-image-${sceneId}`, 'image'),
-        [],
+        referenceAssets,
         useMockMode,
         mode === 'previous-scene' ? previousSceneImage : undefined,
         imageSourceId,
@@ -1286,7 +1416,7 @@ export function createFastVideoFlowActions({
         ? project.fastFlow.input.aspectRatio
         : draft.options.ratio,
       duration: draft.options.duration || project.fastFlow.input.durationSec,
-      videoResolution: draft.options.resolution === '480p' ? '480p' : '720p',
+      videoResolution: draft.options.resolution,
     };
     const cliExtraErrors = submitExecutor === 'cli' && draft.baseTemplateId !== 'free_text' && cliVisualAssetCount === 0
       ? ['CLI 执行器至少需要 1 个图片或视频素材。']
@@ -1533,7 +1663,8 @@ export function createFastVideoFlowActions({
     handleToggleFastReferenceAudioSelection,
     handleGenerateFastPlan,
     handleUpdateFastScene,
-    handleToggleFastSceneLock,
+    handleAddFastScene,
+    handleDeleteFastScene,
     handleToggleFastSceneSelection,
     handleGenerateFastSceneImage,
     handleSkipFastStoryboard,

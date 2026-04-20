@@ -2,7 +2,7 @@ import express from 'express'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { constants } from 'node:fs'
-import { access, cp, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { access, copyFile, cp, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, delimiter, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import crypto from 'node:crypto'
@@ -501,6 +501,25 @@ export async function startBridge(port = 3210) {
     return { safeRelativePath, absolutePath }
   }
 
+  function getDownloadsDirectory() {
+    return resolve(electronApp.getPath('downloads'))
+  }
+
+  async function resolveAvailableDestination(directory, fileName, reservedNames = new Set<string>()) {
+    const parsedExtension = extname(fileName)
+    const baseName = basename(fileName, parsedExtension) || 'video'
+    let candidateName = fileName
+    let counter = 1
+
+    while (reservedNames.has(candidateName) || await pathExists(join(directory, candidateName))) {
+      candidateName = `${baseName}-${counter}${parsedExtension}`
+      counter += 1
+    }
+
+    reservedNames.add(candidateName)
+    return join(directory, candidateName)
+  }
+
   function resolvePortraitLibraryAbsolutePath(rootPath, relativePath) {
     if (!rootPath) {
       throw new Error('尚未配置图片素材文件夹。')
@@ -694,6 +713,46 @@ export async function startBridge(port = 3210) {
       response.send(fileBuffer)
     } catch (error) {
       response.status(404).json({ error: normalizeErrorMessage(error) })
+    }
+  })
+
+  app.post('/api/seedance/assets/copy-to-downloads', async (request, response) => {
+    try {
+      const relativePaths = Array.isArray(request.body?.relativePaths)
+        ? request.body.relativePaths.map((item) => String(item || '').trim()).filter(Boolean)
+        : []
+
+      if (relativePaths.length === 0) {
+        throw new Error('没有可复制的视频文件。')
+      }
+
+      const { rootPath } = await getAssetLibraryConfig()
+      const downloadsDir = getDownloadsDirectory()
+      await ensureDir(downloadsDir)
+      const reservedNames = new Set<string>()
+      const copiedFiles = []
+
+      for (const relativePath of relativePaths) {
+        const { safeRelativePath, absolutePath } = resolveAssetLibraryAbsolutePath(rootPath, relativePath)
+        const fileStat = await stat(absolutePath)
+        if (!fileStat.isFile()) {
+          throw new Error(`资产不是文件：${safeRelativePath}`)
+        }
+        const destinationPath = await resolveAvailableDestination(downloadsDir, basename(absolutePath), reservedNames)
+        await copyFile(absolutePath, destinationPath)
+        copiedFiles.push({
+          relativePath: safeRelativePath,
+          destinationPath,
+          fileName: basename(destinationPath),
+        })
+      }
+
+      response.json({
+        downloadsDir,
+        copiedFiles,
+      })
+    } catch (error) {
+      response.status(500).json({ error: normalizeErrorMessage(error) })
     }
   })
 

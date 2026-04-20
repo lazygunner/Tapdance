@@ -8,6 +8,7 @@ test('applyMockApiSettings switches API settings to local mock endpoints and kee
   const initial: ApiSettings = {
     gemini: {
       apiKey: '',
+      baseUrl: 'https://generativelanguage.googleapis.com',
       promptLanguage: 'en',
       textModel: 'gemini-text',
       imageModel: 'gemini-image',

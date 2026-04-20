@@ -1,4 +1,4 @@
-import type { ApiSettings, Asset, ModelSourceId, PromptLanguage, Shot } from '../../../types.ts';
+import type { ApiSettings, Asset, Brief, ModelSourceId, PromptLanguage, Shot } from '../../../types.ts';
 import { getPromptLanguageBySourceId } from '../../modelSelection/utils/modelSelection.ts';
 
 export function pickLocalizedPrompt(language: PromptLanguage, englishPrompt?: string, chinesePrompt?: string, fallback: string = '') {
@@ -161,4 +161,45 @@ export function getTransitionPromptBySource(apiSettings: ApiSettings, shot: Shot
     shot.transitionVideoPromptZh,
     'A smooth and natural transition between the two scenes',
   );
+}
+
+export function buildFallbackTransitionPrompt(currentShot: Shot, nextShot: Shot, brief: Brief): { prompt: string; promptZh: string } {
+  const currentFrame = currentShot.imagePrompt?.lastFrameProfessional
+    || currentShot.imagePrompt?.professional
+    || currentShot.action
+    || currentShot.subject
+    || 'the current shot';
+  const nextFrame = nextShot.imagePrompt?.professional
+    || nextShot.action
+    || nextShot.subject
+    || 'the next shot';
+  const currentFrameZh = currentShot.imagePrompt?.lastFrameProfessionalZh
+    || currentShot.imagePrompt?.professionalZh
+    || currentShot.action
+    || currentShot.subject
+    || '当前镜头';
+  const nextFrameZh = nextShot.imagePrompt?.professionalZh
+    || nextShot.action
+    || nextShot.subject
+    || '下一个镜头';
+  const style = brief.stylePrompt?.trim() || brief.style || 'cinematic';
+  const styleZh = brief.stylePrompt?.trim() || brief.style || '电影感';
+  const transition = currentShot.transition || 'smooth match cut';
+  const cameraMovement = currentShot.cameraMovement || nextShot.cameraMovement || 'smooth camera movement';
+  const mood = nextShot.mood || currentShot.mood || brief.mood || 'natural continuity';
+
+  return {
+    prompt: [
+      `Create a smooth cinematic transition from "${currentFrame}" to "${nextFrame}".`,
+      `Use ${transition} with ${cameraMovement}, preserving visual continuity, lighting direction, character placement, and spatial logic.`,
+      `The emotional tone should shift toward "${mood}" while maintaining ${style} style.`,
+      'Avoid sudden jumps, warped anatomy, flicker, abrupt background changes, and inconsistent props.',
+    ].join(' '),
+    promptZh: [
+      `从“${currentFrameZh}”自然过渡到“${nextFrameZh}”。`,
+      `使用“${transition}”的转场方式，配合“${cameraMovement}”，保持光线方向、人物位置、空间关系和道具连续。`,
+      `情绪逐步过渡到“${mood}”，整体维持“${styleZh}”风格。`,
+      '避免突然跳切、肢体变形、闪烁、背景突变和道具不一致。',
+    ].join(' '),
+  };
 }

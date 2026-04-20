@@ -1,9 +1,10 @@
-import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from 'react';
+import { useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react';
 
-import { Image as ImageIcon, Play, RefreshCw, Video, X } from 'lucide-react';
+import { Download, Image as ImageIcon, Play, RefreshCw, Video, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { StudioSelect } from '../../../components/studio/StudioPrimitives.tsx';
+import { getAssetLibraryRelativePath } from '../../../services/assetLibrary.ts';
 import type { AspectRatio, ModelSourceId, Project, PromptLanguage, Shot, VideoConfig } from '../../../types.ts';
 import {
   ASPECT_RATIO_OPTIONS,
@@ -16,10 +17,31 @@ type ThemeMode = 'light' | 'dark';
 
 type OperationCostUnits = {
   seconds?: number;
-  resolution?: '720p' | '1080p';
+  resolution?: '480p' | '720p' | '1080p';
   frameRate?: number;
   aspectRatio?: AspectRatio;
 };
+
+const VIDEO_RESOLUTION_OPTIONS: ReadonlyArray<VideoConfig['resolution']> = ['480p', '720p', '1080p'];
+
+function getAspectRatioStyle(aspectRatio: AspectRatio) {
+  if (aspectRatio === '21:9') {
+    return '21 / 9';
+  }
+  if (aspectRatio === '9:16') {
+    return '9 / 16';
+  }
+  if (aspectRatio === '1:1') {
+    return '1 / 1';
+  }
+  if (aspectRatio === '4:3') {
+    return '4 / 3';
+  }
+  if (aspectRatio === '3:4') {
+    return '3 / 4';
+  }
+  return '16 / 9';
+}
 
 type CreativeVideosPageProps = {
   project: Project;
@@ -43,13 +65,14 @@ type CreativeVideosPageProps = {
   scrollToVideoSection: (shotId: string) => void;
   scrollToTransitionSection: (fromShotId: string) => void;
   updateShotVideoConfig: (shotId: string, updates: Partial<VideoConfig>) => void;
-  updateTransitionVideoConfig: (shotId: string, updates: Partial<Pick<Shot, 'transitionVideoDuration' | 'transitionVideoAspectRatio'>>) => void;
+  updateTransitionVideoConfig: (shotId: string, updates: Partial<Pick<Shot, 'transitionVideoDuration' | 'transitionVideoAspectRatio' | 'transitionVideoConfig'>>) => void;
   handleGenerateVideo: (shotId: string) => void;
   handleCancelVideo: (shotId: string) => void;
   handleRegenerateVideoPrompts: (shotId: string) => void;
   handleGenerateTransitionPrompt: (shotId: string, nextShotId: string) => void;
   handleGenerateTransitionVideo: (shotId: string, nextShotId: string) => void;
   handleCancelTransitionVideo: (shotId: string) => void;
+  onCopyVideosToDownloads: (relativePaths: string[]) => void | Promise<void>;
 };
 
 export function CreativeVideosPage({
@@ -77,7 +100,30 @@ export function CreativeVideosPage({
   handleGenerateTransitionPrompt,
   handleGenerateTransitionVideo,
   handleCancelTransitionVideo,
+  onCopyVideosToDownloads,
 }: CreativeVideosPageProps) {
+  const [transitionVideoAspectRatios, setTransitionVideoAspectRatios] = useState<Record<string, string>>({});
+  const generatedVideoRelativePaths = project.shots.flatMap((shot) => {
+    const relativePaths: string[] = [];
+    if (shot.videoUrl) {
+      const relativePath = getAssetLibraryRelativePath(shot.videoUrl);
+      if (relativePath) {
+        relativePaths.push(relativePath);
+      }
+    }
+    if (shot.transitionVideoUrl) {
+      const relativePath = getAssetLibraryRelativePath(shot.transitionVideoUrl);
+      if (relativePath) {
+        relativePaths.push(relativePath);
+      }
+    }
+    return relativePaths;
+  });
+  const canDownloadAllVideos = generatedVideoRelativePaths.length > 0;
+  const handleDownloadAllVideos = () => {
+    void onCopyVideosToDownloads(generatedVideoRelativePaths);
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto py-8">
       <div className="flex items-center justify-between mb-4">
@@ -85,6 +131,15 @@ export function CreativeVideosPage({
           <h2 className="text-2xl font-bold text-white">视频生成</h2>
           <p className="text-zinc-400 text-sm mt-1">为每个镜头生成最终的视频片段。</p>
         </div>
+        <button
+          type="button"
+          onClick={handleDownloadAllVideos}
+          disabled={!canDownloadAllVideos}
+          className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm transition-colors ${canDownloadAllVideos ? 'border-zinc-700 text-white hover:bg-zinc-800' : 'border-zinc-800 text-zinc-600 cursor-not-allowed'}`}
+        >
+          <Download className="h-4 w-4" />
+          下载所有视频
+        </button>
       </div>
 
       <div
@@ -106,7 +161,6 @@ export function CreativeVideosPage({
           const ar = shot.videoConfig?.aspectRatio || project.brief?.aspectRatio || '16:9';
           const aspectClass = getAspectRatioClass(ar);
           const transitionConfig = getTransitionVideoConfig(shot);
-          const transitionAspectClass = getAspectRatioClass(transitionConfig.aspectRatio);
           const mediaBackdropClass = themeMode === 'light'
             ? 'bg-white'
             : 'bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-900';
@@ -114,16 +168,50 @@ export function CreativeVideosPage({
           const transitionOperationKey = getTransitionVideoOperationKey(shot.id);
           const videoPromptRegenKey = `${shot.id}_video_prompt`;
           const videoSourceId = getOperationSourceId(videoOperationKey, 'video');
+          const transitionVideoSourceId = getOperationSourceId(transitionOperationKey, 'video');
+          const isSeedanceVideoSource = videoSourceId.startsWith('seedance.');
+          const isSeedanceTransitionVideoSource = transitionVideoSourceId.startsWith('seedance.');
+          const resolutionOptions = VIDEO_RESOLUTION_OPTIONS;
+          const configuredResolution = shot.videoConfig?.resolution;
+          const selectedResolution = configuredResolution && resolutionOptions.includes(configuredResolution)
+            ? configuredResolution
+            : '720p';
+          const transitionVideoConfig: VideoConfig = {
+            resolution: shot.transitionVideoConfig?.resolution || '720p',
+            frameRate: shot.transitionVideoConfig?.frameRate || 24,
+            aspectRatio: shot.transitionVideoConfig?.aspectRatio || transitionConfig.aspectRatio,
+            useFirstFrame: shot.transitionVideoConfig?.useFirstFrame ?? true,
+            useLastFrame: shot.transitionVideoConfig?.useLastFrame ?? !transitionVideoSourceId.startsWith('gemini.'),
+            useReferenceAssets: shot.transitionVideoConfig?.useReferenceAssets ?? false,
+            generateAudio: shot.transitionVideoConfig?.generateAudio ?? false,
+            returnLastFrame: shot.transitionVideoConfig?.returnLastFrame ?? false,
+            useWebSearch: shot.transitionVideoConfig?.useWebSearch ?? false,
+            watermark: shot.transitionVideoConfig?.watermark ?? false,
+          };
+          const transitionAspectClass = getAspectRatioClass(transitionVideoConfig.aspectRatio);
+          const fallbackTransitionAspectRatio = getAspectRatioStyle(transitionVideoConfig.aspectRatio);
+          const transitionVideoPreviewAspectRatio = transitionVideoAspectRatios[shot.id] || fallbackTransitionAspectRatio;
+          const transitionMissingRequiredFrame = Boolean(
+            (transitionVideoConfig.useFirstFrame && !shot.lastFrameImageUrl)
+            || (transitionVideoConfig.useLastFrame && !project.shots[index + 1]?.imageUrl),
+          );
+          const updateTransitionRuntimeConfig = (patch: Partial<VideoConfig>) => {
+            const nextConfig = { ...transitionVideoConfig, ...patch };
+            updateTransitionVideoConfig(shot.id, {
+              transitionVideoConfig: nextConfig,
+              ...(patch.aspectRatio ? { transitionVideoAspectRatio: patch.aspectRatio } : {}),
+            });
+          };
           const promptLanguage = getPromptLanguageBySourceId(videoSourceId);
           const activePromptIsZh = promptLanguage === 'zh';
           const videoCancelPending = isOperationCancelPending(videoOperationKey);
           const transitionCancelPending = isOperationCancelPending(transitionOperationKey);
 
           return (
-            <div key={shot.id} className="space-y-4">
+            <div key={shot.id} className="min-w-0 space-y-4">
               <div
                 ref={(element) => { videoSectionRefs.current[shot.id] = element; }}
-                className="scroll-mt-44 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex flex-col md:flex-row"
+                className="scroll-mt-44 min-w-0 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex flex-col md:flex-row"
               >
                 <div className={`w-full md:w-1/3 relative ${aspectClass} border-b md:border-b-0 md:border-r border-zinc-800 flex-shrink-0 ${mediaBackdropClass}`}>
                   {shot.videoUrl ? (
@@ -152,13 +240,13 @@ export function CreativeVideosPage({
                   )}
                 </div>
 
-                <div className="p-6 flex-1 flex flex-col">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
+                <div className="min-w-0 overflow-hidden p-6 flex-1 flex flex-col">
+                  <div className="flex min-w-0 items-start justify-between gap-4 mb-4">
+                    <div className="min-w-0 flex-1">
                       <h3 className="text-lg font-medium text-white mb-1">镜头 {shot.shotNumber}</h3>
-                      <p className="text-sm text-zinc-400">{shot.action}</p>
+                      <p className="text-sm text-zinc-400 break-words">{shot.action}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                       {shot.videoStatus === 'failed' && (
                         <span className="text-xs font-medium text-red-400 bg-red-400/10 px-2 py-1 rounded border border-red-400/20">
                           生成失败
@@ -226,8 +314,8 @@ export function CreativeVideosPage({
                         重新生成
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
+                    <div className="grid min-w-0 grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="min-w-0">
                         <span className={`text-[10px] mb-1 block ${activePromptIsZh ? 'text-emerald-300' : 'text-zinc-500'}`}>
                           中文 {activePromptIsZh ? '(当前用于生成)' : '(未选中)'}
                         </span>
@@ -244,7 +332,7 @@ export function CreativeVideosPage({
                           placeholder="输入中文视频提示词..."
                         />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <span className={`text-[10px] mb-1 block ${!activePromptIsZh ? 'text-emerald-300' : 'text-zinc-500'}`}>
                           英文 {!activePromptIsZh ? '(当前用于生成)' : '(未选中)'}
                         </span>
@@ -313,13 +401,14 @@ export function CreativeVideosPage({
                       <div>
                         <label className="block text-[10px] text-zinc-400 mb-1">分辨率</label>
                         <StudioSelect
-                          value={shot.videoConfig?.resolution || '720p'}
-                          onChange={(event) => updateShotVideoConfig(shot.id, { resolution: event.target.value as '720p' | '1080p' })}
+                          value={selectedResolution}
+                          onChange={(event) => updateShotVideoConfig(shot.id, { resolution: event.target.value as VideoConfig['resolution'] })}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500"
                           disabled={shot.videoStatus === 'generating'}
                         >
-                          <option value="720p">720p</option>
-                          <option value="1080p">1080p</option>
+                          {resolutionOptions.map((resolution) => (
+                            <option key={resolution} value={resolution}>{resolution}</option>
+                          ))}
                         </StudioSelect>
                       </div>
                       <div>
@@ -368,7 +457,7 @@ export function CreativeVideosPage({
                           className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
                           disabled={shot.videoStatus === 'generating'}
                         />
-                        <span className="text-xs text-zinc-300">使用尾帧图片作为终点 (强制 720p)</span>
+                        <span className="text-xs text-zinc-300">使用尾帧图片作为终点</span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -378,8 +467,52 @@ export function CreativeVideosPage({
                           className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
                           disabled={shot.videoStatus === 'generating'}
                         />
-                        <span className="text-xs text-zinc-300">使用一致性资产 (强制 720p, 16:9, 忽略尾帧)</span>
+                        <span className="text-xs text-zinc-300">使用一致性资产 (16:9, 忽略尾帧)</span>
                       </label>
+                      {isSeedanceVideoSource ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg border border-zinc-800/70 bg-zinc-950/45 p-3">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={shot.videoConfig?.generateAudio ?? false}
+                              onChange={(event) => updateShotVideoConfig(shot.id, { generateAudio: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.videoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">生成音频</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={shot.videoConfig?.returnLastFrame ?? false}
+                              onChange={(event) => updateShotVideoConfig(shot.id, { returnLastFrame: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.videoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">返回尾帧</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={shot.videoConfig?.useWebSearch ?? false}
+                              onChange={(event) => updateShotVideoConfig(shot.id, { useWebSearch: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.videoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">联网搜索</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={shot.videoConfig?.watermark ?? false}
+                              onChange={(event) => updateShotVideoConfig(shot.id, { watermark: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.videoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">添加水印</span>
+                          </label>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="flex items-center justify-between mb-2 mt-4 pt-4 border-t border-zinc-800/50">
@@ -429,12 +562,12 @@ export function CreativeVideosPage({
               {index < project.shots.length - 1 && (
                 <div
                   ref={(element) => { transitionSectionRefs.current[shot.id] = element; }}
-                  className="scroll-mt-44 flex flex-col items-center justify-center my-4 relative"
+                  className="scroll-mt-44 min-w-0 flex flex-col items-center justify-center my-4 relative"
                 >
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-px h-full bg-zinc-800"></div>
                   </div>
-                  <div className="relative z-10 bg-zinc-950 p-6 rounded-xl border border-zinc-800 flex flex-col items-center gap-4 w-full max-w-2xl">
+                  <div className="relative z-10 min-w-0 overflow-hidden bg-zinc-950 p-6 rounded-xl border border-zinc-800 flex flex-col items-center gap-4 w-full max-w-2xl">
                     <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">转场视频 (镜头 {shot.shotNumber} ➔ {project.shots[index + 1].shotNumber})</h4>
 
                     <div className="w-full flex gap-4">
@@ -506,14 +639,21 @@ export function CreativeVideosPage({
                       </div>
                     </div>
 
-                    <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {renderOperationModelPanel(transitionOperationKey, 'video', {
+                      resolution: transitionVideoConfig.resolution,
+                      frameRate: transitionVideoConfig.frameRate,
+                      aspectRatio: transitionVideoConfig.aspectRatio,
+                      seconds: transitionConfig.duration,
+                    })}
+
+                    <div className="w-full grid grid-cols-1 md:grid-cols-4 gap-3">
                       <label className="block">
                         <span className="block text-[10px] text-zinc-500 mb-1">转场时长（秒）</span>
                         <input
                           type="number"
-                          min="1"
+                          min="4"
                           value={transitionConfig.duration}
-                          onChange={(event) => updateTransitionVideoConfig(shot.id, { transitionVideoDuration: Math.max(1, Number(event.target.value) || 3) })}
+                          onChange={(event) => updateTransitionVideoConfig(shot.id, { transitionVideoDuration: Math.max(4, Number(event.target.value) || 4) })}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500"
                           disabled={shot.transitionVideoStatus === 'generating'}
                         />
@@ -521,8 +661,8 @@ export function CreativeVideosPage({
                       <label className="block">
                         <span className="block text-[10px] text-zinc-500 mb-1">转场比例</span>
                         <StudioSelect
-                          value={transitionConfig.aspectRatio}
-                          onChange={(event) => updateTransitionVideoConfig(shot.id, { transitionVideoAspectRatio: event.target.value as AspectRatio })}
+                          value={transitionVideoConfig.aspectRatio}
+                          onChange={(event) => updateTransitionRuntimeConfig({ aspectRatio: event.target.value as AspectRatio })}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500"
                           disabled={shot.transitionVideoStatus === 'generating'}
                         >
@@ -531,14 +671,127 @@ export function CreativeVideosPage({
                           ))}
                         </StudioSelect>
                       </label>
+                      <label className="block">
+                        <span className="block text-[10px] text-zinc-500 mb-1">分辨率</span>
+                        <StudioSelect
+                          value={transitionVideoConfig.resolution}
+                          onChange={(event) => updateTransitionRuntimeConfig({ resolution: event.target.value as VideoConfig['resolution'] })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500"
+                          disabled={shot.transitionVideoStatus === 'generating'}
+                        >
+                          {VIDEO_RESOLUTION_OPTIONS.map((resolution) => (
+                            <option key={resolution} value={resolution}>{resolution}</option>
+                          ))}
+                        </StudioSelect>
+                      </label>
+                      <label className="block">
+                        <span className="block text-[10px] text-zinc-500 mb-1">帧率 (估算)</span>
+                        <StudioSelect
+                          value={transitionVideoConfig.frameRate}
+                          onChange={(event) => updateTransitionRuntimeConfig({ frameRate: Number(event.target.value) })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-white outline-none focus:border-indigo-500"
+                          disabled={shot.transitionVideoStatus === 'generating'}
+                        >
+                          <option value="24">24 fps</option>
+                          <option value="30">30 fps</option>
+                          <option value="60">60 fps</option>
+                        </StudioSelect>
+                      </label>
+                    </div>
+
+                    <div className="w-full space-y-2 rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={transitionVideoConfig.useFirstFrame}
+                          onChange={(event) => updateTransitionRuntimeConfig({ useFirstFrame: event.target.checked })}
+                          className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                          disabled={shot.transitionVideoStatus === 'generating'}
+                        />
+                        <span className="text-xs text-zinc-300">使用当前镜头尾帧作为起点</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={transitionVideoConfig.useLastFrame}
+                          onChange={(event) => updateTransitionRuntimeConfig({ useLastFrame: event.target.checked })}
+                          className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                          disabled={shot.transitionVideoStatus === 'generating'}
+                        />
+                        <span className="text-xs text-zinc-300">使用下一镜头首帧作为终点</span>
+                      </label>
+                      {isSeedanceTransitionVideoSource ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={transitionVideoConfig.generateAudio}
+                              onChange={(event) => updateTransitionRuntimeConfig({ generateAudio: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.transitionVideoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">生成音频</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={transitionVideoConfig.returnLastFrame}
+                              onChange={(event) => updateTransitionRuntimeConfig({ returnLastFrame: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.transitionVideoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">返回尾帧</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={transitionVideoConfig.useWebSearch}
+                              onChange={(event) => updateTransitionRuntimeConfig({ useWebSearch: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.transitionVideoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">联网搜索</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={transitionVideoConfig.watermark}
+                              onChange={(event) => updateTransitionRuntimeConfig({ watermark: event.target.checked })}
+                              className="rounded bg-zinc-900 border-zinc-700 text-indigo-500 focus:ring-indigo-500"
+                              disabled={shot.transitionVideoStatus === 'generating'}
+                            />
+                            <span className="text-xs text-zinc-300">添加水印</span>
+                          </label>
+                        </div>
+                      ) : null}
                     </div>
 
                     {shot.transitionVideoUrl ? (
-                      <div className={`w-full ${transitionAspectClass} rounded border border-zinc-800 overflow-hidden ${mediaBackdropClass}`}>
-                        <video src={shot.transitionVideoUrl} controls className="w-full h-full object-contain" />
+                      <div
+                        className={`w-full rounded border border-zinc-800 overflow-hidden ${mediaBackdropClass}`}
+                        style={{ aspectRatio: transitionVideoPreviewAspectRatio }}
+                      >
+                        <video
+                          src={shot.transitionVideoUrl}
+                          controls
+                          className="w-full h-full object-contain"
+                          onLoadedMetadata={(event) => {
+                            const { videoWidth, videoHeight } = event.currentTarget;
+                            if (!videoWidth || !videoHeight) {
+                              return;
+                            }
+                            const nextAspectRatio = `${videoWidth} / ${videoHeight}`;
+                            setTransitionVideoAspectRatios((prev) => (
+                              prev[shot.id] === nextAspectRatio ? prev : { ...prev, [shot.id]: nextAspectRatio }
+                            ));
+                          }}
+                        />
                       </div>
                     ) : shot.transitionVideoStatus === 'generating' ? (
-                      <div className={`w-full ${transitionAspectClass} relative rounded border border-[var(--studio-border)] overflow-hidden`}>
+                      <div
+                        className="w-full relative rounded border border-[var(--studio-border)] overflow-hidden"
+                        style={{ aspectRatio: fallbackTransitionAspectRatio }}
+                      >
                         <div className="studio-loading-overlay text-[var(--studio-text)]">
                           <img src="./assets/loading.gif" alt="" className="studio-loading-gif" />
                           <div className="studio-loading-content">
@@ -547,7 +800,10 @@ export function CreativeVideosPage({
                         </div>
                       </div>
                     ) : (
-                      <div className={`w-full ${transitionAspectClass} bg-zinc-900/50 rounded border border-zinc-800 border-dashed flex items-center justify-center text-zinc-500 text-xs`}>
+                      <div
+                        className="w-full bg-zinc-900/50 rounded border border-zinc-800 border-dashed flex items-center justify-center text-zinc-500 text-xs"
+                        style={{ aspectRatio: fallbackTransitionAspectRatio }}
+                      >
                         未生成转场
                       </div>
                     )}
@@ -566,7 +822,7 @@ export function CreativeVideosPage({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleGenerateTransitionVideo(shot.id, project.shots[index + 1].id)}
-                        disabled={shot.transitionVideoStatus === 'generating' || !shot.lastFrameImageUrl || !project.shots[index + 1].imageUrl}
+                        disabled={shot.transitionVideoStatus === 'generating' || transitionMissingRequiredFrame}
                         className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
                       >
                         {shot.transitionVideoStatus === 'generating' ? (
@@ -597,14 +853,8 @@ export function CreativeVideosPage({
                         </button>
                       )}
                     </div>
-                    {renderOperationModelPanel(transitionOperationKey, 'video', {
-                      resolution: '720p',
-                      frameRate: 24,
-                      aspectRatio: transitionConfig.aspectRatio,
-                      seconds: transitionConfig.duration,
-                    })}
-                    {(!shot.lastFrameImageUrl || !project.shots[index + 1].imageUrl) && (
-                      <p className="text-[10px] text-zinc-500 text-center">需要当前镜头的尾帧和下一个镜头的首帧</p>
+                    {transitionMissingRequiredFrame && (
+                      <p className="text-[10px] text-zinc-500 text-center">请先生成已勾选的转场参考帧</p>
                     )}
                   </div>
                 </div>

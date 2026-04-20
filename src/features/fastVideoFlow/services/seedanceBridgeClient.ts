@@ -225,7 +225,7 @@ export async function submitSeedanceTask(params: {
     modelVersion: SeedanceModelVersion;
     ratio: FastVideoInput['aspectRatio'];
     duration: number;
-    videoResolution: '480p' | '720p';
+    videoResolution: '480p' | '720p' | '1080p';
   };
   baseUrl?: string;
 }) {

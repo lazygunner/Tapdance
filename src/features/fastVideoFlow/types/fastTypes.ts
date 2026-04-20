@@ -129,7 +129,7 @@ export interface FastVideoProject {
     apiModelKey: SeedanceApiModelKey;
     cliModelVersion: SeedanceModelVersion;
     pollIntervalSec: number;
-    videoResolution: '480p' | '720p';
+    videoResolution: '480p' | '720p' | '1080p';
   };
   task: SeedanceTask;
 }

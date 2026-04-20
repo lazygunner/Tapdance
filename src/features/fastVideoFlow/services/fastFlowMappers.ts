@@ -27,6 +27,10 @@ function normalizeFastVideoAspectRatio(value: unknown): FastVideoInput['aspectRa
     : '16:9';
 }
 
+function normalizeSeedanceResolution(value: unknown): SeedanceDraft['options']['resolution'] {
+  return value === '480p' || value === '1080p' ? value : '720p';
+}
+
 export function isFastAssetSelectedForVideo(selectedForVideo?: boolean) {
   return selectedForVideo !== false;
 }
@@ -402,7 +406,7 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
       ...baseDraft.options,
       ratio: baseDraft.options.ratio || fastFlow.input.aspectRatio,
       duration: baseDraft.options.duration || fastFlow.input.durationSec,
-      resolution: baseDraft.options.resolution || '720p',
+      resolution: normalizeSeedanceResolution(baseDraft.options.resolution),
       generateAudio: overlaySet.has('auto_audio'),
       returnLastFrame: overlaySet.has('return_last_frame'),
       useWebSearch: overlaySet.has('web_search'),
@@ -489,7 +493,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
       options: {
         ...fallbackSeedanceDraft.options,
         ...(value.seedanceDraft.options || {}),
-        resolution: value.seedanceDraft.options?.resolution === '480p' ? '480p' as const : '720p' as const,
+        resolution: normalizeSeedanceResolution(value.seedanceDraft.options?.resolution),
       },
       assets: Array.isArray(value.seedanceDraft.assets)
         ? value.seedanceDraft.assets
@@ -546,7 +550,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
         : Number.isFinite((value as any)?.cliConfig?.pollIntervalSec)
           ? Math.max(5, Math.min(60, Number((value as any).cliConfig.pollIntervalSec)))
           : base.executionConfig.pollIntervalSec,
-      videoResolution: value?.executionConfig?.videoResolution === '480p' ? '480p' : '720p',
+      videoResolution: normalizeSeedanceResolution(value?.executionConfig?.videoResolution),
     },
     task: {
       provider: resolveFastVideoTaskProvider(task, executionExecutor),
@@ -571,23 +575,38 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
 }
 
 export function createFallbackFastVideoPlan(input: FastVideoInput): FastVideoPlan {
-  const sceneCount = input.preferredSceneCount === 'auto' ? 2 : input.preferredSceneCount;
   const promptBase = input.prompt.trim() || 'A cinematic scene';
   const fallbackVideoPromptSuffix = input.quickCutEnabled
     ? FAST_VIDEO_PROMPT_CONFIG.quickCut.fallbackVideoPromptZhSuffix
     : FAST_VIDEO_PROMPT_CONFIG.fallback.videoPromptZhSuffix;
+  if (input.quickCutEnabled) {
+    return {
+      scenes: [],
+      videoPrompt: {
+        prompt: normalizeFastVideoExecutionPrompt(input, `${promptBase}。${fallbackVideoPromptSuffix}`),
+        promptZh: normalizeFastVideoExecutionPrompt(input, `${promptBase}。${fallbackVideoPromptSuffix}`),
+      },
+    };
+  }
+
+  const sceneCount = input.preferredSceneCount === 'auto' ? 3 : input.preferredSceneCount;
   const scenes = Array.from({ length: sceneCount }, (_, index) => ({
     id: `fast-scene-${index + 1}`,
-    title: index === 0 ? FAST_VIDEO_PROMPT_CONFIG.fallback.openingSceneTitle : FAST_VIDEO_PROMPT_CONFIG.fallback.progressionSceneTitle,
+    title: index === 0
+      ? FAST_VIDEO_PROMPT_CONFIG.fallback.openingSceneTitle
+      : index === sceneCount - 1
+        ? '收束分镜'
+        : `推进分镜 ${index + 1}`,
     summary: '',
     imagePrompt: `${promptBase}, ${index === 0 ? FAST_VIDEO_PROMPT_CONFIG.fallback.openingScenePromptSuffix : FAST_VIDEO_PROMPT_CONFIG.fallback.progressionScenePromptSuffix}`,
     humanFaceMosaic: false,
-    imagePromptZh: `${promptBase}，电影感静帧，${index === 0 ? '开场状态' : '后续推进'}，环境细节清晰，真实光影，无文字，无水印`,
+    imagePromptZh: `${promptBase}，电影感静帧，${index === 0 ? '开场状态' : index === sceneCount - 1 ? '收束状态' : '中段推进'}，环境细节清晰，真实光影，无文字，无水印`,
     negativePrompt: input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePrompt,
     negativePromptZh: input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePromptZh,
     continuityAnchors: [],
     imageUrl: '',
     locked: false,
+    selectedForVideo: true,
     status: 'idle' as const,
     error: '',
   }));

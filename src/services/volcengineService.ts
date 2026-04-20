@@ -7,6 +7,8 @@ import { buildCharacterReferencePrompt, buildProductReferencePrompt, buildSceneR
 import { getMockVideoUrl } from './mockMedia.ts';
 import { enforceFramePromptAspectRatio, inferAspectRatioFromFramePrompts } from './promptAspectRatio.ts';
 import { ensureInlineImageDataUrl, materializeAssetImageUrls, materializeShotImageUrls, normalizeVideoAspectRatio } from './requestBuilders.ts';
+import { mapVolcengineImageSize } from './volcengineImageSize.ts';
+import { normalizeVolcengineShotListResult } from './volcengineShotList.ts';
 
 type VolcengineOperation = {
   provider: 'volcengine';
@@ -160,14 +162,6 @@ function supportsSeedreamReferenceImage(modelName: string): boolean {
   return !normalized.includes('seedream-3.0') && !normalized.includes('seedream-3-0');
 }
 
-function mapImageSize(aspectRatio: VisualAspectRatio) {
-  if (aspectRatio === '1:1') {
-    return '1K';
-  }
-
-  return '2K';
-}
-
 function findTaskId(payload: any): string {
   return (
     payload?.id ||
@@ -289,13 +283,15 @@ export async function generateFastVideoPlanWithModel(input: FastVideoInput, mode
   }
 
   const result = await chatJson<FastVideoPlan>(modelName, buildFastVideoPlanPrompt(input));
+  const scenes = input.quickCutEnabled ? [] : (result.scenes || []);
   return {
-    scenes: (result.scenes || []).map((scene, index) => ({
+    scenes: scenes.map((scene, index) => ({
       ...scene,
       id: `fast-scene-${index + 1}`,
       summary: typeof scene.summary === 'string' ? scene.summary : '',
       continuityAnchors: Array.isArray(scene.continuityAnchors) ? scene.continuityAnchors : [],
       locked: false,
+      selectedForVideo: true,
       status: 'idle',
       error: '',
       imageUrl: '',
@@ -346,7 +342,7 @@ export async function generateShotList(brief: Brief, assets: Asset[], numShots: 
     ? `Available Assets:\n${assets.map((asset) => `- ID: "${asset.id}", Type: ${asset.type}, Name: ${asset.name}`).join('\n')}`
     : '';
 
-  const result = await chatJson<Array<Omit<Shot, 'id'>>>(modelName, `Based on the following creative brief, generate a detailed shot list consisting of exactly ${numShots} shots.
+  const result = await chatJson<unknown>(modelName, `Based on the following creative brief, generate a detailed shot list consisting of exactly ${numShots} shots.
 
 Brief:
 ${JSON.stringify(brief, null, 2)}
@@ -357,9 +353,9 @@ Break down the narrative into a logical sequence of shots.
 IMPORTANT: When a shot clearly happens in a known scene, include at least one matching scene asset ID in referenceAssets.
 IMPORTANT: When a known character appears in a shot, include the matching character asset ID in referenceAssets.
 IMPORTANT: All output string values MUST be in Simplified Chinese (简体中文).
-Return ONLY a JSON array. Each item must contain: shotNumber, duration, shotSize, cameraAngle, cameraMovement, subject, action, mood, transition, dialog, referenceAssets.`);
+Return ONLY a JSON object with the key "shots". The "shots" value must be an array, and each item must contain: shotNumber, duration, shotSize, cameraAngle, cameraMovement, subject, action, mood, transition, dialog, referenceAssets.`);
 
-  return result.map((shot) => ({
+  return normalizeVolcengineShotListResult(result).map((shot) => ({
     ...shot,
     id: crypto.randomUUID(),
   }));
@@ -519,7 +515,7 @@ export async function generateStoryboardImage(prompt: string, aspectRatio: Visua
       model: modelName,
       prompt: finalPrompt,
       ...(imageField ? { image: imageField } : {}),
-      size: mapImageSize(aspectRatio),
+      size: mapVolcengineImageSize(aspectRatio, modelName),
       response_format: 'url',
       watermark: false,
     }),
@@ -578,7 +574,7 @@ export async function startVideoGeneration(shot: Shot, defaultAspectRatio: Aspec
     materializeAssetImageUrls(referenceAssets),
   ]);
   const videoConfig = getVideoConfig(normalizedShot, defaultAspectRatio);
-  const effectiveResolution = videoConfig.useLastFrame || videoConfig.useReferenceAssets ? '720p' : videoConfig.resolution;
+  const effectiveResolution = videoConfig.resolution;
   const prompt = normalizedShot.videoPrompt?.imageToVideo || normalizedShot.videoPrompt?.textToVideo || normalizedShot.action;
   const firstFrameUrl = videoConfig.useFirstFrame ? normalizedShot.imageUrl : undefined;
   const lastFrameUrl = videoConfig.useLastFrame && !videoConfig.useReferenceAssets ? normalizedShot.lastFrameImageUrl : undefined;
@@ -611,7 +607,7 @@ export async function startVideoGeneration(shot: Shot, defaultAspectRatio: Aspec
   };
 }
 
-export async function startTransitionVideoGeneration(firstFrameUrl: string, lastFrameUrl: string, aspectRatio: AspectRatio, prompt: string = 'A smooth and natural transition between the two scenes', durationSeconds: number = 3, useMockMode: boolean = false, modelName: string): Promise<VolcengineOperation> {
+export async function startTransitionVideoGeneration(firstFrameUrl: string, lastFrameUrl: string, aspectRatio: AspectRatio, prompt: string = 'A smooth and natural transition between the two scenes', durationSeconds: number = 4, useMockMode: boolean = false, modelName: string): Promise<VolcengineOperation> {
   if (useMockMode) {
     return { provider: 'volcengine', taskId: 'mock-op-transition' };
   }
@@ -629,7 +625,7 @@ export async function startTransitionVideoGeneration(firstFrameUrl: string, last
       parameters: {
         resolution: '720p',
         aspect_ratio: normalizeVideoAspectRatio(aspectRatio),
-        duration: Math.max(1, Math.round(durationSeconds || 3)),
+        duration: Math.max(4, Math.round(durationSeconds || 4)),
         fps: 24,
       },
     }),

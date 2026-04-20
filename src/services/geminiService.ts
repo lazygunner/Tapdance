@@ -3,7 +3,7 @@ import { Brief, Asset, Shot, AspectRatio, VisualAspectRatio } from '../types';
 import type { FastVideoInput, FastVideoPlan } from '../features/fastVideoFlow/types/fastTypes.ts';
 import { createFallbackFastVideoPlan } from '../features/fastVideoFlow/services/fastFlowMappers.ts';
 import { buildFastVideoPlanPrompt, buildFastVideoPromptRegenerationPrompt, normalizeFastVideoExecutionPrompt } from '../features/fastVideoFlow/services/fastPromptBuilders.ts';
-import { loadApiSettings } from './apiConfig.ts';
+import { loadApiSettings, resolveGeminiBaseUrl } from './apiConfig.ts';
 import { buildCharacterReferencePrompt, buildProductReferencePrompt, buildSceneReferencePrompt } from './assetPromptTemplate.ts';
 import { getMockVideoUrl } from './mockMedia.ts';
 import {
@@ -42,24 +42,36 @@ function resolveGeminiApiKey(): string {
   return typeof apiKey === 'string' ? apiKey.trim() : '';
 }
 
-function buildGeminiDownloadUrl(uri: string, apiKey: string): string {
-  const isGoogleUri = uri.includes('generativelanguage.googleapis.com') || uri.includes('googleapis.com');
-  if (!isGoogleUri || !apiKey) {
+function addGeminiApiKeyToUrl(url: URL, apiKey: string) {
+  if (apiKey && !url.searchParams.has('key')) {
+    url.searchParams.set('key', apiKey);
+  }
+  return url.toString();
+}
+
+function buildGeminiDownloadUrl(uri: string, apiKey: string, baseUrl?: string): string {
+  const normalizedUri = uri.trim();
+  const isGoogleUri = normalizedUri.includes('generativelanguage.googleapis.com') || normalizedUri.includes('googleapis.com');
+  if (!normalizedUri) {
     return uri;
   }
 
   try {
-    const downloadUrl = new URL(uri);
-    if (!downloadUrl.searchParams.has('key')) {
-      downloadUrl.searchParams.set('key', apiKey);
+    if (/^https?:\/\//iu.test(normalizedUri)) {
+      const downloadUrl = new URL(normalizedUri);
+      return isGoogleUri ? addGeminiApiKeyToUrl(downloadUrl, apiKey) : downloadUrl.toString();
     }
-    return downloadUrl.toString();
+
+    const path = normalizedUri.replace(/^\//u, '');
+    const pathWithVersion = /^v1(?:alpha|beta)?\//iu.test(path) ? path : `v1beta/${path}`;
+    const resolvedBaseUrl = resolveGeminiBaseUrl(baseUrl).replace(/\/+$/u, '');
+    return addGeminiApiKeyToUrl(new URL(`${resolvedBaseUrl}/${pathWithVersion}`), apiKey);
   } catch {
     return uri;
   }
 }
 
-function buildGeminiOperationActionUrl(operationName: string, action: 'cancel'): string {
+function buildGeminiOperationActionUrl(operationName: string, action: 'cancel', baseUrl?: string): string {
   const normalized = operationName.trim().replace(/^\//u, '');
   if (!normalized) {
     throw new Error('Google 视频任务缺少 operation name。');
@@ -69,11 +81,12 @@ function buildGeminiOperationActionUrl(operationName: string, action: 'cancel'):
     return `${normalized}:${action}`;
   }
 
-  if (normalized.startsWith('v1beta/')) {
-    return `https://generativelanguage.googleapis.com/${normalized}:${action}`;
+  const resolvedBaseUrl = resolveGeminiBaseUrl(baseUrl).replace(/\/+$/u, '');
+  if (/^v1(?:alpha|beta)?\//iu.test(normalized)) {
+    return `${resolvedBaseUrl}/${normalized}:${action}`;
   }
 
-  return `https://generativelanguage.googleapis.com/v1beta/${normalized}:${action}`;
+  return `${resolvedBaseUrl}/v1beta/${normalized}:${action}`;
 }
 
 function getAI() {
@@ -81,7 +94,11 @@ function getAI() {
   if (!apiKey) {
     throw new Error('Gemini API Key 未配置，请在 API 设置中填写或配置 GEMINI_API_KEY。');
   }
-  return new GoogleGenAI({ apiKey });
+  const baseUrl = resolveGeminiBaseUrl(getGeminiConfig().baseUrl);
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: { baseUrl },
+  });
 }
 
 function getBriefStyleContext(brief: Brief) {
@@ -212,13 +229,15 @@ export async function generateFastVideoPlanWithModel(input: FastVideoInput, mode
   });
 
   const parsed = JSON.parse(response.text || '{}') as FastVideoPlan;
+  const scenes = input.quickCutEnabled ? [] : (parsed.scenes || []);
   return {
-    scenes: (parsed.scenes || []).map((scene, index) => ({
+    scenes: scenes.map((scene, index) => ({
       ...scene,
       id: `fast-scene-${index + 1}`,
       summary: typeof scene.summary === 'string' ? scene.summary : '',
       continuityAnchors: Array.isArray(scene.continuityAnchors) ? scene.continuityAnchors : [],
       locked: false,
+      selectedForVideo: true,
       status: 'idle',
       error: '',
       imageUrl: '',
@@ -651,7 +670,7 @@ export async function startVideoGeneration(shot: Shot, defaultAspectRatio: Aspec
   return Object.assign(operation || {}, { provider: 'gemini' });
 }
 
-export async function startTransitionVideoGeneration(firstFrameUrl: string, lastFrameUrl: string, aspectRatio: AspectRatio, prompt: string = 'A smooth and natural transition between the two scenes', durationSeconds: number = 3, useMockMode: boolean = false, modelName?: string): Promise<any> {
+export async function startTransitionVideoGeneration(firstFrameUrl: string, lastFrameUrl: string, aspectRatio: AspectRatio, prompt: string = 'A smooth and natural transition between the two scenes', durationSeconds: number = 4, useMockMode: boolean = false, modelName?: string): Promise<any> {
   if (useMockMode) {
     await new Promise(r => setTimeout(r, 1000));
     return { provider: 'gemini', name: 'operations/mock-op-transition', done: false };
@@ -704,7 +723,7 @@ export async function cancelVideoOperation(operation: any, useMockMode: boolean 
     throw new Error('Gemini API Key 未配置，无法取消视频任务。');
   }
 
-  const response = await fetch(buildGeminiOperationActionUrl(operationName, 'cancel'), {
+  const response = await fetch(buildGeminiOperationActionUrl(operationName, 'cancel', getGeminiConfig().baseUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -729,7 +748,7 @@ export async function fetchVideoBlobUrl(uri: string, useMockMode: boolean = fals
     throw new Error('Gemini API Key 未配置，无法下载生成的视频。');
   }
 
-  const downloadUrl = buildGeminiDownloadUrl(uri, apiKey);
+  const downloadUrl = buildGeminiDownloadUrl(uri, apiKey, getGeminiConfig().baseUrl);
   const response = await fetch(downloadUrl, {
     method: 'GET',
     headers: {

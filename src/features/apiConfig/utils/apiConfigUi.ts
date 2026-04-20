@@ -18,6 +18,12 @@ export const VOLCENGINE_ROLE_SOURCE_IDS: Record<ModelRole, ModelSourceId> = {
   video: 'volcengine.videoModel',
 };
 
+export const GEMINI_ROLE_FIELDS: Record<ModelRole, GeminiModelField> = {
+  text: 'textModel',
+  image: 'imageModel',
+  video: 'fastVideoModel',
+};
+
 export const VOLCENGINE_ROLE_FIELDS: Record<ModelRole, VolcengineModelField> = {
   text: 'textModel',
   image: 'imageModel',

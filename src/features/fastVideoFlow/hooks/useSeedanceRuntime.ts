@@ -77,14 +77,14 @@ export function useSeedanceRuntime({
     }
   };
 
-  const buildSeedanceSubmitLogRequest = (draft: SeedanceDraft, executor: 'ark' | 'cli') => {
+  const buildSeedanceSubmitLogRequest = (draft: SeedanceDraft, executor: 'ark' | 'cli', apiModelKey = project.fastFlow.executionConfig.apiModelKey) => {
     const draftSnapshot = buildSeedanceDraftLogSnapshot(draft);
     if (executor === 'ark') {
-      const arkModelMeta = getSeedanceArkModelMeta(project.fastFlow.executionConfig.apiModelKey);
+      const arkModelMeta = getSeedanceArkModelMeta(apiModelKey);
       return {
         projectId: project.id,
         executor: 'ark' as const,
-        modelKey: project.fastFlow.executionConfig.apiModelKey,
+        modelKey: apiModelKey,
         model: arkModelMeta.modelName,
         templateId: draft.baseTemplateId,
         overlayTemplateIds: draft.overlayTemplateIds,

@@ -52,8 +52,10 @@ type FastFlowWorkspaceProps = {
   onUpdateReferenceAudio: (referenceId: string, patch: Partial<FastReferenceAudio>) => void;
   onRemoveReferenceAudio: (referenceId: string) => void;
   onUpdateScene: (sceneId: string, patch: Partial<FastSceneDraft>) => void;
+  onAddScene: () => string | void;
+  onDeleteScene: (sceneId: string) => void;
   onGenerateSceneImage: (sceneId: string, mode: 'text-only' | 'previous-scene') => void | Promise<void>;
-  onToggleSceneLock: (sceneId: string) => void;
+  onToggleSceneSelection: (sceneId: string) => void;
   onUploadSceneImage: (event: ChangeEvent<HTMLInputElement>, sceneId: string) => void | Promise<void>;
   onPreviewImage: (url: string | null) => void;
   onSkipStoryboard: () => void;
@@ -69,7 +71,6 @@ type FastFlowWorkspaceProps = {
   onCancelTask: () => void | Promise<void>;
   onToggleReferenceSelection: (referenceId: string) => void;
   onToggleReferenceAudioSelection: (referenceId: string) => void;
-  onToggleSceneSelection: (sceneId: string) => void;
 };
 
 export function FastFlowWorkspace({
@@ -113,8 +114,10 @@ export function FastFlowWorkspace({
   onUpdateReferenceAudio,
   onRemoveReferenceAudio,
   onUpdateScene,
+  onAddScene,
+  onDeleteScene,
   onGenerateSceneImage,
-  onToggleSceneLock,
+  onToggleSceneSelection,
   onUploadSceneImage,
   onPreviewImage,
   onSkipStoryboard,
@@ -127,7 +130,6 @@ export function FastFlowWorkspace({
   onCancelTask,
   onToggleReferenceSelection,
   onToggleReferenceAudioSelection,
-  onToggleSceneSelection,
 }: FastFlowWorkspaceProps) {
   if (view === 'fastInput') {
     return (
@@ -176,10 +178,12 @@ export function FastFlowWorkspace({
         videoPrompt={project.fastFlow.videoPrompt}
         generatingImages={generatingFastSceneImages}
         onUpdateScene={onUpdateScene}
+        onAddScene={onAddScene}
+        onDeleteScene={onDeleteScene}
         onUpdatePrompt={onUpdatePrompt}
         onGenerateImage={(sceneId) => onGenerateSceneImage(sceneId, 'text-only')}
         onGenerateImageWithPrevious={(sceneId) => onGenerateSceneImage(sceneId, 'previous-scene')}
-        onToggleLock={onToggleSceneLock}
+        onToggleSelection={onToggleSceneSelection}
         onUploadSceneImage={onUploadSceneImage}
         onPreviewImage={(url) => onPreviewImage(url)}
         onNextVideo={onGoFastVideo}

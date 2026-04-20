@@ -1,6 +1,6 @@
-import modelCatalogConfig from '../config/modelCatalog.json';
+import modelCatalogConfig from '../config/modelCatalog.json' with { type: 'json' };
 import type { ApiSettings, CustomProviderModelConfig, ModelSourceId, PromptLanguage } from '../types.ts';
-import { normalizeSeedanceModelVersion } from '../features/seedance/modelVersions.ts';
+import { getSeedanceApiModelLabelForSourceId, normalizeSeedanceModelVersion } from '../features/seedance/modelVersions.ts';
 import { loadPersistedAppState, savePersistedAppState } from '../features/app/services/appStateStore.ts';
 
 export const API_SETTINGS_STATE_KEY = 'api_settings';
@@ -58,6 +58,7 @@ export interface VolcengineModelCatalogItem {
   pricing?: ModelPricingConfig;
 }
 
+export const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com';
 export const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 
 const MODEL_PROVIDER_CATALOG = modelCatalogConfig.providers as Record<ModelProviderId, ProviderCatalog>;
@@ -69,6 +70,7 @@ const FALLBACK_PROVIDER_PROMPT_LANGUAGE: Record<ModelProviderId, PromptLanguage>
 const FALLBACK_USD_TO_CNY_RATE = 7.2;
 const LEGACY_VOLCENGINE_MODEL_ID_MAP: Record<string, string> = {
   'doubao-seed-1.6': 'doubao-seed-1-8-251228',
+  'doubao-seedance-2.0': 'doubao-seedance-1-5-pro-251215',
 };
 
 function normalizeUsdToCnyRate(value?: number) {
@@ -136,15 +138,18 @@ const ROLE_BY_SOURCE_ID: Record<Exclude<ModelSourceId, ''>, ModelRole> = {
   'volcengine.textModel': 'text',
   'volcengine.imageModel': 'image',
   'volcengine.videoModel': 'video',
+  'seedance.apiModel': 'video',
+  'seedance.fastApiModel': 'video',
 };
 
 export const defaultApiSettings: ApiSettings = {
   gemini: {
     apiKey: '',
+    baseUrl: DEFAULT_GEMINI_BASE_URL,
     promptLanguage: getProviderPromptLanguageCatalog('gemini').default,
     textModel: 'gemini-3-flash-preview',
     imageModel: 'gemini-2.5-flash-image',
-    proImageModel: 'gemini-3.1-flash-image-preview',
+    proImageModel: 'gemini-3-pro-image-preview',
     fastVideoModel: 'veo-3.1-fast-generate-preview',
     proVideoModel: 'veo-3.1-generate-preview',
     customModels: [],
@@ -199,6 +204,8 @@ const MODEL_SOURCE_META: Record<Exclude<ModelSourceId, ''>, { label: string; pro
   'volcengine.textModel': { label: '文本模型', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
   'volcengine.imageModel': { label: '图像模型', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
   'volcengine.videoModel': { label: '视频模型', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
+  'seedance.apiModel': { label: 'Seedance 2.0', providerLabel: '火山引擎 Ark' },
+  'seedance.fastApiModel': { label: 'Seedance 2.0 Fast', providerLabel: '火山引擎 Ark' },
 };
 
 const ROLE_SOURCE_IDS: Record<ModelRole, ModelSourceId[]> = {
@@ -326,6 +333,14 @@ export function getProviderModelCatalog(
 function readModelSource(settings: ApiSettings, sourceId: ModelSourceId): string {
   if (!sourceId) {
     return '';
+  }
+
+  if (sourceId === 'seedance.apiModel') {
+    return settings.seedance.apiModel.trim();
+  }
+
+  if (sourceId === 'seedance.fastApiModel') {
+    return settings.seedance.fastApiModel.trim();
   }
 
   const [provider, field] = sourceId.split('.') as ['gemini' | 'volcengine', keyof ApiSettings['gemini']];
@@ -480,6 +495,12 @@ export function resolveVolcengineBaseUrl(baseUrl?: string): string {
   return normalized || DEFAULT_VOLCENGINE_BASE_URL;
 }
 
+export function resolveGeminiBaseUrl(baseUrl?: string): string {
+  const normalized = typeof baseUrl === 'string' ? baseUrl.trim().replace(/\/+$/u, '') : '';
+  const withoutApiVersion = normalized.replace(/\/v1(?:alpha|beta)?$/iu, '');
+  return withoutApiVersion || DEFAULT_GEMINI_BASE_URL;
+}
+
 function normalizeApiSettings(settings: ApiSettings): ApiSettings {
   const geminiLanguageCatalog = getProviderPromptLanguageCatalog('gemini');
   const volcengineLanguageCatalog = getProviderPromptLanguageCatalog('volcengine');
@@ -494,6 +515,7 @@ function normalizeApiSettings(settings: ApiSettings): ApiSettings {
     ...settings,
     gemini: {
       ...settings.gemini,
+      baseUrl: resolveGeminiBaseUrl(settings.gemini.baseUrl),
       customModels: normalizeCustomModels(settings.gemini.customModels, 'gemini'),
       promptLanguage: normalizedGeminiPromptLanguage,
     },
@@ -609,6 +631,10 @@ export function getModelSourceDisplayValue(settings: ApiSettings, sourceId: Mode
   const value = readModelSource(settings, sourceId);
   if (!value || !sourceId) {
     return '';
+  }
+
+  if (sourceId === 'seedance.apiModel' || sourceId === 'seedance.fastApiModel') {
+    return `${getSeedanceApiModelLabelForSourceId(sourceId)} (${value})`;
   }
 
   const providerId = sourceId.startsWith('volcengine.') ? 'volcengine' : 'gemini';

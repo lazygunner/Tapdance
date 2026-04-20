@@ -67,12 +67,16 @@ export interface Asset {
 }
 
 export interface VideoConfig {
-  resolution: '720p' | '1080p';
+  resolution: '480p' | '720p' | '1080p';
   frameRate: number;
   aspectRatio: AspectRatio;
   useFirstFrame: boolean;
   useLastFrame: boolean;
   useReferenceAssets: boolean;
+  generateAudio?: boolean;
+  returnLastFrame?: boolean;
+  useWebSearch?: boolean;
+  watermark?: boolean;
 }
 
 export type PromptLanguage = 'zh' | 'en';
@@ -86,6 +90,7 @@ export interface CustomProviderModelConfig {
 
 export interface GeminiApiConfig {
   apiKey: string;
+  baseUrl: string;
   promptLanguage: PromptLanguage;
   textModel: string;
   imageModel: string;
@@ -141,7 +146,9 @@ export type ModelSourceId =
   | 'gemini.proVideoModel'
   | 'volcengine.textModel'
   | 'volcengine.imageModel'
-  | 'volcengine.videoModel';
+  | 'volcengine.videoModel'
+  | 'seedance.apiModel'
+  | 'seedance.fastApiModel';
 
 export interface DefaultModelSettings {
   text: ModelSourceId;
@@ -212,6 +219,7 @@ export interface Shot {
   transitionVideoPromptZh?: string;
   transitionVideoDuration?: number;
   transitionVideoAspectRatio?: AspectRatio;
+  transitionVideoConfig?: VideoConfig;
   referenceAssets?: string[]; // IDs of assets to use as reference
   groupReferenceImageIds?: string[];
   videoConfig?: VideoConfig;

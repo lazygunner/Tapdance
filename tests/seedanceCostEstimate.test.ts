@@ -51,6 +51,13 @@ test('resolveSeedanceEstimateDimensions reads 480p table values from JSON config
   assert.equal(dimensions.note, '清晰');
 });
 
+test('resolveSeedanceEstimateDimensions supports 1080p ratio presets', () => {
+  const dimensions = resolveSeedanceEstimateDimensions('1080p', '9:16');
+
+  assert.equal(dimensions.width, 1080);
+  assert.equal(dimensions.height, 1920);
+});
+
 test('getSeedanceCostEstimate uses configured dimensions for adaptive ratio estimates', () => {
   const input = createInput({ aspectRatio: '4:3', durationSec: 8 });
   const draft = createDraft({

@@ -3,8 +3,10 @@ import { useEffect } from 'react';
 import { getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { fetchSeedanceTask } from '../../fastVideoFlow/services/seedanceBridgeClient.ts';
 import { buildSeedanceCliFailure, mapRemoteSeedanceStatus } from '../../fastVideoFlow/utils/fastVideoTask.ts';
-import type { Project } from '../../../types.ts';
+import type { ApiSettings, Project } from '../../../types.ts';
 import { getMockVideoUrl } from '../../../services/mockMedia.ts';
+import { checkVideoStatus, fetchVideoBlobUrl } from '../../../services/modelService.ts';
+import { setCachedApiSettings } from '../../../services/apiConfig.ts';
 import { getShotVideoOperationKey, getTransitionVideoOperationKey } from '../utils/creativeFlowHelpers.ts';
 
 type PersistedMedia = {
@@ -17,6 +19,7 @@ type PersistedMedia = {
 
 type UseCreativeVideoPollingArgs = {
   project: Project;
+  apiSettings: ApiSettings;
   useMockMode: boolean;
   seedanceBridgeUrl: string;
   updateProjectRecord: (projectId: string, updater: (current: Project) => Project) => void;
@@ -119,8 +122,53 @@ async function pollSeedanceOperation(operation: any, seedanceBridgeUrl: string):
   return { done: false };
 }
 
+async function pollModelServiceOperation(operation: any, apiSettings: ApiSettings, useMockMode: boolean): Promise<{
+  done: boolean;
+  videoUrl?: string;
+  error?: string;
+  cancelled?: boolean;
+}> {
+  try {
+    setCachedApiSettings(apiSettings);
+    const status = await checkVideoStatus(operation, useMockMode);
+    if (!status?.done) {
+      return { done: false };
+    }
+
+    const generatedVideo = status?.response?.generatedVideos?.[0]?.video;
+    const uri = generatedVideo?.uri || generatedVideo?.url || '';
+    if (uri) {
+      return {
+        done: true,
+        videoUrl: await fetchVideoBlobUrl(uri, useMockMode),
+      };
+    }
+
+    const reasons = status?.response?.raiMediaFilteredReasons;
+    if (Array.isArray(reasons) && reasons.length > 0) {
+      const message = reasons.map((item) => String(item)).filter(Boolean).join('\n');
+      return { done: true, error: message || '视频生成失败。' };
+    }
+
+    return { done: true, error: '生成失败，未返回视频。' };
+  } catch (error: any) {
+    console.error('Error polling model video task:', error);
+    return { done: true, error: error?.message || '查询视频任务状态失败。' };
+  }
+}
+
+async function pollCreativeVideoOperation(operation: any, apiSettings: ApiSettings, useMockMode: boolean, seedanceBridgeUrl: string) {
+  const provider = operation?.provider || 'ark';
+  if (provider === 'gemini' || provider === 'volcengine') {
+    return pollModelServiceOperation(operation, apiSettings, useMockMode);
+  }
+
+  return pollSeedanceOperation(operation, seedanceBridgeUrl);
+}
+
 export function useCreativeVideoPolling({
   project,
+  apiSettings,
   useMockMode,
   seedanceBridgeUrl,
   updateProjectRecord,
@@ -156,7 +204,7 @@ export function useCreativeVideoPolling({
         const shotVideoOperationKey = getShotVideoOperationKey(shot.id);
         const shotVideoOperation = shot.videoOperation || getOperationRecord(shotVideoOperationKey);
         if (shot.videoStatus === 'generating' && shotVideoOperation) {
-          const result = await pollSeedanceOperation(shotVideoOperation, seedanceBridgeUrl);
+          const result = await pollCreativeVideoOperation(shotVideoOperation, apiSettings, useMockMode, seedanceBridgeUrl);
           if (result.done) {
             if (result.cancelled) {
               newShots[index] = {
@@ -223,7 +271,7 @@ export function useCreativeVideoPolling({
         const transitionVideoOperationKey = getTransitionVideoOperationKey(shot.id);
         const transitionVideoOperation = shot.transitionVideoOperation || getOperationRecord(transitionVideoOperationKey);
         if (shot.transitionVideoStatus === 'generating' && transitionVideoOperation) {
-          const result = await pollSeedanceOperation(transitionVideoOperation, seedanceBridgeUrl);
+          const result = await pollCreativeVideoOperation(transitionVideoOperation, apiSettings, useMockMode, seedanceBridgeUrl);
           if (result.done) {
             if (result.cancelled) {
               newShots[index] = {
@@ -296,5 +344,5 @@ export function useCreativeVideoPolling({
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [project.id, project.shots, useMockMode, seedanceBridgeUrl]);
+  }, [project.id, project.shots, apiSettings, useMockMode, seedanceBridgeUrl]);
 }

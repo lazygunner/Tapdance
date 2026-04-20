@@ -559,6 +559,20 @@ export async function startMockApiServer(options = {}) {
     await sendMockImage(response);
   });
 
+  app.post('/api/seedance/assets/copy-to-downloads', (request, response) => {
+    const relativePaths = Array.isArray(request.body?.relativePaths)
+      ? request.body.relativePaths.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    response.json({
+      downloadsDir: 'mock://downloads',
+      copiedFiles: relativePaths.map((relativePath) => ({
+        relativePath,
+        destinationPath: `mock://downloads/${relativePath.split('/').pop() || 'video.mp4'}`,
+        fileName: relativePath.split('/').pop() || 'video.mp4',
+      })),
+    });
+  });
+
   app.post('/api/seedance/state/reset', (_request, response) => {
     state.clear();
     response.json({

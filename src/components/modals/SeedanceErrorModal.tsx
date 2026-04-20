@@ -2,20 +2,48 @@ import { AnimatePresence, motion } from 'motion/react';
 
 type ThemeMode = 'light' | 'dark';
 
-type SeedanceErrorModalState = {
+export type SeedanceErrorModalAction =
+  | 'redo-images'
+  | 'edit-references'
+  | 'force-cancel-creative-video'
+  | 'force-cancel-creative-transition';
+
+export type SeedanceErrorModalPayload = {
+  projectId?: string;
+  shotId?: string;
+  operationKey?: string;
+};
+
+export type SeedanceErrorModalState = {
   eyebrow?: string;
   title: string;
   message: string;
   detail?: string;
-  action?: 'redo-images' | 'edit-references';
+  action?: SeedanceErrorModalAction;
+  actionLabel?: string;
+  actionPayload?: SeedanceErrorModalPayload;
 } | null;
 
 type SeedanceErrorModalProps = {
   themeMode: ThemeMode;
   seedanceErrorModal: SeedanceErrorModalState;
   onClose: () => void;
-  onAction: (action: 'redo-images' | 'edit-references') => void;
+  onAction: (action: SeedanceErrorModalAction, payload?: SeedanceErrorModalPayload) => void;
 };
+
+function getSeedanceErrorActionLabel(action: SeedanceErrorModalAction, explicitLabel?: string) {
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
+  if (action === 'redo-images') {
+    return '返回重做图片';
+  }
+  if (action === 'edit-references') {
+    return '返回编辑参考图';
+  }
+  return '强制取消';
+}
 
 export function SeedanceErrorModal({
   themeMode,
@@ -84,10 +112,10 @@ export function SeedanceErrorModal({
                 {seedanceErrorModal.action ? (
                   <button
                     type="button"
-                    onClick={() => onAction(seedanceErrorModal.action!)}
+                    onClick={() => onAction(seedanceErrorModal.action!, seedanceErrorModal.actionPayload)}
                     className="rounded-xl bg-red-500 px-4 py-2 text-sm text-white hover:bg-red-400 transition-colors"
                   >
-                    {seedanceErrorModal.action === 'redo-images' ? '返回重做图片' : '返回编辑参考图'}
+                    {getSeedanceErrorActionLabel(seedanceErrorModal.action, seedanceErrorModal.actionLabel)}
                   </button>
                 ) : null}
               </div>

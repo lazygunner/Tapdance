@@ -26,7 +26,7 @@ function getVolcengineVideoRequestPreview(shot: Shot, defaultAspectRatio: Aspect
   return {
     prompt: shot.videoPrompt?.imageToVideo || shot.videoPrompt?.textToVideo || shot.action,
     parameters: {
-      resolution: videoConfig.useLastFrame || videoConfig.useReferenceAssets ? '720p' : videoConfig.resolution,
+      resolution: videoConfig.resolution,
       aspect_ratio: videoConfig.useReferenceAssets ? '16:9' : normalizeVideoAspectRatio(videoConfig.aspectRatio),
       duration: Math.max(1, Math.round(shot.duration || 1)),
       fps: videoConfig.frameRate || 24,
@@ -41,7 +41,7 @@ function getVolcengineTransitionRequestPreview(aspectRatio: AspectRatio, prompt:
     parameters: {
       resolution: '720p',
       aspect_ratio: normalizeVideoAspectRatio(aspectRatio),
-      duration: Math.max(1, Math.round(durationSeconds || 3)),
+      duration: Math.max(4, Math.round(durationSeconds || 4)),
       fps: 24,
     },
   };
@@ -277,7 +277,7 @@ export async function startVideoGeneration(shot: Shot, defaultAspectRatio: Aspec
   );
 }
 
-export async function startTransitionVideoGeneration(firstFrameUrl: string, lastFrameUrl: string, aspectRatio: AspectRatio, prompt: string = 'A smooth and natural transition between the two scenes', durationSeconds: number = 3, useMockMode: boolean = false, modelName?: string, sourceId: ModelSourceId = 'gemini.fastVideoModel'): Promise<any> {
+export async function startTransitionVideoGeneration(firstFrameUrl: string, lastFrameUrl: string, aspectRatio: AspectRatio, prompt: string = 'A smooth and natural transition between the two scenes', durationSeconds: number = 4, useMockMode: boolean = false, modelName?: string, sourceId: ModelSourceId = 'gemini.fastVideoModel'): Promise<any> {
   const finalModelName = modelName || '';
   const requestPreview = isVolcengineSource(sourceId)
     ? getVolcengineTransitionRequestPreview(aspectRatio, prompt, durationSeconds)

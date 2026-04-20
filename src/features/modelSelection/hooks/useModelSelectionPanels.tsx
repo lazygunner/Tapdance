@@ -34,6 +34,7 @@ type RenderTimelineStripOptions = {
 
 type RenderCompactOperationModelPanelOptions = {
   showCategoryTag?: boolean;
+  layout?: 'stacked' | 'inline';
 };
 
 export function useModelSelectionPanels({
@@ -119,6 +120,7 @@ export function useModelSelectionPanels({
         costEstimate={costEstimate}
         units={units}
         showCategoryTag={options?.showCategoryTag}
+        layout={options?.layout}
         onChange={(value) => setOperationModelOverrides((prev) => ({ ...prev, [operationKey]: value as OperationModelSelection }))}
       />
     );

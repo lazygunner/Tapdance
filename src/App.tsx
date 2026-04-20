@@ -53,11 +53,12 @@ import { useCreativeVideoPolling } from './features/creativeFlow/hooks/useCreati
 import { ApiConfigWorkspace } from './features/apiConfig/components/ApiConfigWorkspace.tsx';
 import { useApiSettingsStorage } from './features/apiConfig/hooks/useApiSettingsStorage.ts';
 import { ImagePreviewModal } from './components/modals/ImagePreviewModal.tsx';
-import { SeedanceErrorModal } from './components/modals/SeedanceErrorModal.tsx';
+import { SeedanceErrorModal, type SeedanceErrorModalAction, type SeedanceErrorModalPayload, type SeedanceErrorModalState } from './components/modals/SeedanceErrorModal.tsx';
 import { HistoryMaterialPickerModal } from './components/modals/HistoryMaterialPickerModal.tsx';
 import { useModelSelectionPanels } from './features/modelSelection/hooks/useModelSelectionPanels.tsx';
 import {
   GEMINI_PROVIDER_MODEL_FIELDS,
+  GEMINI_ROLE_FIELDS,
   GEMINI_ROLE_SOURCE_OPTIONS,
   MODEL_ROLE_ORDER,
   PROMPT_LANGUAGE_FLAGS,
@@ -171,13 +172,7 @@ export default function App() {
   const [generatingAssetPrompts, setGeneratingAssetPrompts] = useState<Record<string, boolean>>({});
   const [translatingPrompts, setTranslatingPrompts] = useState<Record<string, boolean>>({});
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [seedanceErrorModal, setSeedanceErrorModal] = useState<null | {
-    eyebrow?: string;
-    title: string;
-    message: string;
-    detail?: string;
-    action?: 'redo-images' | 'edit-references';
-  }>(null);
+  const [seedanceErrorModal, setSeedanceErrorModal] = useState<SeedanceErrorModalState>(null);
   const [isAddingAsset, setIsAddingAsset] = useState(false);
   const [newAsset, setNewAsset] = useState<Partial<Asset>>(createEmptyAssetDraft());
   const [isGeneratingFastPlan, setIsGeneratingFastPlan] = useState(false);
@@ -192,13 +187,7 @@ export default function App() {
   const [appVersion, setAppVersion] = useState(packageMetadata.version);
   const isRefreshingFastVideoTaskRef = useRef(false);
 
-  const openSeedanceErrorModal = (config: {
-    eyebrow?: string;
-    title: string;
-    message: string;
-    detail?: string;
-    action?: 'redo-images' | 'edit-references';
-  }) => {
+  const openSeedanceErrorModal = (config: NonNullable<SeedanceErrorModalState>) => {
     setSeedanceErrorModal(config);
   };
   const hasManualGeminiKey = apiSettings.gemini.apiKey.trim().length > 0;
@@ -420,6 +409,44 @@ export default function App() {
     findLoggedTransitionVideoOperation,
   } = useOperationRegistry(modelInvocationLogs);
 
+  const forceCancelCreativeGeneration = (action: SeedanceErrorModalAction, payload?: SeedanceErrorModalPayload) => {
+    const shotId = payload?.shotId;
+    if (!shotId) {
+      return;
+    }
+
+    const targetProjectId = payload?.projectId || project.id;
+    if (payload?.operationKey) {
+      setOperationRecord(payload.operationKey);
+      setOperationCancelPending(payload.operationKey, false);
+    }
+
+    updateProjectById(targetProjectId, (current) => ({
+      ...current,
+      shots: current.shots.map((shot) => {
+        if (shot.id !== shotId) {
+          return shot;
+        }
+
+        if (action === 'force-cancel-creative-transition') {
+          return {
+            ...shot,
+            transitionVideoStatus: 'cancelled',
+            transitionVideoOperation: undefined,
+            transitionVideoError: '',
+          };
+        }
+
+        return {
+          ...shot,
+          videoStatus: 'cancelled',
+          videoOperation: undefined,
+          videoError: '',
+        };
+      }),
+    }));
+  };
+
   const {
     assetLibraryConfig,
     assetLibraryRootDraft,
@@ -475,33 +502,12 @@ export default function App() {
 
   const updateGeminiRoleModel = (role: ModelRole, modelId: string) => {
     setApiSettings((prev) => {
-      if (role === 'image') {
-        return {
-          ...prev,
-          gemini: {
-            ...prev.gemini,
-            imageModel: modelId,
-            proImageModel: modelId,
-          },
-        };
-      }
-
-      if (role === 'video') {
-        return {
-          ...prev,
-          gemini: {
-            ...prev.gemini,
-            fastVideoModel: modelId,
-            proVideoModel: modelId,
-          },
-        };
-      }
-
+      const field = GEMINI_ROLE_FIELDS[role];
       return {
         ...prev,
         gemini: {
           ...prev.gemini,
-          textModel: modelId,
+          [field]: modelId,
         },
       };
     });
@@ -549,7 +555,8 @@ export default function App() {
     handleToggleFastReferenceAudioSelection,
     handleGenerateFastPlan,
     handleUpdateFastScene,
-    handleToggleFastSceneLock,
+    handleAddFastScene,
+    handleDeleteFastScene,
     handleToggleFastSceneSelection,
     handleGenerateFastSceneImage,
     handleSkipFastStoryboard,
@@ -595,6 +602,7 @@ export default function App() {
 
   useCreativeVideoPolling({
     project,
+    apiSettings,
     useMockMode,
     seedanceBridgeUrl: apiSettings.seedance.bridgeUrl,
     updateProjectRecord: updateProjectById,
@@ -1030,6 +1038,7 @@ export default function App() {
     buildSeedanceSubmitLogRequest,
     appendSeedanceLog,
     refreshSeedanceHealth,
+    openSeedanceErrorModal,
   });
 
   const { draftIssues } = getFastVideoDraftState(project);
@@ -1110,7 +1119,7 @@ export default function App() {
           isCancellingFastVideoTask={isCancellingFastVideoTask}
           isRegeneratingFastVideoPrompt={isRegeneratingFastVideoPrompt}
           operationPanel={renderCompactOperationModelPanel('fast-plan', 'text', undefined, { showCategoryTag: false })}
-          renderImageModelPanel={(sceneId) => renderCompactOperationModelPanel(`fast-scene-image-${sceneId}`, 'image')}
+          renderImageModelPanel={(sceneId) => renderCompactOperationModelPanel(`fast-scene-image-${sceneId}`, 'image', undefined, { layout: 'inline' })}
           onRefreshSeedanceHealth={() => void refreshSeedanceHealth()}
           onChangeFastInput={handleFastInputChange}
           onGenerateFastPlan={() => void handleGenerateFastPlan()}
@@ -1135,8 +1144,9 @@ export default function App() {
           onUpdateReferenceAudio={handleUpdateFastReferenceAudio}
           onRemoveReferenceAudio={handleRemoveFastReferenceAudio}
           onUpdateScene={handleUpdateFastScene}
+          onAddScene={handleAddFastScene}
+          onDeleteScene={handleDeleteFastScene}
           onGenerateSceneImage={handleGenerateFastSceneImage}
-          onToggleSceneLock={handleToggleFastSceneLock}
           onUploadSceneImage={handleUploadFastSceneImage}
           onPreviewImage={setPreviewImage}
           onSkipStoryboard={handleSkipFastStoryboard}
@@ -1409,13 +1419,17 @@ export default function App() {
         themeMode={themeMode}
         seedanceErrorModal={seedanceErrorModal}
         onClose={() => setSeedanceErrorModal(null)}
-        onAction={(action) => {
+        onAction={(action, payload) => {
           setSeedanceErrorModal(null);
           if (action === 'redo-images') {
             setView('fastStoryboard');
             return;
           }
-          setView('fastInput');
+          if (action === 'edit-references') {
+            setView('fastInput');
+            return;
+          }
+          forceCancelCreativeGeneration(action, payload);
         }}
       />
 

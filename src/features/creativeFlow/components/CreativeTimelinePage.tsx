@@ -4,6 +4,7 @@ import { Video } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import type { Project } from '../../../types.ts';
+import { getTimelineTotalDuration } from '../utils/timeline.ts';
 
 type CreativeTimelinePageProps = {
   project: Project;
@@ -16,6 +17,8 @@ export function CreativeTimelinePage({
   renderTimelineStrip,
   onProceedToVideos,
 }: CreativeTimelinePageProps) {
+  const totalDuration = getTimelineTotalDuration(project.shots);
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto py-8">
       <div className="flex items-center justify-between mb-8">
@@ -25,7 +28,7 @@ export function CreativeTimelinePage({
         </div>
         <div className="flex items-center gap-4 text-sm font-medium text-zinc-400 bg-zinc-900 px-4 py-2 rounded-lg border border-zinc-800">
           <span>总时长：</span>
-          <span className="text-white">{project.shots.reduce((acc, shot) => acc + shot.duration, 0)}s</span>
+          <span className="text-white">{totalDuration}s</span>
         </div>
       </div>
       {renderTimelineStrip()}

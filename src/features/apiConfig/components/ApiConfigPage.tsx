@@ -6,6 +6,7 @@ import { motion } from 'motion/react';
 import { StudioModal, StudioSelect } from '../../../components/studio/StudioPrimitives.tsx';
 import type { ApiSettings, ModelSourceId } from '../../../types.ts';
 import {
+  DEFAULT_GEMINI_BASE_URL,
   DEFAULT_VOLCENGINE_BASE_URL,
   DEFAULT_MODEL_ROLE_META,
   getDefaultModelSource,
@@ -26,6 +27,8 @@ import { clearModelInvocationLogs, type ModelInvocationLogEntry } from '../../..
 import type { SeedanceHealth } from '../../fastVideoFlow/types/fastTypes.ts';
 import {
   GEMINI_PROVIDER_MODEL_FIELDS,
+  GEMINI_ROLE_FIELDS,
+  GEMINI_ROLE_SOURCE_OPTIONS,
   MODEL_ROLE_ORDER,
   PROMPT_LANGUAGE_FLAGS,
   PROVIDER_CARD_META,
@@ -52,7 +55,7 @@ type ApiConfigPageProps = {
   onInitializeDatabase: () => void | Promise<void>;
   isInitializingDatabase: boolean;
   getSourceProviderKey: (sourceId: ModelSourceId) => ModelProviderId;
-  getGeminiRoleModelOptions: (role: ModelRole) => Array<{ sourceId: ModelSourceId; modelName: string; label: string }>;
+  getGeminiRoleModelOptions: (role: ModelRole) => Array<{ value: string; sourceId: ModelSourceId; modelName: string; label: string }>;
   getVolcengineRoleModelOptions: (role: ModelRole) => Array<{ value: string; label: string }>;
   getProviderRoleCatalogOptions: (apiSettings: ApiSettings, providerId: ModelProviderId, role: ModelRole, configuredValue: string) => Array<{ value: string; label: string }>;
   updateGeminiRoleModel: (role: ModelRole, modelId: string) => void;
@@ -100,33 +103,12 @@ function getProviderRoleConfiguredModel(settings: ApiSettings, providerId: Model
 
 function applyProviderRoleModelToSettings(settings: ApiSettings, providerId: ModelProviderId, role: ModelRole, modelId: string): ApiSettings {
   if (providerId === 'gemini') {
-    if (role === 'image') {
-      return {
-        ...settings,
-        gemini: {
-          ...settings.gemini,
-          imageModel: modelId,
-          proImageModel: modelId,
-        },
-      };
-    }
-
-    if (role === 'video') {
-      return {
-        ...settings,
-        gemini: {
-          ...settings.gemini,
-          fastVideoModel: modelId,
-          proVideoModel: modelId,
-        },
-      };
-    }
-
+    const field = GEMINI_ROLE_FIELDS[role];
     return {
       ...settings,
       gemini: {
         ...settings.gemini,
-        textModel: modelId,
+        [field]: modelId,
       },
     };
   }
@@ -288,9 +270,12 @@ export function ApiConfigPage({
               ...(geminiOptions.length > 0 ? [{ value: 'gemini' as const, label: 'Google AI Studio' }] : []),
               ...(volcengineOptions.length > 0 ? [{ value: 'volcengine' as const, label: '火山引擎 Ark' }] : []),
             ];
+            const geminiSourceId = value.startsWith('gemini.')
+              ? value
+              : (geminiOptions[0]?.sourceId || GEMINI_ROLE_SOURCE_OPTIONS[role][0]);
             const selectedModelValue = selectedProvider === 'volcengine'
               ? (resolveModelSource(apiSettings, volcengineSourceId) || volcengineOptions[0]?.value || '')
-              : (geminiOptions.find((option) => option.sourceId === value)?.sourceId || geminiOptions[0]?.sourceId || '');
+              : (resolveModelSource(apiSettings, geminiSourceId) || geminiOptions[0]?.modelName || '');
 
             return (
               <div key={role} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
@@ -326,6 +311,10 @@ export function ApiConfigPage({
 
                       setApiSettings((prev) => ({
                         ...prev,
+                        gemini: {
+                          ...prev.gemini,
+                          [GEMINI_ROLE_FIELDS[role]]: nextGeminiOption.modelName,
+                        },
                         defaultModels: {
                           ...prev.defaultModels,
                           [role]: nextGeminiOption.sourceId,
@@ -361,27 +350,41 @@ export function ApiConfigPage({
                       return;
                     }
 
+                    const nextGeminiOption = geminiOptions.find((option) => option.modelName === nextValue);
                     setApiSettings((prev) => ({
                       ...prev,
+                      gemini: {
+                        ...prev.gemini,
+                        [GEMINI_ROLE_FIELDS[role]]: nextValue,
+                      },
                       defaultModels: {
                         ...prev.defaultModels,
-                        [role]: nextValue as ModelSourceId,
+                        [role]: nextGeminiOption?.sourceId || GEMINI_ROLE_SOURCE_OPTIONS[role][0],
                       },
                     }));
                   }}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
                 >
-                  {(selectedProvider === 'volcengine' ? volcengineOptions : geminiOptions).length === 0 ? (
-                    <option value="">请先填写可用模型</option>
+                  {selectedProvider === 'volcengine' ? (
+                    volcengineOptions.length === 0 ? (
+                      <option value="">请先填写可用模型</option>
+                    ) : (
+                      volcengineOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))
+                    )
                   ) : (
-                    (selectedProvider === 'volcengine' ? volcengineOptions : geminiOptions).map((option) => (
-                      <option
-                        key={selectedProvider === 'volcengine' ? option.value : option.sourceId}
-                        value={selectedProvider === 'volcengine' ? option.value : option.sourceId}
-                      >
-                        {option.label}
-                      </option>
-                    ))
+                    geminiOptions.length === 0 ? (
+                      <option value="">请先填写可用模型</option>
+                    ) : (
+                      geminiOptions.map((option) => (
+                        <option key={option.value} value={option.modelName}>
+                          {option.label}
+                        </option>
+                      ))
+                    )
                   )}
                 </StudioSelect>
               </div>
@@ -584,6 +587,27 @@ export function ApiConfigPage({
                     className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
                   />
                 </label>
+
+                {!isVolcengine && (
+                  <label className="block">
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">API Base URL / 第三方 Endpoint</span>
+                    <input
+                      value={apiSettings.gemini.baseUrl}
+                      onChange={(event) => setApiSettings((prev) => ({
+                        ...prev,
+                        gemini: {
+                          ...prev.gemini,
+                          baseUrl: event.target.value,
+                        },
+                      }))}
+                      placeholder={DEFAULT_GEMINI_BASE_URL}
+                      className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                    />
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      默认走官方地址 {DEFAULT_GEMINI_BASE_URL}。如果填写第三方兼容网关，将优先使用该地址；请填写服务根地址，不需要包含 /v1beta。
+                    </p>
+                  </label>
+                )}
 
                 {isVolcengine && (
                   <label className="block">

@@ -101,6 +101,25 @@ function getFallbackDimensions(
     return { width: 854, height: 480, source: 'fallback' };
   }
 
+  if (resolution === '1080p') {
+    if (ratio === '9:16') {
+      return { width: 1080, height: 1920, source: 'fallback' };
+    }
+    if (ratio === '1:1') {
+      return { width: 1080, height: 1080, source: 'fallback' };
+    }
+    if (ratio === '4:3') {
+      return { width: 1440, height: 1080, source: 'fallback' };
+    }
+    if (ratio === '3:4') {
+      return { width: 1080, height: 1440, source: 'fallback' };
+    }
+    if (ratio === '21:9') {
+      return { width: 2520, height: 1080, source: 'fallback' };
+    }
+    return { width: 1920, height: 1080, source: 'fallback' };
+  }
+
   if (ratio === '9:16') {
     return { width: 720, height: 1280, source: 'fallback' };
   }

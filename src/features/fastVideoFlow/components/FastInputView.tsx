@@ -58,7 +58,7 @@ function VideoRequirementsPopover() {
           <div className="mb-2 font-semibold text-[var(--studio-text)]">参考视频 API 要求</div>
           <ul className="space-y-1">
             <li>📹 格式：<span className="text-[var(--studio-text)]">mp4、mov</span></li>
-            <li>🎬 分辨率：<span className="text-[var(--studio-text)]">480p 或 720p</span></li>
+            <li>🎬 分辨率：<span className="text-[var(--studio-text)]">480p、720p 或 1080p</span></li>
             <li>⏱ 时长：<span className="text-[var(--studio-text)]">单个 [{c.minDurationSec}s, {c.maxDurationSec}s]，总时长 ≤ {c.maxTotalDurationSec}s</span></li>
             <li>📐 宽高比（宽/高）：<span className="text-[var(--studio-text)]">[{c.minAspectRatio}, {c.maxAspectRatio}]</span></li>
             <li>📏 宽/高像素：<span className="text-[var(--studio-text)]">[{c.minPixelSide}px, {c.maxPixelSide}px]</span></li>
@@ -705,7 +705,7 @@ export function FastInputView({
           title="极速视频输入"
           description={(
             <p>
-              输入一句提示词和可选参考图、参考视频、参考音频，系统会自动拆成 1-2 张分镜图提示词，再生成最终的 Seedance 视频提示词草稿。
+              输入一句提示词和可选参考图、参考视频、参考音频，系统会自动判断分镜数量并生成 Seedance 视频提示词草稿；快速剪辑模式会直接生成视频提示词。
             </p>
           )}
           actions={(
@@ -716,7 +716,7 @@ export function FastInputView({
                 disabled={isGenerating || !input.prompt.trim()}
                 className="studio-button studio-button-fast-plan"
               >
-                {isGenerating ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4" />先生成分镜图</span>}
+                {isGenerating ? <span className="inline-flex items-center gap-2"><img src="./assets/loading.gif" alt="" className="w-4 h-4" />生成中</span> : <span className="inline-flex items-center gap-2"><Sparkles className="w-4 h-4" />{input.quickCutEnabled ? '生成快剪提示词' : '先生成分镜图'}</span>}
               </button>
               <button
                 type="button"
@@ -800,6 +800,7 @@ export function FastInputView({
               <span className="text-sm font-medium text-[var(--studio-text)]">分镜数量偏好</span>
               <StudioSelect
                 value={String(input.preferredSceneCount)}
+                disabled={Boolean(input.quickCutEnabled)}
                 onChange={(event) => {
                   const rawValue = event.target.value;
                   onChange({

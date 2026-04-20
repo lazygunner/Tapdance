@@ -304,7 +304,7 @@ export function StudioSelect({
       }
 
       const viewportPadding = 12;
-      const width = Math.max(buttonRect.width, 220);
+      const width = Math.min(buttonRect.width, window.innerWidth - viewportPadding * 2);
       let left = Math.min(buttonRect.left, window.innerWidth - width - viewportPadding);
       left = Math.max(viewportPadding, left);
       let top = buttonRect.bottom + 8;
@@ -431,7 +431,7 @@ export function StudioSelect({
                             }
                           }}
                         >
-                          <span className="truncate">{option.label}</span>
+                          <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
                           <Check className={cx('h-4 w-4 shrink-0 opacity-0 transition-opacity', isSelected && 'opacity-100')} />
                         </button>
                       );

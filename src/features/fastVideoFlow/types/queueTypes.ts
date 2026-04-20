@@ -21,7 +21,7 @@ export type SeedanceCliQueueItem = {
     modelVersion: SeedanceModelVersion;
     ratio: Project['fastFlow']['input']['aspectRatio'];
     duration: number;
-    videoResolution: '480p' | '720p';
+    videoResolution: '480p' | '720p' | '1080p';
   };
   status: SeedanceCliQueueItemStatus;
   submitId?: string;

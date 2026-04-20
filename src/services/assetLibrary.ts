@@ -15,6 +15,12 @@ export type AssetLibrarySavedFile = {
   url: string;
 };
 
+export type AssetLibraryCopiedFile = {
+  relativePath: string;
+  destinationPath: string;
+  fileName: string;
+};
+
 async function requestJson<T>(path: string, init?: RequestInit, explicitBaseUrl?: string): Promise<T> {
   const response = await fetch(buildSeedanceBridgeRequestUrl(path, explicitBaseUrl), {
     ...init,
@@ -114,6 +120,20 @@ export async function updateAssetLibraryConfig(params: {
       rootPath: params.rootPath || '',
       migrateExistingFiles: params.migrateExistingFiles !== false,
     }),
+  }, params.baseUrl);
+}
+
+export async function copyAssetLibraryFilesToDownloads(params: {
+  relativePaths: string[];
+  baseUrl?: string;
+}) {
+  const relativePaths = Array.from(new Set(params.relativePaths.map((item) => item.trim()).filter(Boolean)));
+  return requestJson<{
+    downloadsDir: string;
+    copiedFiles: AssetLibraryCopiedFile[];
+  }>('/assets/copy-to-downloads', {
+    method: 'POST',
+    body: JSON.stringify({ relativePaths }),
   }, params.baseUrl);
 }
 

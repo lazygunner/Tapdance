@@ -48,7 +48,7 @@ export function ProjectDetailPageActions({
           disabled={!canGenerate}
           className="studio-button studio-button-fast-plan px-3 py-1.5 text-xs"
         >
-          {isGeneratingFastPlan ? <span className="inline-flex items-center gap-1.5"><img src="./assets/loading.gif" alt="" className="w-3.5 h-3.5" />生成中</span> : <span className="inline-flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />生成分镜</span>}
+          {isGeneratingFastPlan ? <span className="inline-flex items-center gap-1.5"><img src="./assets/loading.gif" alt="" className="w-3.5 h-3.5" />生成中</span> : <span className="inline-flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />{project.fastFlow.input.quickCutEnabled ? '生成快剪提示词' : '生成分镜'}</span>}
         </button>
         <button
           type="button"
@@ -66,7 +66,7 @@ export function ProjectDetailPageActions({
     const readyReferenceImages = project.fastFlow.input.referenceImages.filter((reference) => reference.imageUrl.trim());
     const readyReferenceVideos = project.fastFlow.input.referenceVideos.filter((reference) => reference.videoUrl.trim());
     const readyReferenceAudios = project.fastFlow.input.referenceAudios.filter((reference) => reference.audioUrl.trim());
-    const readyImageCount = project.fastFlow.scenes.filter((scene) => scene.imageUrl).length;
+    const readyImageCount = project.fastFlow.scenes.filter((scene) => scene.imageUrl && scene.selectedForVideo !== false).length;
     const canProceedToVideo = (
       readyImageCount > 0
       || readyReferenceImages.length > 0

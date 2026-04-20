@@ -62,7 +62,7 @@ export interface SeedancePromptModuleSettings {
 export interface SeedanceRequestOptions {
   ratio: SeedanceAspectRatio;
   duration?: number;
-  resolution: '480p' | '720p';
+  resolution: '480p' | '720p' | '1080p';
   generateAudio: boolean;
   returnLastFrame: boolean;
   useWebSearch: boolean;
@@ -95,7 +95,7 @@ export interface SeedanceCompiledRequest {
   content: Array<Record<string, any>>;
   ratio: SeedanceAspectRatio;
   duration?: number;
-  resolution: '480p' | '720p';
+  resolution: '480p' | '720p' | '1080p';
   generateAudio: boolean;
   returnLastFrame: boolean;
   watermark: boolean;

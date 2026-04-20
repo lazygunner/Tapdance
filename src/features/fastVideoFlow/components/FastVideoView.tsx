@@ -82,14 +82,14 @@ function getAudioPromptReferenceToken(index: number) {
   return `音频${index + 1}`;
 }
 
-type PromptVideoReferenceItem = {
+export type PromptVideoReferenceItem = {
   token: string;
   videoUrl: string;
   title: string;
   subtitle: string;
 };
 
-type PromptReferenceItem = {
+export type PromptReferenceItem = {
   token: string;
   imageUrl: string;
   title: string;
@@ -116,7 +116,7 @@ type PromptEditorMentionState = {
   };
 };
 
-type PromptAudioReferenceItem = {
+export type PromptAudioReferenceItem = {
   token: string;
   title: string;
   subtitle: string;
@@ -608,11 +608,12 @@ function getAudioPromptReferenceByToken(
   return audioReferenceItems.find((item) => item.token === normalizedToken) || null;
 }
 
-function PromptTokenEditor({
+export function PromptTokenEditor({
   value,
   referenceItems,
   videoReferenceItems,
   audioReferenceItems,
+  placeholder = PROMPT_EDITOR_PLACEHOLDER,
   themeMode = 'dark',
   onChange,
 }: {
@@ -620,6 +621,7 @@ function PromptTokenEditor({
   referenceItems: PromptReferenceItem[];
   videoReferenceItems: PromptVideoReferenceItem[];
   audioReferenceItems?: PromptAudioReferenceItem[];
+  placeholder?: string;
   themeMode?: 'light' | 'dark';
   onChange: (value: string) => void;
 }) {
@@ -904,7 +906,7 @@ function PromptTokenEditor({
           role="textbox"
           aria-multiline="true"
           spellCheck={false}
-          data-placeholder={PROMPT_EDITOR_PLACEHOLDER}
+          data-placeholder={placeholder}
           className="fast-prompt-rich-editor"
           onInput={() => {
             if (isComposingRef.current) {
@@ -1062,7 +1064,7 @@ type Props = {
     apiModelKey: 'standard' | 'fast';
     cliModelVersion: SeedanceModelVersion;
     pollIntervalSec: number;
-    videoResolution: '480p' | '720p';
+    videoResolution: '480p' | '720p' | '1080p';
   };
   health: SeedanceHealth | null;
   isSubmitting: boolean;
@@ -2038,6 +2040,7 @@ export function FastVideoView({
                 >
                   <option value="480p">480p</option>
                   <option value="720p">720p</option>
+                  <option value="1080p">1080p</option>
                 </StudioSelect>
               </label>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300 md:col-span-2 xl:col-span-3">

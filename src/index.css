@@ -881,9 +881,12 @@ body {
 .studio-select-trigger {
   display: flex;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  overflow: hidden;
   text-align: left;
 }
 
@@ -908,6 +911,7 @@ body {
 
 .studio-select-panel {
   z-index: 70;
+  max-width: calc(100vw - 24px);
   border: 1px solid var(--studio-select-panel-border);
   border-radius: 1.1rem;
   background: var(--studio-select-panel-bg);
@@ -925,6 +929,7 @@ body {
 .studio-select-option {
   display: flex;
   width: 100%;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;

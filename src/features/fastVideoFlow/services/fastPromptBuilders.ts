@@ -108,6 +108,27 @@ ${FAST_VIDEO_PROMPT_CONFIG.quickCut.requirements.map((requirement) => `- ${requi
 - Do not output the beat list verbatim unless it naturally fits the final prompt. Convert it into a polished, execution-ready prompt with the same rhythm, shot energy, and visual intensity.`;
 }
 
+function buildFastVideoPlanTasks(input: FastVideoInput) {
+  if (input.quickCutEnabled) {
+    return [
+      'Do not create storyboard scenes or storyboard image prompts. Return scenes as an empty array.',
+      'Write one final video prompt for Dreamina Seedance multimodal2video directly from the main prompt, reference media, duration, aspect ratio, and quick-cut guidance.',
+      'The final video prompt should be execution-ready and emphasize fast-cut pacing, camera rhythm, motion, continuity, style, and exclusions.',
+    ];
+  }
+
+  if (input.preferredSceneCount !== 'auto') {
+    return [
+      `Create exactly ${input.preferredSceneCount} storyboard scene${input.preferredSceneCount > 1 ? 's' : ''}.`,
+      'Write storyboard image prompts that are optimized for still-image generation, not video generation.',
+      'Make consecutive scenes explicitly preserve continuity whenever they share the same subject, environment, or visual style.',
+      'Write one final video prompt for Dreamina Seedance multimodal2video that uses the storyboard images as the visual anchors.',
+    ];
+  }
+
+  return [...FAST_VIDEO_PROMPT_CONFIG.plan.tasks];
+}
+
 export function normalizeFastVideoExecutionPrompt(input: FastVideoInput, prompt?: string) {
   const trimmedPrompt = (prompt || '').trim();
   const referencePrefix = buildFastReferenceImagePromptPrefix(input);
@@ -124,7 +145,11 @@ export function normalizeFastVideoExecutionPrompt(input: FastVideoInput, prompt?
 }
 
 export function buildFastVideoPlanPrompt(input: FastVideoInput) {
-  const preferredSceneCount = input.preferredSceneCount === 'auto' ? 'auto (decide 1 or 2 scenes based on whether the idea needs a visual transition)' : String(input.preferredSceneCount);
+  const preferredSceneCount = input.quickCutEnabled
+    ? 'none (quick cut mode skips storyboard images)'
+    : input.preferredSceneCount === 'auto'
+      ? 'auto (decide the scene count based on idea complexity, pacing, and visual transitions)'
+      : String(input.preferredSceneCount);
   const referenceCount = input.referenceImages.filter((item) => item.imageUrl.trim()).length;
   const referenceVideoCount = input.referenceVideos.filter((item) => item.videoUrl.trim()).length;
   const referenceAudioCount = input.referenceAudios.filter((item) => item.audioUrl.trim()).length;
@@ -164,10 +189,11 @@ When referring to supplied input images inside the final video prompt, you MUST 
 Do NOT use vague phrases such as “所提供场景图”, “所提供人物图”, “参考了所提供图片”, or other non-indexed wording.
 
 Your task:
-${FAST_VIDEO_PROMPT_CONFIG.plan.tasks.map((task, index) => `${index + 1}. ${task}`).join('\n')}
+${buildFastVideoPlanTasks(input).map((task, index) => `${index + 1}. ${task}`).join('\n')}
 
 Output requirements:
 ${FAST_VIDEO_PROMPT_CONFIG.plan.outputRequirements.map((requirement) => `- ${requirement}`).join('\n')}
+- If Quick cut is enabled, scenes must be [].
 - If reference images are present, videoPrompt.prompt and videoPrompt.promptZh must refer to them as 图片1, 图片2, 图片3... in order.
 - The numbering must correspond exactly to the reference image array order shown above.
 

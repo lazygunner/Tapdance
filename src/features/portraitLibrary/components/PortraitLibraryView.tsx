@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from 'react';
 import { motion } from 'motion/react';
-import { BookOpenText, ExternalLink, FolderOpen, Plus, RefreshCw, Sparkles, Upload, Users, X } from 'lucide-react';
+import { ArrowLeft, BookOpenText, ExternalLink, FolderOpen, FolderPlus, Plus, RefreshCw, Sparkles, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   cx,
   StudioModal,
@@ -17,15 +17,34 @@ import {
   fetchRealPortraitLibraryAssets,
   fetchPortraitLibraryConfig,
   fetchSeedreamGeneratedPortraitAssets,
+  fetchVirtualPortraitLibraryAssets,
   getPortraitLibraryRelativePath,
   saveSeedreamGeneratedPortraitAssets,
   saveRealPortraitLibraryAssets,
+  saveVirtualPortraitLibraryAssets,
   SEEDREAM_GENERATED_PORTRAIT_MODEL,
   updatePortraitLibraryConfig,
   type PortraitLibraryConfig,
   type RealPortraitLibraryAsset,
   type SeedreamGeneratedPortraitAsset,
+  type VirtualPortraitLibraryAsset,
 } from '../../../services/portraitLibrary.ts';
+import {
+  DEFAULT_VIRTUAL_PORTRAIT_ASSET_GROUP_NAME,
+  DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
+  createArkAssetGroup,
+  deleteArkAsset,
+  deleteArkAssetGroup,
+  getArkAsset,
+  isArkAssetActiveStatus,
+  isArkAssetFailedStatus,
+  listArkAssetGroups,
+  listArkAssets,
+  normalizeArkAssetStatus,
+  uploadVirtualPortraitAsset,
+  type ArkAsset,
+  type ArkAssetGroup,
+} from '../../../services/volcengineAssetService.ts';
 import { generateStoryboardImage } from '../../../services/volcengineService.ts';
 
 type PortraitLibraryViewProps = {
@@ -72,7 +91,7 @@ type BrowserPortraitFolderState = {
   fileCount: number;
 };
 
-type PortraitLibraryTab = 'public' | 'real' | 'seedream';
+type PortraitLibraryTab = 'public' | 'real' | 'virtualUpload' | 'seedream';
 
 type RealPortraitDraftState = {
   description: string;
@@ -86,6 +105,26 @@ type SeedreamPortraitDraftState = {
   prompt: string;
 };
 
+type VirtualPortraitDraftState = {
+  description: string;
+  imageDataUrl: string;
+  fileNameHint: string;
+  file: File | null;
+};
+
+type VirtualPortraitGroupDraftState = {
+  name: string;
+  description: string;
+  projectName: string;
+};
+
+type VirtualPortraitAssetGroupView = {
+  group: ArkAssetGroup;
+  assets: ArkAsset[];
+  assetCount: number;
+  coverImageUrl: string;
+};
+
 const ITEMS_PER_PAGE = 30;
 const PORTRAIT_DOWNLOAD_URL = 'https://pan.quark.cn/s/48caf9810a81';
 const BROWSER_DIRECTORY_INPUT_PROPS = {
@@ -94,6 +133,7 @@ const BROWSER_DIRECTORY_INPUT_PROPS = {
 } as const;
 const REAL_PORTRAIT_LIBRARY_GROUP_NAME = '人像素材库';
 const REAL_PORTRAIT_LIBRARY_PROJECT_NAME = '真人人像';
+const VIRTUAL_PORTRAIT_LIBRARY_PROJECT_NAME = '虚拟人像上传';
 const SEEDREAM_PORTRAIT_LIBRARY_PROJECT_NAME = 'Seedream 生成';
 const EMPTY_REAL_PORTRAIT_DRAFT: RealPortraitDraftState = {
   description: '',
@@ -104,6 +144,17 @@ const EMPTY_REAL_PORTRAIT_DRAFT: RealPortraitDraftState = {
 const EMPTY_SEEDREAM_PORTRAIT_DRAFT: SeedreamPortraitDraftState = {
   model: SEEDREAM_GENERATED_PORTRAIT_MODEL,
   prompt: '',
+};
+const EMPTY_VIRTUAL_PORTRAIT_DRAFT: VirtualPortraitDraftState = {
+  description: '',
+  imageDataUrl: '',
+  fileNameHint: '',
+  file: null,
+};
+const EMPTY_VIRTUAL_GROUP_DRAFT: VirtualPortraitGroupDraftState = {
+  name: DEFAULT_VIRTUAL_PORTRAIT_ASSET_GROUP_NAME,
+  description: '',
+  projectName: DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
 };
 
 function buildSeedreamPortraitTitle(prompt: string) {
@@ -159,6 +210,27 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
   const [isSavingRealPortraitAsset, setIsSavingRealPortraitAsset] = useState(false);
   const [realPortraitDraft, setRealPortraitDraft] = useState<RealPortraitDraftState>(EMPTY_REAL_PORTRAIT_DRAFT);
   const [realPortraitDraftError, setRealPortraitDraftError] = useState('');
+  const [virtualPortraitAssets, setVirtualPortraitAssets] = useState<VirtualPortraitLibraryAsset[]>([]);
+  const [virtualPortraitGroups, setVirtualPortraitGroups] = useState<VirtualPortraitAssetGroupView[]>([]);
+  const [selectedVirtualPortraitGroupId, setSelectedVirtualPortraitGroupId] = useState('');
+  const [isLoadingVirtualPortraitAssets, setIsLoadingVirtualPortraitAssets] = useState(false);
+  const [isLoadingVirtualPortraitGroups, setIsLoadingVirtualPortraitGroups] = useState(false);
+  const [virtualPortraitError, setVirtualPortraitError] = useState('');
+  const [virtualPortraitFeedback, setVirtualPortraitFeedback] = useState('');
+  const [isVirtualPortraitModalOpen, setIsVirtualPortraitModalOpen] = useState(false);
+  const [isVirtualGroupModalOpen, setIsVirtualGroupModalOpen] = useState(false);
+  const [isCreatingVirtualGroup, setIsCreatingVirtualGroup] = useState(false);
+  const [isUploadingVirtualPortraitAsset, setIsUploadingVirtualPortraitAsset] = useState(false);
+  const [isRefreshingVirtualPortraitStatuses, setIsRefreshingVirtualPortraitStatuses] = useState(false);
+  const [virtualAssetDetail, setVirtualAssetDetail] = useState<{ asset: ArkAsset; localAsset?: VirtualPortraitLibraryAsset | null } | null>(null);
+  const [isConfirmingVirtualAssetDelete, setIsConfirmingVirtualAssetDelete] = useState(false);
+  const [deletingVirtualAssetId, setDeletingVirtualAssetId] = useState('');
+  const [deletingVirtualGroupId, setDeletingVirtualGroupId] = useState('');
+  const [virtualPortraitUploadStep, setVirtualPortraitUploadStep] = useState('');
+  const [virtualPortraitDraft, setVirtualPortraitDraft] = useState<VirtualPortraitDraftState>(EMPTY_VIRTUAL_PORTRAIT_DRAFT);
+  const [virtualGroupDraft, setVirtualGroupDraft] = useState<VirtualPortraitGroupDraftState>(EMPTY_VIRTUAL_GROUP_DRAFT);
+  const [virtualPortraitDraftError, setVirtualPortraitDraftError] = useState('');
+  const [virtualGroupDraftError, setVirtualGroupDraftError] = useState('');
   const [seedreamPortraitAssets, setSeedreamPortraitAssets] = useState<SeedreamGeneratedPortraitAsset[]>([]);
   const [isLoadingSeedreamPortraitAssets, setIsLoadingSeedreamPortraitAssets] = useState(false);
   const [seedreamPortraitError, setSeedreamPortraitError] = useState('');
@@ -169,6 +241,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
   const [seedreamPortraitDraftError, setSeedreamPortraitDraftError] = useState('');
   const browserDirectoryInputRef = useRef<HTMLInputElement | null>(null);
   const realPortraitUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const virtualPortraitUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshPortraitConfig = async () => {
     setIsRefreshingConfig(true);
@@ -193,6 +266,59 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
       setRealPortraitError(loadError?.message || '加载真人人像资产失败');
     } finally {
       setIsLoadingRealPortraitAssets(false);
+    }
+  };
+
+  const refreshVirtualPortraitAssets = async () => {
+    setIsLoadingVirtualPortraitAssets(true);
+    setVirtualPortraitError('');
+    try {
+      const nextAssets = await fetchVirtualPortraitLibraryAssets();
+      setVirtualPortraitAssets(nextAssets);
+    } catch (loadError: any) {
+      console.error('Failed to load virtual portrait library assets:', loadError);
+      setVirtualPortraitError(loadError?.message || '加载虚拟人像上传资产失败');
+    } finally {
+      setIsLoadingVirtualPortraitAssets(false);
+    }
+  };
+
+  const refreshVirtualPortraitGroups = async () => {
+    setIsLoadingVirtualPortraitGroups(true);
+    setVirtualPortraitError('');
+    try {
+      const localAssetByAssetId = new Map<string, VirtualPortraitLibraryAsset>();
+      virtualPortraitAssets.forEach((item) => {
+        if (item.assetId) {
+          localAssetByAssetId.set(item.assetId, item);
+        }
+      });
+      const groups = await listArkAssetGroups();
+      const nextGroups = await Promise.all(groups.map(async (group) => {
+        const assets = await listArkAssets({
+          groupId: group.id,
+          projectName: group.projectName,
+        });
+        const coverAsset = assets[0] || null;
+        const localCoverAsset = coverAsset ? localAssetByAssetId.get(coverAsset.id) : null;
+
+        return {
+          group,
+          assets,
+          assetCount: assets.length,
+          coverImageUrl: localCoverAsset?.imageUrl || coverAsset?.url || '',
+        };
+      }));
+
+      setVirtualPortraitGroups(nextGroups);
+      if (selectedVirtualPortraitGroupId && !nextGroups.some((item) => item.group.id === selectedVirtualPortraitGroupId)) {
+        setSelectedVirtualPortraitGroupId('');
+      }
+    } catch (loadError: any) {
+      console.error('Failed to load virtual portrait asset groups:', loadError);
+      setVirtualPortraitError(loadError?.message || '加载虚拟人像资产组合失败');
+    } finally {
+      setIsLoadingVirtualPortraitGroups(false);
     }
   };
 
@@ -254,6 +380,14 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
   useEffect(() => {
     void refreshRealPortraitAssets();
   }, []);
+
+  useEffect(() => {
+    void refreshVirtualPortraitAssets();
+  }, []);
+
+  useEffect(() => {
+    void refreshVirtualPortraitGroups();
+  }, [virtualPortraitAssets]);
 
   useEffect(() => {
     void refreshSeedreamPortraitAssets();
@@ -324,9 +458,23 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
 
   const publicPortraitCount = filteredData.length;
   const realPortraitCount = realPortraitAssets.length;
+  const virtualPortraitCount = virtualPortraitGroups.reduce((total, group) => total + group.assetCount, 0);
+  const virtualPortraitGroupCount = virtualPortraitGroups.length;
   const seedreamPortraitCount = seedreamPortraitAssets.length;
   const visibleData = filteredData.slice(0, page * ITEMS_PER_PAGE);
   const hasMore = visibleData.length < filteredData.length;
+  const virtualPortraitAssetByAssetId = useMemo(() => {
+    const result = new Map<string, VirtualPortraitLibraryAsset>();
+    virtualPortraitAssets.forEach((item) => {
+      if (item.assetId) {
+        result.set(item.assetId, item);
+      }
+    });
+    return result;
+  }, [virtualPortraitAssets]);
+  const selectedVirtualPortraitGroup = useMemo(() => (
+    virtualPortraitGroups.find((item) => item.group.id === selectedVirtualPortraitGroupId) || null
+  ), [selectedVirtualPortraitGroupId, virtualPortraitGroups]);
   const seedreamExpandedPromptPreview = useMemo(() => (
     seedreamPortraitDraft.prompt.trim()
       ? buildSeedreamGeneratedPortraitPrompt(seedreamPortraitDraft.prompt)
@@ -397,6 +545,351 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
     resetRealPortraitDraft();
     setIsAddRealPortraitModalOpen(true);
   };
+
+  const resetVirtualPortraitDraft = () => {
+    setVirtualPortraitDraft(EMPTY_VIRTUAL_PORTRAIT_DRAFT);
+    setVirtualPortraitDraftError('');
+    setVirtualPortraitUploadStep('');
+  };
+
+  const resetVirtualGroupDraft = () => {
+    setVirtualGroupDraft(EMPTY_VIRTUAL_GROUP_DRAFT);
+    setVirtualGroupDraftError('');
+  };
+
+  const handleVirtualPortraitFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      throw new Error('仅支持图片文件。');
+    }
+    if (file.size > 30 * 1024 * 1024) {
+      throw new Error('单张图片需小于 30 MB。');
+    }
+
+    const imageDataUrl = await readFileAsDataUrl(file);
+    setVirtualPortraitDraft((prev) => ({
+      ...prev,
+      imageDataUrl,
+      fileNameHint: file.name || prev.fileNameHint,
+      file,
+    }));
+    setVirtualPortraitDraftError('');
+  };
+
+  const handleVirtualPortraitUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      await handleVirtualPortraitFile(file);
+    } catch (uploadError: any) {
+      console.error('Failed to upload virtual portrait image:', uploadError);
+      setVirtualPortraitDraftError(uploadError?.message || '上传图片失败，请重试。');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleVirtualPortraitPaste = async (event: ClipboardEvent<HTMLDivElement>) => {
+    const clipboardItems = Array.from(event.clipboardData.items as ArrayLike<DataTransferItem>);
+    const file = clipboardItems
+      .find((item) => item.type.startsWith('image/'))
+      ?.getAsFile();
+
+    if (!file) {
+      return;
+    }
+
+    event.preventDefault();
+    try {
+      await handleVirtualPortraitFile(file);
+    } catch (pasteError: any) {
+      console.error('Failed to paste virtual portrait image:', pasteError);
+      setVirtualPortraitDraftError(pasteError?.message || '粘贴图片失败，请重试。');
+    }
+  };
+
+  const handleOpenVirtualPortraitModal = () => {
+    if (!selectedVirtualPortraitGroup) {
+      setVirtualPortraitError('请先进入一个素材资产组合，再创建素材资产。');
+      return;
+    }
+    setVirtualPortraitFeedback('');
+    resetVirtualPortraitDraft();
+    setIsVirtualPortraitModalOpen(true);
+  };
+
+  const handleOpenVirtualGroupModal = () => {
+    setVirtualPortraitFeedback('');
+    resetVirtualGroupDraft();
+    setIsVirtualGroupModalOpen(true);
+  };
+
+  const handleCreateVirtualGroup = async () => {
+    const name = virtualGroupDraft.name.trim();
+    const description = virtualGroupDraft.description.trim();
+    const projectName = virtualGroupDraft.projectName.trim();
+
+    if (!name) {
+      setVirtualGroupDraftError('请填写素材资产组合名称。');
+      return;
+    }
+    if (!projectName) {
+      setVirtualGroupDraftError('请填写 ProjectName。');
+      return;
+    }
+
+    setIsCreatingVirtualGroup(true);
+    setVirtualGroupDraftError('');
+
+    try {
+      const group = await createArkAssetGroup({
+        name,
+        description: description || name,
+        projectName,
+      });
+      setVirtualPortraitFeedback(`已创建素材资产组合「${group.name || group.title || name}」`);
+      setIsVirtualGroupModalOpen(false);
+      resetVirtualGroupDraft();
+      await refreshVirtualPortraitGroups();
+      setSelectedVirtualPortraitGroupId(group.id);
+    } catch (createError: any) {
+      console.error('Failed to create virtual portrait asset group:', createError);
+      setVirtualGroupDraftError(createError?.message || '创建素材资产组合失败。');
+    } finally {
+      setIsCreatingVirtualGroup(false);
+    }
+  };
+
+  const handleUploadVirtualPortraitAsset = async () => {
+    const description = virtualPortraitDraft.description.trim();
+    const activeGroup = selectedVirtualPortraitGroup?.group;
+    const groupName = activeGroup?.name || activeGroup?.title || '';
+    const projectName = activeGroup?.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME;
+    const imageDataUrl = virtualPortraitDraft.imageDataUrl.trim();
+    const file = virtualPortraitDraft.file;
+
+    if (!activeGroup?.id) {
+      setVirtualPortraitDraftError('请先进入一个素材资产组合。');
+      return;
+    }
+    if (!description) {
+      setVirtualPortraitDraftError('请填写描述。');
+      return;
+    }
+    if (!file || !imageDataUrl) {
+      setVirtualPortraitDraftError('请先粘贴或上传图片。');
+      return;
+    }
+
+    setIsUploadingVirtualPortraitAsset(true);
+    setVirtualPortraitDraftError('');
+
+    try {
+      setVirtualPortraitUploadStep('上传图片到 TOS...');
+      const uploadResult = await uploadVirtualPortraitAsset({
+        file,
+        description,
+        groupId: activeGroup.id,
+        groupName,
+        projectName,
+        initialStatusWaitMs: 20000,
+        onStatus: (asset) => {
+          setVirtualPortraitUploadStep(`等待 Ark 处理素材...当前状态：${normalizeArkAssetStatus(asset.status)}`);
+        },
+      });
+      setVirtualPortraitUploadStep('保存本地预览...');
+
+      const recordId = crypto.randomUUID?.() || `virtual-portrait-${Date.now()}`;
+      const savedFile = await saveMediaToAssetLibrary({
+        sourceUrl: imageDataUrl,
+        kind: 'image',
+        assetId: `portrait-library:virtual:${recordId}`,
+        title: description,
+        groupName: REAL_PORTRAIT_LIBRARY_GROUP_NAME,
+        projectName: VIRTUAL_PORTRAIT_LIBRARY_PROJECT_NAME,
+        fileNameHint: virtualPortraitDraft.fileNameHint || file.name || '',
+      });
+      const nextAsset: VirtualPortraitLibraryAsset = {
+        id: recordId,
+        description,
+        assetId: uploadResult.asset.id,
+        imageUrl: savedFile.url,
+        groupId: uploadResult.group.id,
+        groupName: uploadResult.group.name || groupName,
+        projectName: uploadResult.asset.projectName || projectName,
+        status: normalizeArkAssetStatus(uploadResult.asset.status),
+        sourceUrl: uploadResult.uploadedUrl,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const nextAssets = await saveVirtualPortraitLibraryAssets([nextAsset, ...virtualPortraitAssets]);
+
+      setVirtualPortraitAssets(nextAssets);
+      setVirtualPortraitError('');
+      setVirtualPortraitFeedback(`已上传虚拟人像资产「${description}」，assetId：${nextAsset.assetId}`);
+      setActiveTab('virtualUpload');
+      setIsVirtualPortraitModalOpen(false);
+      await refreshVirtualPortraitGroups();
+      setSelectedVirtualPortraitGroupId(activeGroup.id);
+      resetVirtualPortraitDraft();
+    } catch (uploadError: any) {
+      console.error('Failed to upload virtual portrait asset:', uploadError);
+      setVirtualPortraitDraftError(uploadError?.message || '上传虚拟人像资产失败。');
+    } finally {
+      setIsUploadingVirtualPortraitAsset(false);
+      setVirtualPortraitUploadStep('');
+    }
+  };
+
+  const handleRefreshVirtualPortraitStatuses = async (options?: { silent?: boolean }) => {
+    if (virtualPortraitAssets.length === 0) {
+      return;
+    }
+
+    const shouldShowFeedback = !options?.silent;
+    const hasRefreshableAsset = virtualPortraitAssets.some((item) => (
+      item.assetId && !isArkAssetActiveStatus(item.status) && !isArkAssetFailedStatus(item.status)
+    ));
+    if (!hasRefreshableAsset) {
+      return;
+    }
+
+    if (shouldShowFeedback) {
+      setIsRefreshingVirtualPortraitStatuses(true);
+      setVirtualPortraitError('');
+    }
+
+    try {
+      const nextAssets = await Promise.all(virtualPortraitAssets.map(async (item) => {
+        if (!item.assetId || isArkAssetActiveStatus(item.status) || isArkAssetFailedStatus(item.status)) {
+          return item;
+        }
+
+        const latest = await getArkAsset({
+          assetId: item.assetId,
+          projectName: item.projectName,
+        });
+
+        return {
+          ...item,
+          status: normalizeArkAssetStatus(latest.status || item.status),
+          sourceUrl: latest.url || item.sourceUrl,
+          updatedAt: new Date().toISOString(),
+        };
+      }));
+      const saved = await saveVirtualPortraitLibraryAssets(nextAssets);
+      setVirtualPortraitAssets(saved);
+      if (shouldShowFeedback) {
+        setVirtualPortraitFeedback('已刷新虚拟人像资产状态。');
+      }
+    } catch (refreshError: any) {
+      console.error('Failed to refresh virtual portrait asset statuses:', refreshError);
+      if (shouldShowFeedback) {
+        setVirtualPortraitError(refreshError?.message || '刷新虚拟人像资产状态失败。');
+      }
+    } finally {
+      if (shouldShowFeedback) {
+        setIsRefreshingVirtualPortraitStatuses(false);
+      }
+    }
+  };
+
+  const handleDeleteVirtualPortraitAsset = async (asset: ArkAsset) => {
+    const assetId = asset.id.trim();
+    if (!assetId) {
+      return;
+    }
+    if (!isConfirmingVirtualAssetDelete) {
+      setIsConfirmingVirtualAssetDelete(true);
+      return;
+    }
+
+    setDeletingVirtualAssetId(assetId);
+    setVirtualPortraitError('');
+
+    try {
+      await deleteArkAsset({
+        assetId,
+        projectName: asset.projectName || selectedVirtualPortraitGroup?.group.projectName,
+      });
+      const nextLocalAssets = await saveVirtualPortraitLibraryAssets(
+        virtualPortraitAssets.filter((item) => item.assetId !== assetId),
+      );
+      setVirtualPortraitAssets(nextLocalAssets);
+      setVirtualPortraitFeedback('已删除素材资产。');
+      await refreshVirtualPortraitGroups();
+      setVirtualAssetDetail(null);
+      setIsConfirmingVirtualAssetDelete(false);
+    } catch (deleteError: any) {
+      console.error('Failed to delete virtual portrait asset:', deleteError);
+      setVirtualPortraitError(deleteError?.message || '删除素材资产失败。');
+    } finally {
+      setDeletingVirtualAssetId('');
+    }
+  };
+
+  const handleDeleteVirtualPortraitGroup = async (groupView: VirtualPortraitAssetGroupView) => {
+    const group = groupView.group;
+    if (groupView.assetCount > 0) {
+      setVirtualPortraitError('请先删除该组合下的全部素材资产，再删除素材资产组合。');
+      return;
+    }
+
+    const groupName = group.name || group.title || group.id;
+    const confirmed = window.confirm(`确定删除素材资产组合「${groupName}」吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingVirtualGroupId(group.id);
+    setVirtualPortraitError('');
+
+    try {
+      await deleteArkAssetGroup({
+        groupId: group.id,
+        projectName: group.projectName,
+      });
+      setVirtualPortraitFeedback(`已删除素材资产组合「${groupName}」`);
+      if (selectedVirtualPortraitGroupId === group.id) {
+        setSelectedVirtualPortraitGroupId('');
+      }
+      await refreshVirtualPortraitGroups();
+    } catch (deleteError: any) {
+      console.error('Failed to delete virtual portrait asset group:', deleteError);
+      setVirtualPortraitError(deleteError?.message || '删除素材资产组合失败。');
+    } finally {
+      setDeletingVirtualGroupId('');
+    }
+  };
+
+  useEffect(() => {
+    const hasPendingAsset = virtualPortraitAssets.some((item) => (
+      item.assetId && !isArkAssetActiveStatus(item.status) && !isArkAssetFailedStatus(item.status)
+    ));
+
+    if (!hasPendingAsset) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+    const refreshPendingAssets = async () => {
+      if (isCancelled) {
+        return;
+      }
+      await handleRefreshVirtualPortraitStatuses({ silent: true });
+    };
+    void refreshPendingAssets();
+    const timer = window.setInterval(() => {
+      void refreshPendingAssets();
+    }, 5000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [virtualPortraitAssets]);
 
   const resetSeedreamPortraitDraft = () => {
     setSeedreamPortraitDraft(EMPTY_SEEDREAM_PORTRAIT_DRAFT);
@@ -659,7 +1152,9 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
                   ? loading ? '加载中...' : `平台公开 ${publicPortraitCount} 人`
                   : activeTab === 'real'
                     ? isLoadingRealPortraitAssets ? '加载中...' : `真人人像 ${realPortraitCount} 人`
-                    : isLoadingSeedreamPortraitAssets ? '加载中...' : `Seedream ${seedreamPortraitCount} 张`}
+                    : activeTab === 'virtualUpload'
+                      ? isLoadingVirtualPortraitGroups ? '加载中...' : `虚拟组合 ${virtualPortraitGroupCount} 组 / ${virtualPortraitCount} 张`
+                      : isLoadingSeedreamPortraitAssets ? '加载中...' : `Seedream ${seedreamPortraitCount} 张`}
               </div>
             </div>
           )}
@@ -670,9 +1165,10 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
         <div className="flex flex-wrap items-center gap-3">
           <div className={`inline-flex gap-1.5 rounded-[1.35rem] border p-1 ${secondaryButtonClass}`}>
             {([
-              { key: 'public', label: '平台公开', count: publicPortraitCount },
               { key: 'real', label: '真人人像', count: realPortraitCount },
+              { key: 'virtualUpload', label: '虚拟人像上传', count: virtualPortraitGroupCount },
               { key: 'seedream', label: 'Seedream 生成', count: seedreamPortraitCount },
+              { key: 'public', label: '平台公开', count: publicPortraitCount },
             ] as Array<{ key: PortraitLibraryTab; label: string; count: number }>).map((tab) => {
               const isActive = activeTab === tab.key;
               return (
@@ -918,6 +1414,242 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
                     </div>
                   </motion.div>
                 ))}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'virtualUpload' ? (
+          <div className="space-y-5">
+            <StudioPanel className="flex flex-wrap items-start justify-between gap-4 p-5" tone="soft">
+              <div>
+                <div className="studio-eyebrow">{selectedVirtualPortraitGroup ? 'Virtual Portrait Group' : 'Virtual Portrait Groups'}</div>
+                <h2 className="mt-2 text-xl font-semibold text-[var(--studio-text)]">
+                  {selectedVirtualPortraitGroup
+                    ? (selectedVirtualPortraitGroup.group.name || selectedVirtualPortraitGroup.group.title || '素材资产组合')
+                    : '虚拟人像素材资产组合'}
+                </h2>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {selectedVirtualPortraitGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVirtualPortraitGroupId('')}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    返回组合列表
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void refreshVirtualPortraitGroups()}
+                  disabled={isLoadingVirtualPortraitGroups}
+                  className="studio-button studio-button-secondary px-4"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingVirtualPortraitGroups ? 'animate-spin' : ''}`} />
+                  刷新
+                </button>
+                {selectedVirtualPortraitGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteVirtualPortraitGroup(selectedVirtualPortraitGroup)}
+                    disabled={selectedVirtualPortraitGroup.assetCount > 0 || deletingVirtualGroupId === selectedVirtualPortraitGroup.group.id}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    删除组合
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={selectedVirtualPortraitGroup ? handleOpenVirtualPortraitModal : handleOpenVirtualGroupModal}
+                  className="studio-button studio-button-primary px-4"
+                >
+                  {selectedVirtualPortraitGroup ? <Upload className="h-4 w-4" /> : <FolderPlus className="h-4 w-4" />}
+                  {selectedVirtualPortraitGroup ? '创建素材资产' : '新建素材组合'}
+                </button>
+              </div>
+            </StudioPanel>
+
+            {virtualPortraitFeedback ? (
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                {virtualPortraitFeedback}
+              </div>
+            ) : null}
+
+            {virtualPortraitError ? (
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {virtualPortraitError}
+              </div>
+            ) : null}
+
+            {selectedVirtualPortraitGroup ? (
+              <StudioPanel className="grid gap-3 p-4 md:grid-cols-3" tone="soft">
+                <div>
+                  <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${dimTextClass}`}>Group ID</div>
+                  <div className="mt-2 break-all font-mono text-xs text-[var(--studio-text)]">{selectedVirtualPortraitGroup.group.id}</div>
+                </div>
+                <div>
+                  <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${dimTextClass}`}>ProjectName</div>
+                  <div className="mt-2 text-sm text-[var(--studio-text)]">{selectedVirtualPortraitGroup.group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME}</div>
+                </div>
+                <div>
+                  <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${dimTextClass}`}>Assets</div>
+                  <div className="mt-2 text-sm text-[var(--studio-text)]">{selectedVirtualPortraitGroup.assetCount} 个素材</div>
+                </div>
+              </StudioPanel>
+            ) : null}
+
+            {isLoadingVirtualPortraitGroups ? (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-2xl border ${skeletonClass}`}>
+                    <img src="./assets/loading.gif" alt="" className="studio-loading-gif !h-1/2 !w-1/2 opacity-30" />
+                  </div>
+                ))}
+              </div>
+            ) : !selectedVirtualPortraitGroup && virtualPortraitGroups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] py-20">
+                <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                  <FolderOpen className="h-6 w-6 text-[var(--studio-muted)]" />
+                </span>
+                <p className="text-lg font-medium text-[var(--studio-text)]">还没有素材资产组合</p>
+                <p className="mt-2 text-sm text-[var(--studio-muted)]">先创建一个虚拟人物组合，再进入组合上传该人物的素材。</p>
+              </div>
+            ) : selectedVirtualPortraitGroup ? (
+              selectedVirtualPortraitGroup.assets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] py-20">
+                  <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                    <Upload className="h-6 w-6 text-[var(--studio-muted)]" />
+                  </span>
+                  <p className="text-lg font-medium text-[var(--studio-text)]">该组合还没有素材</p>
+                  <p className="mt-2 text-sm text-[var(--studio-muted)]">上传图片后会生成 Ark assetId，状态 Active 后即可选择使用。</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+                  {selectedVirtualPortraitGroup.assets.map((asset) => {
+                    const localAsset = virtualPortraitAssetByAssetId.get(asset.id);
+                    const imageUrl = localAsset?.imageUrl || asset.url;
+                    const description = localAsset?.description || asset.name || asset.id;
+                    const status = normalizeArkAssetStatus(asset.status);
+                    const isActive = isArkAssetActiveStatus(status);
+                    const isFailed = isArkAssetFailedStatus(status);
+                    const statusClass = isActive
+                      ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
+                      : isFailed
+                        ? 'border-red-500/25 bg-red-500/15 text-red-200'
+                        : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+                    return (
+                      <motion.div
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        key={asset.id}
+                        className={cx(
+                          'group overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl',
+                          'cursor-pointer border-transparent shadow-lg hover:border-sky-500',
+                        )}
+                        onClick={() => {
+                          setVirtualAssetDetail({ asset, localAsset });
+                          setIsConfirmingVirtualAssetDelete(false);
+                        }}
+                      >
+                        <div className="relative aspect-[3/4] overflow-hidden">
+                          {imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt={description}
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-black/10 text-sm text-[var(--studio-muted)]">无预览</div>
+                          )}
+
+                          <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col gap-2">
+                            <span className={`w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
+                              {status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 border-t border-[var(--studio-border)] px-3 py-3">
+                          <h4 className="line-clamp-2 text-sm font-semibold text-[var(--studio-text)] md:text-base">
+                            {description}
+                          </h4>
+                          <p className={`line-clamp-1 font-mono text-[10px] md:text-xs ${dimTextClass}`}>
+                            {asset.id}
+                          </p>
+                          <p className={`text-[10px] md:text-xs ${dimTextClass}`}>
+                            {asset.createTime ? new Date(asset.createTime).toLocaleString() : '创建时间未知'}
+                          </p>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+                {virtualPortraitGroups.map((groupView) => {
+                  const group = groupView.group;
+                  const groupName = group.name || group.title || group.id;
+                  return (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      key={group.id}
+                      className="group overflow-hidden rounded-xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] shadow-lg transition-colors hover:border-sky-500 md:rounded-2xl"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedVirtualPortraitGroupId(group.id)}
+                        className="block w-full text-left"
+                      >
+                        <div className="relative aspect-[3/4] overflow-hidden">
+                          {groupView.coverImageUrl ? (
+                            <img
+                              src={groupView.coverImageUrl}
+                              alt={groupName}
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-black/10 text-sm text-[var(--studio-muted)]">暂无素材</div>
+                          )}
+                        </div>
+                        <div className="space-y-1.5 border-t border-[var(--studio-border)] px-3 py-3">
+                          <h4 className="line-clamp-2 text-sm font-semibold text-[var(--studio-text)] md:text-base">
+                            {groupName}
+                          </h4>
+                          <p className={`line-clamp-1 text-[10px] md:text-xs ${dimTextClass}`}>
+                            {groupView.assetCount} 个素材
+                          </p>
+                          <p className={`line-clamp-1 text-[10px] md:text-xs ${dimTextClass}`}>
+                            {group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME}
+                          </p>
+                          <p className={`line-clamp-1 font-mono text-[10px] md:text-xs ${dimTextClass}`}>
+                            {group.id}
+                          </p>
+                        </div>
+                      </button>
+                      <div className="mt-2 border-t border-[var(--studio-border)] px-3 pb-3 pt-3">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteVirtualPortraitGroup(groupView);
+                          }}
+                          disabled={groupView.assetCount > 0 || deletingVirtualGroupId === group.id}
+                          className="studio-button studio-button-secondary w-full justify-center px-3 py-2 text-xs"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          删除组合
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1181,6 +1913,470 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
             </div>
           </div>
         </div>
+      </StudioModal>
+
+      <StudioModal
+        open={isVirtualGroupModalOpen}
+        onClose={() => {
+          if (!isCreatingVirtualGroup) {
+            setIsVirtualGroupModalOpen(false);
+            resetVirtualGroupDraft();
+          }
+        }}
+        themeMode={resolvedThemeMode}
+        className="max-w-2xl overflow-hidden p-0"
+        closeOnOverlayClick={!isCreatingVirtualGroup}
+      >
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.22),transparent_58%)]" />
+          <div className="relative border-b border-[var(--studio-border)] px-6 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="studio-eyebrow">Virtual Portrait Group</div>
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">新建素材资产组合</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isCreatingVirtualGroup) {
+                    setIsVirtualGroupModalOpen(false);
+                    resetVirtualGroupDraft();
+                  }
+                }}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${secondaryButtonClass}`}
+                aria-label="关闭"
+                disabled={isCreatingVirtualGroup}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-5 px-6 py-6">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">组合名称</span>
+              <input
+                value={virtualGroupDraft.name}
+                onChange={(event) => {
+                  setVirtualGroupDraft((prev) => ({ ...prev, name: event.target.value }));
+                  setVirtualGroupDraftError('');
+                }}
+                disabled={isCreatingVirtualGroup}
+                placeholder={DEFAULT_VIRTUAL_PORTRAIT_ASSET_GROUP_NAME}
+                className="studio-input mt-2"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">描述</span>
+              <textarea
+                value={virtualGroupDraft.description}
+                onChange={(event) => {
+                  setVirtualGroupDraft((prev) => ({ ...prev, description: event.target.value }));
+                  setVirtualGroupDraftError('');
+                }}
+                disabled={isCreatingVirtualGroup}
+                placeholder="例如：品牌虚拟代言人 A 的正脸、全身和服装参考素材"
+                className="studio-textarea mt-2 min-h-28"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">ProjectName</span>
+              <input
+                value={virtualGroupDraft.projectName}
+                onChange={(event) => {
+                  setVirtualGroupDraft((prev) => ({ ...prev, projectName: event.target.value }));
+                  setVirtualGroupDraftError('');
+                }}
+                disabled={isCreatingVirtualGroup}
+                placeholder={DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME}
+                className="studio-input mt-2"
+              />
+            </label>
+
+            {virtualGroupDraftError ? (
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {virtualGroupDraftError}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-[var(--studio-border)] px-6 py-5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isCreatingVirtualGroup) {
+                  setIsVirtualGroupModalOpen(false);
+                  resetVirtualGroupDraft();
+                }
+              }}
+              disabled={isCreatingVirtualGroup}
+              className="studio-button studio-button-secondary px-4"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCreateVirtualGroup()}
+              disabled={isCreatingVirtualGroup}
+              className="studio-button studio-button-primary px-4"
+            >
+              {isCreatingVirtualGroup ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <FolderPlus className="h-4 w-4" />}
+              创建组合
+            </button>
+          </div>
+        </div>
+      </StudioModal>
+
+      <StudioModal
+        open={isVirtualPortraitModalOpen}
+        onClose={() => {
+          if (!isUploadingVirtualPortraitAsset) {
+            setIsVirtualPortraitModalOpen(false);
+            resetVirtualPortraitDraft();
+          }
+        }}
+        themeMode={resolvedThemeMode}
+        className="max-w-4xl overflow-hidden p-0"
+        closeOnOverlayClick={!isUploadingVirtualPortraitAsset}
+      >
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.22),transparent_58%)]" />
+          <div className="relative border-b border-[var(--studio-border)] px-6 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="studio-eyebrow">Virtual Portrait Assets</div>
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">上传虚拟人像资产</h2>
+                <p className={`mt-2 max-w-2xl text-sm leading-6 ${dimTextClass}`}>
+                  图片会先上传到 TOS 获取公网 URL，再写入 Ark 私域虚拟人像素材资产库。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isUploadingVirtualPortraitAsset) {
+                    setIsVirtualPortraitModalOpen(false);
+                    resetVirtualPortraitDraft();
+                  }
+                }}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${secondaryButtonClass}`}
+                aria-label="关闭"
+                disabled={isUploadingVirtualPortraitAsset}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid max-h-[74vh] gap-6 overflow-y-auto px-6 py-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(20rem,1.05fr)]">
+            <div className="space-y-5">
+              <StudioPanel className="space-y-2 p-4" tone="soft">
+                <div className="text-sm font-semibold text-[var(--studio-text)]">当前素材资产组合</div>
+                <div className="text-sm text-[var(--studio-text)]">
+                  {selectedVirtualPortraitGroup?.group.name || selectedVirtualPortraitGroup?.group.title || '未选择组合'}
+                </div>
+                <div className={`break-all font-mono text-xs ${dimTextClass}`}>
+                  {selectedVirtualPortraitGroup?.group.id || ''}
+                </div>
+              </StudioPanel>
+
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">描述</span>
+                <textarea
+                  value={virtualPortraitDraft.description}
+                  onChange={(event) => {
+                    setVirtualPortraitDraft((prev) => ({ ...prev, description: event.target.value }));
+                    setVirtualPortraitDraftError('');
+                  }}
+                  disabled={isUploadingVirtualPortraitAsset}
+                  placeholder="例如：品牌虚拟代言人正脸半身照"
+                  className="studio-textarea mt-2 min-h-28"
+                />
+              </label>
+
+              <StudioPanel className="space-y-3 p-4" tone="soft">
+                <div className="text-sm font-semibold text-[var(--studio-text)]">入库流程</div>
+                <ul className={`space-y-2 text-sm leading-6 ${dimTextClass}`}>
+                  <li>使用 API 配置里的 TOS AccessKey 上传图片并生成公网 URL。</li>
+                  <li>素材会写入当前组合，建议同一组合只维护同一个虚拟人物。</li>
+                  <li>CreateAsset 返回 assetId 后保存到本地人像库；状态为 Active 后可用于推理。</li>
+                </ul>
+              </StudioPanel>
+            </div>
+
+            <div className="space-y-4">
+              <div
+                tabIndex={0}
+                onPaste={(event) => void handleVirtualPortraitPaste(event)}
+                className={cx(
+                  'flex min-h-[22rem] flex-col overflow-hidden rounded-3xl border border-dashed bg-[var(--studio-surface-soft)] outline-none transition-colors',
+                  virtualPortraitDraft.imageDataUrl ? 'border-cyan-400/30' : 'border-[var(--studio-border)]',
+                )}
+              >
+                {virtualPortraitDraft.imageDataUrl ? (
+                  <img
+                    src={virtualPortraitDraft.imageDataUrl}
+                    alt="虚拟人像预览"
+                    className="h-[22rem] w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+                    <div className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/5 text-cyan-300">
+                      <Upload className="h-6 w-6" />
+                    </div>
+                    <div className="mt-4 text-base font-semibold text-[var(--studio-text)]">粘贴或上传虚拟人像图片</div>
+                    <p className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
+                      支持 jpeg、png、webp 等图片；单张小于 30 MB。
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => virtualPortraitUploadInputRef.current?.click()}
+                  disabled={isUploadingVirtualPortraitAsset}
+                  className="studio-button studio-button-secondary px-4"
+                >
+                  <Upload className="h-4 w-4" />
+                  上传图片
+                </button>
+                {virtualPortraitDraft.imageDataUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVirtualPortraitDraft((prev) => ({ ...prev, imageDataUrl: '', fileNameHint: '', file: null }));
+                      setVirtualPortraitDraftError('');
+                    }}
+                    disabled={isUploadingVirtualPortraitAsset}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    清除图片
+                  </button>
+                ) : null}
+              </div>
+
+              <div className={`rounded-2xl border p-4 ${softPanelClass}`}>
+                <div className="text-sm font-semibold text-[var(--studio-text)]">当前图片</div>
+                <div className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
+                  {virtualPortraitDraft.fileNameHint || (virtualPortraitDraft.imageDataUrl ? '已从剪贴板载入图片' : '尚未选择图片')}
+                </div>
+              </div>
+
+              {virtualPortraitUploadStep ? (
+                <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+                  {virtualPortraitUploadStep}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {virtualPortraitDraftError ? (
+            <div className="px-6 pb-2">
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {virtualPortraitDraftError}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex items-center justify-end gap-3 border-t border-[var(--studio-border)] px-6 py-5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isUploadingVirtualPortraitAsset) {
+                  setIsVirtualPortraitModalOpen(false);
+                  resetVirtualPortraitDraft();
+                }
+              }}
+              disabled={isUploadingVirtualPortraitAsset}
+              className="studio-button studio-button-secondary px-4"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleUploadVirtualPortraitAsset()}
+              disabled={isUploadingVirtualPortraitAsset}
+              className="studio-button studio-button-primary px-4"
+            >
+              {isUploadingVirtualPortraitAsset ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+              上传并生成 assetId
+            </button>
+          </div>
+        </div>
+      </StudioModal>
+
+      <StudioModal
+        open={Boolean(virtualAssetDetail)}
+        onClose={() => {
+          if (!deletingVirtualAssetId) {
+            setVirtualAssetDetail(null);
+            setIsConfirmingVirtualAssetDelete(false);
+          }
+        }}
+        themeMode={resolvedThemeMode}
+        className="max-w-4xl overflow-hidden p-0"
+        closeOnOverlayClick={!deletingVirtualAssetId}
+      >
+        {virtualAssetDetail ? (() => {
+          const asset = virtualAssetDetail.asset;
+          const localAsset = virtualAssetDetail.localAsset || virtualPortraitAssetByAssetId.get(asset.id);
+          const imageUrl = localAsset?.imageUrl || asset.url;
+          const description = localAsset?.description || asset.name || asset.id;
+          const sourceUrl = asset.url || localAsset?.sourceUrl || '';
+          const status = normalizeArkAssetStatus(asset.status);
+          const isActive = isArkAssetActiveStatus(status);
+          const statusClass = isActive
+            ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
+            : isArkAssetFailedStatus(status)
+              ? 'border-red-500/25 bg-red-500/15 text-red-200'
+              : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+          const detailRows = [
+            ['assetId', asset.id],
+            ['状态', status],
+            ['素材名称', asset.name || '未命名'],
+            ['素材类型', asset.assetType || 'Image'],
+            ['GroupId', asset.groupId || selectedVirtualPortraitGroup?.group.id || ''],
+            ['ProjectName', asset.projectName || selectedVirtualPortraitGroup?.group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME],
+            ['创建时间', asset.createTime ? new Date(asset.createTime).toLocaleString() : '未知'],
+            ['更新时间', asset.updateTime ? new Date(asset.updateTime).toLocaleString() : '未知'],
+          ];
+
+          return (
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.22),transparent_58%)]" />
+              <div className="relative border-b border-[var(--studio-border)] px-6 py-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="studio-eyebrow">Asset Detail</div>
+                    <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">素材资产详情</h2>
+                    <p className={`mt-2 max-w-2xl text-sm leading-6 ${dimTextClass}`}>
+                      {description}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!deletingVirtualAssetId) {
+                        setVirtualAssetDetail(null);
+                        setIsConfirmingVirtualAssetDelete(false);
+                      }
+                    }}
+                    className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${secondaryButtonClass}`}
+                    aria-label="关闭"
+                    disabled={Boolean(deletingVirtualAssetId)}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid max-h-[74vh] gap-6 overflow-y-auto px-6 py-6 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
+                <div className="space-y-4">
+                  <div className="overflow-hidden rounded-3xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)]">
+                    <div className="relative flex min-h-[18rem] items-center justify-center bg-black/5">
+                      {imageUrl ? (
+                        <img src={imageUrl} alt={description} className="max-h-[30rem] w-full object-contain" />
+                      ) : (
+                        <div className="flex min-h-[18rem] w-full items-center justify-center text-sm text-[var(--studio-muted)]">无预览</div>
+                      )}
+                      <span className={`absolute left-3 top-3 w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
+                        {status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {onSelect && isActive ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelect(imageUrl, asset.id, { description, submitMode: 'auto' });
+                        setVirtualAssetDetail(null);
+                      }}
+                      className="studio-button studio-button-primary w-full justify-center px-4"
+                    >
+                      使用该素材
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="space-y-4">
+                  <div className={`rounded-2xl border p-4 ${softPanelClass}`}>
+                    <div className="text-sm font-semibold text-[var(--studio-text)]">资产信息</div>
+                    <div className="mt-4 space-y-3">
+                      {detailRows.map(([label, value]) => (
+                        <div key={label} className="grid gap-2 border-b border-[var(--studio-border)] pb-3 last:border-b-0 last:pb-0 md:grid-cols-[8rem_minmax(0,1fr)]">
+                          <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${dimTextClass}`}>{label}</div>
+                          <div className="break-all font-mono text-xs leading-5 text-[var(--studio-text)]">{value || '-'}</div>
+                        </div>
+                      ))}
+                      <div className="grid gap-2 border-b border-[var(--studio-border)] pb-3 last:border-b-0 last:pb-0 md:grid-cols-[8rem_minmax(0,1fr)]">
+                        <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${dimTextClass}`}>源 URL</div>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="min-w-0 flex-1 truncate font-mono text-xs leading-5 text-[var(--studio-text)]" title={sourceUrl || '-'}>
+                            {sourceUrl || '-'}
+                          </div>
+                          {sourceUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => void navigator.clipboard?.writeText(sourceUrl)}
+                              className="inline-flex h-8 shrink-0 items-center justify-center rounded-xl border border-[var(--studio-border)] px-3 text-xs font-medium text-[var(--studio-text)] transition-colors hover:border-cyan-400/40 hover:bg-cyan-400/10"
+                            >
+                              复制
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isConfirmingVirtualAssetDelete ? (
+                    <div className={cx(
+                      'rounded-2xl border px-4 py-3 text-sm leading-6',
+                      resolvedThemeMode === 'light'
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : 'border-red-500/25 bg-red-500/10 text-red-100',
+                    )}>
+                      删除后该 assetId 将不可再用于新任务。再次点击“确认删除素材”执行删除。
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t border-[var(--studio-border)] px-6 py-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsConfirmingVirtualAssetDelete(false);
+                    setVirtualAssetDetail(null);
+                  }}
+                  disabled={Boolean(deletingVirtualAssetId)}
+                  className="studio-button studio-button-secondary px-4"
+                >
+                  关闭
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteVirtualPortraitAsset(asset)}
+                  disabled={Boolean(deletingVirtualAssetId)}
+                  className={cx(
+                    'inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium transition-colors',
+                    isConfirmingVirtualAssetDelete
+                      ? resolvedThemeMode === 'light'
+                        ? 'border-red-300 bg-red-50 text-red-700 hover:border-red-400 hover:bg-red-100'
+                        : 'border-red-500/40 bg-red-500/20 text-red-100 hover:bg-red-500/30'
+                      : secondaryButtonClass,
+                  )}
+                >
+                  {deletingVirtualAssetId ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
+                  {isConfirmingVirtualAssetDelete ? '确认删除素材' : '删除素材'}
+                </button>
+              </div>
+            </div>
+          );
+        })() : null}
       </StudioModal>
 
       <StudioModal
@@ -1482,6 +2678,13 @@ export function PortraitLibraryView({ themeMode, isModal = false, onSelect }: Po
         type="file"
         accept="image/*"
         onChange={(event) => void handleRealPortraitUpload(event)}
+        className="hidden"
+      />
+      <input
+        ref={virtualPortraitUploadInputRef}
+        type="file"
+        accept="image/*"
+        onChange={(event) => void handleVirtualPortraitUpload(event)}
         className="hidden"
       />
     </ContentWrapper>

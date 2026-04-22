@@ -18,6 +18,7 @@ type TosUploadPayload = {
   config: TosConfig
   fileName: string
   fileType?: string
+  defaultPrefix?: string
   data: ArrayBuffer
 }
 
@@ -246,7 +247,7 @@ app.whenReady().then(async () => {
       }
 
       const client = createTosClient(payload.config)
-      const objectKey = buildTosObjectKey(payload.config, fileMeta)
+      const objectKey = buildTosObjectKey(payload.config, fileMeta, payload.defaultPrefix || 'reference-videos')
       const body = Buffer.from(payload.data)
 
       await client.putObject({

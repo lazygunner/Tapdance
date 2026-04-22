@@ -24,7 +24,22 @@ export type SeedreamGeneratedPortraitAsset = {
   createdAt: string;
 };
 
+export type VirtualPortraitLibraryAsset = {
+  id: string;
+  description: string;
+  assetId: string;
+  imageUrl: string;
+  groupId: string;
+  groupName: string;
+  projectName: string;
+  status: string;
+  sourceUrl: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const REAL_PORTRAIT_LIBRARY_STATE_KEY = 'portraitLibrary.realAssets';
+const VIRTUAL_PORTRAIT_LIBRARY_STATE_KEY = 'portraitLibrary.virtualAssets';
 const SEEDREAM_GENERATED_PORTRAIT_LIBRARY_STATE_KEY = 'portraitLibrary.seedreamGeneratedAssets';
 
 export const SEEDREAM_GENERATED_PORTRAIT_MODEL = 'doubao-seedream-5-0-260128';
@@ -168,6 +183,38 @@ function normalizeSeedreamGeneratedPortraitAsset(value: unknown): SeedreamGenera
   };
 }
 
+function normalizeVirtualPortraitLibraryAsset(value: unknown): VirtualPortraitLibraryAsset | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<VirtualPortraitLibraryAsset>;
+  const id = String(candidate.id || '').trim();
+  const description = String(candidate.description || '').trim();
+  const assetId = String(candidate.assetId || '').trim();
+  const imageUrl = String(candidate.imageUrl || '').trim();
+  const createdAt = String(candidate.createdAt || '').trim() || new Date().toISOString();
+  const updatedAt = String(candidate.updatedAt || '').trim() || createdAt;
+
+  if (!id || !description || !assetId || !imageUrl) {
+    return null;
+  }
+
+  return {
+    id,
+    description,
+    assetId,
+    imageUrl,
+    groupId: String(candidate.groupId || '').trim(),
+    groupName: String(candidate.groupName || '').trim(),
+    projectName: String(candidate.projectName || '').trim() || 'default',
+    status: String(candidate.status || '').trim() || 'Processing',
+    sourceUrl: String(candidate.sourceUrl || '').trim(),
+    createdAt,
+    updatedAt,
+  };
+}
+
 export async function fetchRealPortraitLibraryAssets(baseUrl?: string) {
   const persisted = await loadPersistedAppState<RealPortraitLibraryAsset[]>(REAL_PORTRAIT_LIBRARY_STATE_KEY, baseUrl);
   const items = Array.isArray(persisted.value)
@@ -186,6 +233,27 @@ export async function saveRealPortraitLibraryAssets(items: RealPortraitLibraryAs
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 
   await savePersistedAppState(REAL_PORTRAIT_LIBRARY_STATE_KEY, normalizedItems, baseUrl);
+  return normalizedItems;
+}
+
+export async function fetchVirtualPortraitLibraryAssets(baseUrl?: string) {
+  const persisted = await loadPersistedAppState<VirtualPortraitLibraryAsset[]>(VIRTUAL_PORTRAIT_LIBRARY_STATE_KEY, baseUrl);
+  const items = Array.isArray(persisted.value)
+    ? persisted.value
+      .map((item) => normalizeVirtualPortraitLibraryAsset(item))
+      .filter((item): item is VirtualPortraitLibraryAsset => Boolean(item))
+    : [];
+
+  return items.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export async function saveVirtualPortraitLibraryAssets(items: VirtualPortraitLibraryAsset[], baseUrl?: string) {
+  const normalizedItems = items
+    .map((item) => normalizeVirtualPortraitLibraryAsset(item))
+    .filter((item): item is VirtualPortraitLibraryAsset => Boolean(item))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+  await savePersistedAppState(VIRTUAL_PORTRAIT_LIBRARY_STATE_KEY, normalizedItems, baseUrl);
   return normalizedItems;
 }
 

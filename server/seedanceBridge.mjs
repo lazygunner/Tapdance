@@ -7,6 +7,7 @@ import { homedir, tmpdir } from 'node:os';
 import crypto from 'node:crypto';
 import { createAppStateStore } from './appStateStore.mjs';
 import { buildAssetLibraryFileName } from './assetLibraryNaming.mjs';
+import { registerArkAssetOpenApiRoutes } from './arkAssetOpenApi.mjs';
 
 const execFileAsync = promisify(execFile);
 const app = express();
@@ -31,6 +32,7 @@ app.use((request, response, next) => {
   }
   next();
 });
+registerArkAssetOpenApiRoutes(app);
 
 function taskDir(submitId) {
   return join(bridgeRoot, 'tasks', submitId);

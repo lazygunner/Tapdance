@@ -136,6 +136,7 @@ export async function uploadFileToTos(
         config,
         fileName: file.name,
         fileType: file.type,
+        defaultPrefix: options?.defaultPrefix || 'reference-videos',
         data: await file.arrayBuffer(),
       });
       onProgress?.(100);

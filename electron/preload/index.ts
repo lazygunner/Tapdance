@@ -19,6 +19,7 @@ const api = {
     config: TosConfig
     fileName: string
     fileType?: string
+    defaultPrefix?: string
     data: ArrayBuffer
   }) => ipcRenderer.invoke('tos:uploadVideo', payload),
   selectDirectory: (options?: { title?: string; defaultPath?: string }) => ipcRenderer.invoke('dialog:selectDirectory', options),

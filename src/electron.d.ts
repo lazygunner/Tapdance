@@ -16,6 +16,7 @@ export interface IElectronAPI {
     config: TosConfig;
     fileName: string;
     fileType?: string;
+    defaultPrefix?: string;
     data: ArrayBuffer;
   }) => Promise<{ url: string; key: string }>;
   selectDirectory: (options?: { title?: string; defaultPath?: string }) => Promise<string>;

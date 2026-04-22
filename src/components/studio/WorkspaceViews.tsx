@@ -183,7 +183,7 @@ export function getWorkspaceSurfaceMeta(view: WorkspaceView, project: Project): 
       return {
         eyebrow: 'Library',
         title: '人像素材库',
-        description: '浏览平台公开与真人人像资产',
+        description: '浏览平台公开、真人与虚拟人像资产',
         icon: Users,
         chipClassName: 'studio-accent-chip-amber',
         badgeLabel: 'Portraits',
@@ -303,8 +303,8 @@ export function StudioSidebar({
       {
         view: 'portraitLibrary',
         label: '人像素材库',
-        description: '平台公开与真人人像',
-        countLabel: '公开 + 真人',
+        description: '平台公开、真人与虚拟人像',
+        countLabel: '真人+虚拟',
         icon: Users,
       },
       {

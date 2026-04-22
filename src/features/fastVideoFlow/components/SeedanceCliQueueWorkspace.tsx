@@ -5,6 +5,8 @@ import { CheckCircle2, Clock3, Loader2, Trash2, XCircle, AlertTriangle, Hourglas
 import { StudioPage, StudioPanel, cx } from '../../../components/studio/StudioPrimitives.tsx';
 import type { SeedanceCliQueueItem, SeedanceCliQueueItemStatus } from '../types/queueTypes.ts';
 
+type QueueTab = 'active' | 'completed';
+
 type Props = {
   items: SeedanceCliQueueItem[];
   activeCount: number;
@@ -24,6 +26,14 @@ const STATUS_LABELS: Record<SeedanceCliQueueItemStatus, string> = {
   failed: '失败',
   cancelled: '已取消',
 };
+
+function isActiveQueueItem(item: SeedanceCliQueueItem) {
+  return item.status === 'queued' || item.status === 'retry_wait' || item.status === 'submitting' || item.status === 'running';
+}
+
+function isCompletedQueueItem(item: SeedanceCliQueueItem) {
+  return item.status === 'completed' || item.status === 'failed' || item.status === 'cancelled';
+}
 
 function getStatusTone(status: SeedanceCliQueueItemStatus) {
   if (status === 'completed') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200';
@@ -89,7 +99,7 @@ function getWaitDurationMs(item: SeedanceCliQueueItem, currentTimeMs: number) {
 }
 
 function getQueuePosition(items: SeedanceCliQueueItem[], itemId: string) {
-  const activeItems = items.filter((item) => item.status === 'queued' || item.status === 'retry_wait' || item.status === 'submitting' || item.status === 'running');
+  const activeItems = items.filter(isActiveQueueItem);
   const index = activeItems.findIndex((item) => item.id === itemId);
   return index >= 0 ? index + 1 : 0;
 }
@@ -103,9 +113,13 @@ export function SeedanceCliQueueWorkspace({
   onClearTerminalItems,
   onClearWaitingItems,
 }: Props) {
+  const [activeTab, setActiveTab] = useState<QueueTab>('active');
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const orderedItems = [...items].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
-  const terminalCount = items.filter((item) => item.status === 'completed' || item.status === 'failed' || item.status === 'cancelled').length;
+  const activeItems = orderedItems.filter(isActiveQueueItem);
+  const completedItems = orderedItems.filter(isCompletedQueueItem);
+  const terminalCount = completedItems.length;
+  const visibleItems = activeTab === 'active' ? activeItems : completedItems;
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -118,10 +132,29 @@ export function SeedanceCliQueueWorkspace({
   return (
     <StudioPage className="studio-page-wide">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1 text-xs text-sky-100">活跃 {activeCount}</span>
-          <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-100">等待 {waitingCount}</span>
-          <span className="text-sm text-[var(--studio-muted)]">队列完成或失败后会自动继续下一个任务。</span>
+        <div className="studio-segmented" role="tablist" aria-label="任务队列状态筛选">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'active'}
+            onClick={() => setActiveTab('active')}
+            className={cx('studio-segmented-button', activeTab === 'active' && 'active')}
+          >
+            <Clock3 className="h-3.5 w-3.5" />
+            进行中
+            <span className="rounded-full bg-black/10 px-2 py-0.5 text-[11px] leading-4">{activeItems.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'completed'}
+            onClick={() => setActiveTab('completed')}
+            className={cx('studio-segmented-button', activeTab === 'completed' && 'active')}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            已完成
+            <span className="rounded-full bg-black/10 px-2 py-0.5 text-[11px] leading-4">{completedItems.length}</span>
+          </button>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -143,7 +176,15 @@ export function SeedanceCliQueueWorkspace({
         </div>
       </div>
 
-      {orderedItems.length === 0 ? (
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-3 py-1 text-xs text-sky-100">活跃 {activeCount}</span>
+          <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-100">等待 {waitingCount}</span>
+          <span className="text-sm text-[var(--studio-muted)]">队列完成或失败后会自动继续下一个任务。</span>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
         <StudioPanel className="mt-5 px-8 py-14 text-center" tone="soft">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/8 text-white">
             <Clock3 className="h-6 w-6" />
@@ -153,9 +194,23 @@ export function SeedanceCliQueueWorkspace({
             当 CLI 返回并发上限时，你可以把 fast-video 任务加入这里，前序任务完成后会自动提交。
           </p>
         </StudioPanel>
+      ) : visibleItems.length === 0 ? (
+        <StudioPanel className="mt-5 px-8 py-14 text-center" tone="soft">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/8 text-white">
+            {activeTab === 'active' ? <Clock3 className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
+          </div>
+          <h3 className="mt-5 text-xl font-semibold text-[var(--studio-text)]">
+            {activeTab === 'active' ? '当前没有进行中的任务' : '当前没有已完成任务'}
+          </h3>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[var(--studio-muted)]">
+            {activeTab === 'active'
+              ? '已完成、失败或取消的任务会保留在“已完成”Tab 中。'
+              : '任务完成、失败或取消后会显示在这里，方便回看和清理。'}
+          </p>
+        </StudioPanel>
       ) : (
         <div className="mt-5 space-y-3">
-          {orderedItems.map((item) => {
+          {visibleItems.map((item) => {
             const position = getQueuePosition(items, item.id);
             const waitDuration = getWaitDurationMs(item, currentTimeMs);
             const canCancel = item.status === 'queued' || item.status === 'retry_wait';

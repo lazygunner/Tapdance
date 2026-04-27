@@ -15,6 +15,7 @@ export type LibraryAssetItem = {
   groupName: string;
   title: string;
   sourceLabel: string;
+  createdAt: string;
 };
 
 export type AssetLibraryStatusItem = LibraryAssetItem & {
@@ -32,8 +33,13 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
   const projectName = project.name || '未命名项目';
   const groupName = (project.groupName || '').trim() || '未分组';
   const items: LibraryAssetItem[] = [];
+  const projectCreatedAt = project.createdAt || '';
+  const fastTaskCreatedAt = project.fastFlow.task.finishedAt
+    || project.fastFlow.task.startedAt
+    || project.fastFlow.task.lastCheckedAt
+    || projectCreatedAt;
 
-  const pushItem = (item: Omit<LibraryAssetItem, 'projectId' | 'projectName' | 'projectType' | 'groupName'>) => {
+  const pushItem = (item: Omit<LibraryAssetItem, 'projectId' | 'projectName' | 'projectType' | 'groupName' | 'createdAt'> & { createdAt?: string }) => {
     const url = (item.url || '').trim();
     if (!url) {
       return;
@@ -46,6 +52,7 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
       projectName,
       projectType: project.projectType,
       groupName,
+      createdAt: item.createdAt || projectCreatedAt,
     });
   };
 
@@ -126,6 +133,7 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
     url: project.fastFlow.task.lastFrameUrl || '',
     title: '极速视频尾帧',
     sourceLabel: '极速视频结果',
+    createdAt: fastTaskCreatedAt,
   });
   pushItem({
     id: `${project.id}:fast-task:video`,
@@ -133,6 +141,7 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
     url: project.fastFlow.task.videoUrl || '',
     title: '极速视频成片',
     sourceLabel: '极速视频结果',
+    createdAt: fastTaskCreatedAt,
   });
 
   return items;
@@ -149,6 +158,7 @@ function collectImageCreationLibraryItems(records: ImageCreationRecord[] = []): 
     groupName: record.groupName || '未分组',
     title: output.title || `生成图片 ${index + 1}`,
     sourceLabel: '图片制作',
+    createdAt: output.createdAt || record.createdAt,
   }))).filter((item) => item.url.trim());
 }
 

@@ -165,7 +165,7 @@ test('buildVideoGenerationRequest forces first-last-frame interpolation to Gemin
   });
 });
 
-test('buildVideoGenerationRequest upgrades to pro model and trims reference images to three', () => {
+test('buildVideoGenerationRequest upgrades to pro model and sends reference images without frame inputs', () => {
   const request = buildVideoGenerationRequest(
     createShot({
       imageUrl: PNG_DATA_URL,
@@ -194,10 +194,7 @@ test('buildVideoGenerationRequest upgrades to pro model and trims reference imag
   );
 
   assert.equal(request.model, 'veo-3.1-generate-preview');
-  assert.deepEqual(request.image, {
-    imageBytes: 'Zmlyc3Q=',
-    mimeType: 'image/png',
-  });
+  assert.equal(request.image, undefined);
   assert.equal(request.config.durationSeconds, 8);
   assert.equal(request.config.aspectRatio, '16:9');
   assert.equal(request.config.resolution, '1080p');

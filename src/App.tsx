@@ -310,6 +310,7 @@ export default function App() {
             sourceLabel: `素材库 / ${item.sourceLabel}`,
             kind: 'video',
             url: item.url,
+            createdAt: item.createdAt,
           };
         }),
       ...fastHistorySourceProjects.flatMap((candidate) => collectProjectGeneratedMediaAssets(candidate)),

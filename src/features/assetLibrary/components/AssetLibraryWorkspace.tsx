@@ -2,21 +2,7 @@ import { Image as ImageIcon, RefreshCw, Upload, Video } from 'lucide-react';
 
 import { StudioMetricCard, StudioPage, StudioPageHeader, StudioPanel } from '../../../components/studio/StudioPrimitives.tsx';
 import type { AssetLibraryConfig } from '../../../services/assetLibrary.ts';
-import type { LibraryAssetSourceType } from '../utils/assetLibraryItems.ts';
-
-type AssetLibraryStatusItem = {
-  id: string;
-  kind: 'image' | 'video';
-  url: string;
-  projectId: string;
-  projectName: string;
-  projectType: LibraryAssetSourceType;
-  groupName: string;
-  title: string;
-  sourceLabel: string;
-  savedToLibrary: boolean;
-  savedRelativePath: string;
-};
+import type { AssetLibraryStatusItem } from '../utils/assetLibraryItems.ts';
 
 type AssetLibraryWorkspaceProps = {
   assetLibraryItems: AssetLibraryStatusItem[];
@@ -38,6 +24,24 @@ type AssetLibraryWorkspaceProps = {
   onPersistAssetLibraryItem: (item: AssetLibraryStatusItem) => void;
   onOpenProject: (projectId: string) => void;
 };
+
+function getAssetCreatedAtTimestamp(item: AssetLibraryStatusItem) {
+  const timestamp = Date.parse(item.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getLatestAssetTimestamp(items: AssetLibraryStatusItem[]) {
+  return items.reduce((latest, item) => Math.max(latest, getAssetCreatedAtTimestamp(item)), 0);
+}
+
+function compareAssetsByCreatedAtDesc(left: AssetLibraryStatusItem, right: AssetLibraryStatusItem) {
+  const timestampDiff = getAssetCreatedAtTimestamp(right) - getAssetCreatedAtTimestamp(left);
+  if (timestampDiff !== 0) {
+    return timestampDiff;
+  }
+
+  return left.title.localeCompare(right.title, 'zh-Hans-CN');
+}
 
 export function AssetLibraryWorkspace({
   assetLibraryItems,
@@ -90,13 +94,28 @@ export function AssetLibraryWorkspace({
     .map((group) => ({
       groupName: group.groupName,
       projects: Array.from(group.projects.values())
-        .sort((left, right) => left.projectName.localeCompare(right.projectName, 'zh-Hans-CN'))
+        .sort((left, right) => {
+          const timestampDiff = getLatestAssetTimestamp(right.items) - getLatestAssetTimestamp(left.items);
+          if (timestampDiff !== 0) {
+            return timestampDiff;
+          }
+
+          return left.projectName.localeCompare(right.projectName, 'zh-Hans-CN');
+        })
         .map((projectEntry) => ({
           ...projectEntry,
-          items: [...projectEntry.items].sort((left, right) => left.title.localeCompare(right.title, 'zh-Hans-CN')),
+          items: [...projectEntry.items].sort(compareAssetsByCreatedAtDesc),
         })),
     }))
-    .sort((left, right) => left.groupName.localeCompare(right.groupName, 'zh-Hans-CN'));
+    .sort((left, right) => {
+      const timestampDiff = Math.max(...right.projects.map((projectEntry) => getLatestAssetTimestamp(projectEntry.items)))
+        - Math.max(...left.projects.map((projectEntry) => getLatestAssetTimestamp(projectEntry.items)));
+      if (timestampDiff !== 0) {
+        return timestampDiff;
+      }
+
+      return left.groupName.localeCompare(right.groupName, 'zh-Hans-CN');
+    });
 
   return (
     <StudioPage className="studio-page-wide">

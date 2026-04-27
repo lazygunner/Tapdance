@@ -884,7 +884,7 @@ export function PromptTokenEditor({
   };
 
   return (
-    <div ref={editorShellRef} className="relative mt-3 flex-1">
+    <div ref={editorShellRef} className="relative mt-3 min-w-0 flex-1">
       <div className="mb-2 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
         <span>
           输入 <span className="text-rose-300">@</span> 选择素材；
@@ -1734,9 +1734,9 @@ export function FastVideoView({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.96fr)_minmax(340px,0.96fr)] gap-4 items-start">
-        <div className="space-y-4">
-          <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.96fr)_minmax(340px,0.96fr)] gap-4 items-start">
+        <div className="min-w-0 space-y-4">
+          <section className="min-w-0 overflow-hidden bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
             <div className="flex items-center justify-between gap-4 overflow-hidden">
               <div className="text-white font-semibold flex items-center whitespace-nowrap overflow-hidden">
                 参考素材确认
@@ -1753,7 +1753,7 @@ export function FastVideoView({
             <div className="mt-2 text-xs text-zinc-500">
               只有勾选的素材会传给 Seedance API。提示词中可用 <span className="text-sky-400">图片1</span> / <span className="text-violet-400">视频1</span> / <span className="text-emerald-400">音频1</span> 引用对应素材。
             </div>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 pr-1">
+            <div className="mt-3 flex min-w-0 max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-1 pr-1">
               {readyReferenceImages.map((reference, index) => (
                 <div key={reference.id} className="shrink-0 w-32 xl:w-36">
                   <div className="relative">
@@ -1890,7 +1890,7 @@ export function FastVideoView({
             </div>
           </section>
 
-          <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col min-h-[360px]">
+          <section className="min-w-0 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col min-h-[360px]">
             <div className="flex items-center justify-between gap-4">
               <div className="text-white font-semibold">视频提示词（中文）</div>
               <button
@@ -1913,7 +1913,7 @@ export function FastVideoView({
           </section>
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="text-[var(--studio-text)] font-semibold">费用预估</div>
@@ -2137,7 +2137,7 @@ export function FastVideoView({
           </section>
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <section className={`border rounded-2xl p-4 ${taskTone.shellClass}`}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">

@@ -265,6 +265,7 @@ export function buildVideoGenerationRequest(
       request.model = fallbackReferenceModelName;
       request.config.aspectRatio = '16:9';
       request.config.referenceImages = referenceImages;
+      delete request.image;
       delete request.config.lastFrame;
     }
   }

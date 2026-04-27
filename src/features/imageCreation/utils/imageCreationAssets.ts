@@ -11,5 +11,6 @@ export function collectImageCreationGeneratedImageAssets(records: ImageCreationR
     title: output.title || `生成图片 ${index + 1}`,
     sourceLabel: '图片制作',
     imageUrl: output.url,
+    createdAt: output.createdAt || record.createdAt,
   }))).filter((item) => item.imageUrl.trim());
 }

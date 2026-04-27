@@ -156,7 +156,22 @@ function toImageMaterial(material: ProjectGroupMediaAsset): ProjectGroupImageAss
     title: material.title,
     sourceLabel: material.sourceLabel,
     imageUrl: material.url,
+    createdAt: material.createdAt,
   };
+}
+
+function getMaterialCreatedAtTimestamp(material: ProjectGroupMediaAsset) {
+  const timestamp = Date.parse(material.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function compareHistoryMaterialsByCreatedAtDesc(left: ProjectGroupMediaAsset, right: ProjectGroupMediaAsset) {
+  const timestampDiff = getMaterialCreatedAtTimestamp(right) - getMaterialCreatedAtTimestamp(left);
+  if (timestampDiff !== 0) {
+    return timestampDiff;
+  }
+
+  return `${left.projectName}${left.title}`.localeCompare(`${right.projectName}${right.title}`, 'zh-Hans-CN');
 }
 
 function FastHistoryReferenceMediaPickerModal({
@@ -214,8 +229,8 @@ function FastHistoryReferenceMediaPickerModal({
 
       const haystack = normalizeMaterialSearchText(`${material.projectName} ${material.title} ${material.sourceLabel}`);
       return haystack.includes(normalizedQuery);
-    });
-  }, [materials, query]);
+    }).sort(compareHistoryMaterialsByCreatedAtDesc);
+  }, [materials, query, targetKind]);
 
   const sameGroupMaterials = currentGroupId
     ? filteredMaterials.filter((material) => material.groupId === currentGroupId)
@@ -511,6 +526,7 @@ export function FastInputView({
         ...material,
         kind: 'image',
         url: material.imageUrl,
+        createdAt: material.createdAt,
       });
     }
     return Array.from(mediaById.values());
@@ -1187,27 +1203,38 @@ export function FastInputView({
                 )}
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <label className="studio-button studio-button-secondary cursor-pointer px-3 py-2 text-xs">
-                  <Upload className="h-3.5 w-3.5" />
-                  {expandedReferenceImage.imageUrl ? '替换图片' : '选择图片'}
-                  <input type="file" accept="image/*" className="hidden" onChange={(event) => onUploadReferenceImage(event, expandedReferenceImage.id)} />
-                </label>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <label className="studio-button studio-button-secondary cursor-pointer px-3 py-2 text-xs">
+                    <Upload className="h-3.5 w-3.5" />
+                    {expandedReferenceImage.imageUrl ? '替换图片' : '选择图片'}
+                    <input type="file" accept="image/*" className="hidden" onChange={(event) => onUploadReferenceImage(event, expandedReferenceImage.id)} />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryReferencePickerTarget({ kind: 'image', mode: 'replace', referenceId: expandedReferenceImage.id })}
+                    className="studio-button studio-button-secondary px-3 py-2 text-xs"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    历史素材
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPortraitPickerTargetId(expandedReferenceImage.id)}
+                    className="studio-button studio-button-secondary px-3 py-2 text-xs"
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                    人像库
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setHistoryReferencePickerTarget({ kind: 'image', mode: 'replace', referenceId: expandedReferenceImage.id })}
-                  className="studio-button studio-button-secondary px-3 py-2 text-xs"
+                  disabled={!expandedReferenceImage.imageUrl.trim()}
+                  onClick={closeReferenceImageEditor}
+                  className="studio-button studio-button-primary px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <History className="h-3.5 w-3.5" />
-                  历史素材
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPortraitPickerTargetId(expandedReferenceImage.id)}
-                  className="studio-button studio-button-secondary px-3 py-2 text-xs"
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  人像库
+                  <Check className="h-3.5 w-3.5" />
+                  确认选择当前图片
                 </button>
               </div>
 

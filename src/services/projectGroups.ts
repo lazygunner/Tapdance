@@ -21,6 +21,7 @@ export type ProjectGroupImageAsset = {
   title: string;
   sourceLabel: string;
   imageUrl: string;
+  createdAt?: string;
 };
 
 export type ProjectGroupMediaAsset = {
@@ -33,6 +34,7 @@ export type ProjectGroupMediaAsset = {
   sourceLabel: string;
   kind: 'image' | 'video' | 'audio';
   url: string;
+  createdAt?: string;
 };
 
 function getProjectCreatedAtTimestamp(project: Project) {
@@ -155,6 +157,11 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
   const projectName = project.name || '未命名项目';
   const { groupId } = getNormalizedProjectGroupFields(project, project.id, projectName);
   const images: ProjectGroupImageAsset[] = [];
+  const projectCreatedAt = project.createdAt || '';
+  const fastTaskCreatedAt = project.fastFlow.task.finishedAt
+    || project.fastFlow.task.startedAt
+    || project.fastFlow.task.lastCheckedAt
+    || projectCreatedAt;
 
   for (const asset of project.assets) {
     if (!asset.imageUrl) {
@@ -169,6 +176,7 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
       title: asset.name || '一致性资产',
       sourceLabel: `资产 / ${asset.type}`,
       imageUrl: asset.imageUrl,
+      createdAt: projectCreatedAt,
     });
   }
 
@@ -183,6 +191,7 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
         title: `镜头 ${shot.shotNumber} 首帧`,
         sourceLabel: '首帧',
         imageUrl: shot.imageUrl,
+        createdAt: projectCreatedAt,
       });
     }
 
@@ -196,6 +205,7 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
         title: `镜头 ${shot.shotNumber} 尾帧`,
         sourceLabel: '尾帧',
         imageUrl: shot.lastFrameImageUrl,
+        createdAt: projectCreatedAt,
       });
     }
   }
@@ -214,6 +224,7 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
       title: reference.description || `参考图 ${index + 1}`,
       sourceLabel: '极速参考图',
       imageUrl: reference.imageUrl,
+      createdAt: projectCreatedAt,
     });
   });
 
@@ -231,6 +242,7 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
       title: scene.title || '极速分镜',
       sourceLabel: '极速分镜',
       imageUrl: scene.imageUrl,
+      createdAt: projectCreatedAt,
     });
   }
 
@@ -244,6 +256,7 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
       title: '极速视频尾帧',
       sourceLabel: '极速视频结果',
       imageUrl: project.fastFlow.task.lastFrameUrl,
+      createdAt: fastTaskCreatedAt,
     });
   }
 
@@ -258,6 +271,11 @@ export function collectProjectGeneratedMediaAssets(project: Project): ProjectGro
     kind: 'image',
     url: image.imageUrl,
   }));
+  const projectCreatedAt = project.createdAt || '';
+  const fastTaskCreatedAt = project.fastFlow.task.finishedAt
+    || project.fastFlow.task.startedAt
+    || project.fastFlow.task.lastCheckedAt
+    || projectCreatedAt;
 
   const pushMedia = (item: Omit<ProjectGroupMediaAsset, 'groupId' | 'projectId' | 'projectName'>) => {
     const url = item.url.trim();
@@ -271,6 +289,7 @@ export function collectProjectGeneratedMediaAssets(project: Project): ProjectGro
       groupId,
       projectId: project.id,
       projectName,
+      createdAt: item.createdAt || projectCreatedAt,
     });
   };
 
@@ -322,6 +341,7 @@ export function collectProjectGeneratedMediaAssets(project: Project): ProjectGro
     sourceLabel: '极速视频结果',
     kind: 'video',
     url: project.fastFlow.task.videoUrl || '',
+    createdAt: fastTaskCreatedAt,
   });
 
   return media;

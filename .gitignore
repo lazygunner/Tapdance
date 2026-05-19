@@ -13,4 +13,8 @@ local_asset_library/
 local_data/
 public/portraits/
 out/
+output/
 release/
+docs/projects/
+scratch
+scripts/generate-media

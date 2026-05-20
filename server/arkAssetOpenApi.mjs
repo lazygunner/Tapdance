@@ -15,6 +15,8 @@ const ALLOWED_ARK_ASSET_ACTIONS = new Set([
   'UpdateAsset',
   'DeleteAsset',
   'DeleteAssetGroup',
+  'CreateVisualValidateSession',
+  'GetVisualValidateResult',
 ]);
 
 function normalizeErrorMessage(error) {

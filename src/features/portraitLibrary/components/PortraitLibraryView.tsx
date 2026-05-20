@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, BookOpenText, ExternalLink, FolderOpen, FolderPlus, Plus, RefreshCw, Sparkles, Trash2, Upload, Users, X } from 'lucide-react';
+import { ArrowLeft, BookOpenText, ExternalLink, FolderOpen, FolderPlus, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   cx,
   StudioModal,
@@ -19,6 +19,7 @@ import {
   fetchSeedreamGeneratedPortraitAssets,
   fetchVirtualPortraitLibraryAssets,
   getPortraitLibraryRelativePath,
+  parseRealPortraitValidationCallback,
   saveSeedreamGeneratedPortraitAssets,
   saveRealPortraitLibraryAssets,
   saveVirtualPortraitLibraryAssets,
@@ -30,16 +31,21 @@ import {
   type VirtualPortraitLibraryAsset,
 } from '../../../services/portraitLibrary.ts';
 import {
+  ARK_REAL_PORTRAIT_GROUP_TYPE,
   DEFAULT_VIRTUAL_PORTRAIT_ASSET_GROUP_NAME,
   DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
   createArkAssetGroup,
+  createRealPortraitValidationSession,
   deleteArkAsset,
   deleteArkAssetGroup,
+  getRealPortraitValidationResult,
   isArkAssetActiveStatus,
   isArkAssetFailedStatus,
   listArkAssetGroups,
   listArkAssets,
   normalizeArkAssetStatus,
+  updateArkAssetGroup,
+  uploadRealPortraitAsset,
   uploadVirtualPortraitAsset,
   type ArkAsset,
   type ArkAssetGroup,
@@ -96,8 +102,13 @@ type PortraitLibraryTab = 'public' | 'real' | 'virtualUpload' | 'seedream';
 type RealPortraitDraftState = {
   description: string;
   assetId: string;
+  projectName: string;
+  bytedToken: string;
+  h5Link: string;
+  groupId: string;
   imageDataUrl: string;
   fileNameHint: string;
+  file: File | null;
 };
 
 type SeedreamPortraitDraftState = {
@@ -125,6 +136,23 @@ type VirtualPortraitAssetGroupView = {
   coverImageUrl: string;
 };
 
+type RealPortraitAssetGroupView = {
+  group: ArkAssetGroup;
+  assets: ArkAsset[];
+  assetCount: number;
+  coverImageUrl: string;
+};
+
+type AssetGroupEditTarget = 'real' | 'virtual';
+
+type AssetGroupEditDraft = {
+  target: AssetGroupEditTarget;
+  groupId: string;
+  name: string;
+  description: string;
+  projectName: string;
+};
+
 const ITEMS_PER_PAGE = 30;
 const PORTRAIT_DOWNLOAD_URL = 'https://pan.quark.cn/s/48caf9810a81';
 const BROWSER_DIRECTORY_INPUT_PROPS = {
@@ -138,13 +166,19 @@ const SEEDREAM_PORTRAIT_LIBRARY_PROJECT_NAME = 'Seedream 生成';
 const EMPTY_REAL_PORTRAIT_DRAFT: RealPortraitDraftState = {
   description: '',
   assetId: '',
+  projectName: DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
+  bytedToken: '',
+  h5Link: '',
+  groupId: '',
   imageDataUrl: '',
   fileNameHint: '',
+  file: null,
 };
 const EMPTY_SEEDREAM_PORTRAIT_DRAFT: SeedreamPortraitDraftState = {
   model: SEEDREAM_GENERATED_PORTRAIT_MODEL,
   prompt: '',
 };
+const REAL_PORTRAIT_VALIDATION_CALLBACK_URL = 'https://tapdance.local/real-portrait-validation-callback';
 const EMPTY_VIRTUAL_PORTRAIT_DRAFT: VirtualPortraitDraftState = {
   description: '',
   imageDataUrl: '',
@@ -185,6 +219,34 @@ function buildArkAssetFromVirtualPortraitLibraryAsset(asset: VirtualPortraitLibr
     status: normalizeArkAssetStatus(asset.status),
     createTime: asset.createdAt,
     updateTime: asset.updatedAt,
+  };
+}
+
+function buildArkAssetFromRealPortraitLibraryAsset(asset: RealPortraitLibraryAsset): ArkAsset {
+  return {
+    id: asset.assetId,
+    groupId: asset.groupId || '',
+    name: asset.description,
+    assetType: 'Image',
+    projectName: asset.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
+    url: asset.sourceUrl || asset.imageUrl,
+    status: normalizeArkAssetStatus(asset.status),
+    createTime: asset.createdAt,
+    updateTime: asset.updatedAt || asset.createdAt,
+  };
+}
+
+function buildRealPortraitPlaceholderGroup(asset: RealPortraitLibraryAsset): ArkAssetGroup {
+  const groupId = asset.groupId || `local-real-group:${asset.assetId}`;
+  return {
+    id: groupId,
+    name: groupId,
+    title: groupId,
+    description: '',
+    groupType: ARK_REAL_PORTRAIT_GROUP_TYPE,
+    projectName: asset.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
+    createTime: asset.createdAt,
+    updateTime: asset.updatedAt || asset.createdAt,
   };
 }
 
@@ -310,7 +372,121 @@ function mergeVirtualPortraitGroupsWithLocalAssets(
     });
 }
 
+function mergeRealPortraitGroupsWithLocalAssets(
+  groups: RealPortraitAssetGroupView[],
+  localAssets: RealPortraitLibraryAsset[],
+) {
+  const localAssetByAssetId = new Map<string, RealPortraitLibraryAsset>();
+  localAssets.forEach((item) => {
+    if (item.assetId) {
+      localAssetByAssetId.set(item.assetId, item);
+    }
+  });
+
+  const groupMap = new Map<string, RealPortraitAssetGroupView>();
+  const ensureGroupView = (group: ArkAssetGroup) => {
+    const groupId = String(group.id || '').trim();
+    const existing = groupMap.get(groupId);
+    if (existing) {
+      return existing;
+    }
+
+    const nextGroupView: RealPortraitAssetGroupView = {
+      group: { ...group },
+      assets: [],
+      assetCount: 0,
+      coverImageUrl: '',
+    };
+    groupMap.set(groupId, nextGroupView);
+    return nextGroupView;
+  };
+
+  groups.forEach((groupView) => {
+    const nextGroupView = ensureGroupView(groupView.group);
+    nextGroupView.group = { ...nextGroupView.group, ...groupView.group };
+    nextGroupView.coverImageUrl = groupView.coverImageUrl || nextGroupView.coverImageUrl;
+
+    const assetMap = new Map(nextGroupView.assets.map((asset) => [asset.id, asset]));
+    groupView.assets.forEach((asset) => {
+      const localAsset = localAssetByAssetId.get(asset.id);
+      assetMap.set(asset.id, {
+        ...asset,
+        name: asset.name || localAsset?.description || asset.id,
+        groupId: asset.groupId || localAsset?.groupId || '',
+        projectName: asset.projectName || localAsset?.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
+        url: asset.url || localAsset?.sourceUrl || localAsset?.imageUrl || '',
+        status: normalizeArkAssetStatus(asset.status || localAsset?.status),
+        createTime: asset.createTime || localAsset?.createdAt || '',
+        updateTime: asset.updateTime || localAsset?.updatedAt || localAsset?.createdAt || '',
+      });
+    });
+    nextGroupView.assets = Array.from(assetMap.values());
+  });
+
+  localAssets.forEach((localAsset) => {
+    const placeholderGroup = buildRealPortraitPlaceholderGroup(localAsset);
+    const nextGroupView = ensureGroupView(placeholderGroup);
+    nextGroupView.group = {
+      ...placeholderGroup,
+      ...nextGroupView.group,
+      name: nextGroupView.group.name || placeholderGroup.name,
+      title: nextGroupView.group.title || nextGroupView.group.name || placeholderGroup.title,
+      projectName: nextGroupView.group.projectName || placeholderGroup.projectName,
+    };
+
+    const assetMap = new Map(nextGroupView.assets.map((asset) => [asset.id, asset]));
+    const existingAsset = assetMap.get(localAsset.assetId);
+    const localOnlyAsset = buildArkAssetFromRealPortraitLibraryAsset(localAsset);
+    assetMap.set(localAsset.assetId, existingAsset
+      ? {
+          ...localOnlyAsset,
+          ...existingAsset,
+          name: existingAsset.name || localOnlyAsset.name,
+          groupId: existingAsset.groupId || localOnlyAsset.groupId,
+          projectName: existingAsset.projectName || localOnlyAsset.projectName,
+          url: existingAsset.url || localOnlyAsset.url,
+          status: normalizeArkAssetStatus(existingAsset.status || localOnlyAsset.status),
+          createTime: existingAsset.createTime || localOnlyAsset.createTime,
+          updateTime: existingAsset.updateTime || localOnlyAsset.updateTime,
+        }
+      : localOnlyAsset);
+    nextGroupView.assets = Array.from(assetMap.values());
+  });
+
+  return Array.from(groupMap.values())
+    .map((groupView) => {
+      const assets = Array.from(new Map(groupView.assets.map((asset) => [asset.id, asset])).values())
+        .sort(compareArkAssetsByNewest);
+      const coverAsset = assets[0] || null;
+      const localCoverAsset = coverAsset ? localAssetByAssetId.get(coverAsset.id) : null;
+
+      return {
+        ...groupView,
+        assets,
+        assetCount: assets.length,
+        coverImageUrl: localCoverAsset?.imageUrl || groupView.coverImageUrl || coverAsset?.url || '',
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = left.group.updateTime || left.group.createTime || '';
+      const rightTime = right.group.updateTime || right.group.createTime || '';
+      return rightTime.localeCompare(leftTime);
+    });
+}
+
 function removeVirtualPortraitAssetFromGroupViews(groups: VirtualPortraitAssetGroupView[], assetId: string) {
+  return groups.map((groupView) => {
+    const assets = groupView.assets.filter((item) => item.id !== assetId);
+    return {
+      ...groupView,
+      assets,
+      assetCount: assets.length,
+      coverImageUrl: assets[0]?.url || '',
+    };
+  });
+}
+
+function removeRealPortraitAssetFromGroupViews(groups: RealPortraitAssetGroupView[], assetId: string) {
   return groups.map((groupView) => {
     const assets = groupView.assets.filter((item) => item.id !== assetId);
     return {
@@ -355,7 +531,18 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   const [realPortraitError, setRealPortraitError] = useState('');
   const [realPortraitFeedback, setRealPortraitFeedback] = useState('');
   const [isAddRealPortraitModalOpen, setIsAddRealPortraitModalOpen] = useState(false);
+  const [isRealGroupModalOpen, setIsRealGroupModalOpen] = useState(false);
+  const [realPortraitGroups, setRealPortraitGroups] = useState<RealPortraitAssetGroupView[]>([]);
+  const [selectedRealPortraitGroupId, setSelectedRealPortraitGroupId] = useState('');
+  const [isLoadingRealPortraitGroups, setIsLoadingRealPortraitGroups] = useState(false);
   const [isSavingRealPortraitAsset, setIsSavingRealPortraitAsset] = useState(false);
+  const [isCreatingRealPortraitSession, setIsCreatingRealPortraitSession] = useState(false);
+  const [isOpeningRealPortraitValidation, setIsOpeningRealPortraitValidation] = useState(false);
+  const [isQueryingRealPortraitGroup, setIsQueryingRealPortraitGroup] = useState(false);
+  const [realPortraitUploadStep, setRealPortraitUploadStep] = useState('');
+  const [realAssetDetail, setRealAssetDetail] = useState<{ asset: ArkAsset; localAsset?: RealPortraitLibraryAsset | null } | null>(null);
+  const [isConfirmingRealAssetDelete, setIsConfirmingRealAssetDelete] = useState(false);
+  const [deletingRealAssetId, setDeletingRealAssetId] = useState('');
   const [realPortraitDraft, setRealPortraitDraft] = useState<RealPortraitDraftState>(EMPTY_REAL_PORTRAIT_DRAFT);
   const [realPortraitDraftError, setRealPortraitDraftError] = useState('');
   const [virtualPortraitAssets, setVirtualPortraitAssets] = useState<VirtualPortraitLibraryAsset[]>([]);
@@ -373,6 +560,10 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   const [isConfirmingVirtualAssetDelete, setIsConfirmingVirtualAssetDelete] = useState(false);
   const [deletingVirtualAssetId, setDeletingVirtualAssetId] = useState('');
   const [deletingVirtualGroupId, setDeletingVirtualGroupId] = useState('');
+  const [deletingRealGroupId, setDeletingRealGroupId] = useState('');
+  const [editingAssetGroup, setEditingAssetGroup] = useState<AssetGroupEditDraft | null>(null);
+  const [assetGroupEditError, setAssetGroupEditError] = useState('');
+  const [isUpdatingAssetGroup, setIsUpdatingAssetGroup] = useState(false);
   const [virtualPortraitUploadStep, setVirtualPortraitUploadStep] = useState('');
   const [virtualPortraitDraft, setVirtualPortraitDraft] = useState<VirtualPortraitDraftState>(EMPTY_VIRTUAL_PORTRAIT_DRAFT);
   const [virtualGroupDraft, setVirtualGroupDraft] = useState<VirtualPortraitGroupDraftState>(EMPTY_VIRTUAL_GROUP_DRAFT);
@@ -389,6 +580,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   const browserDirectoryInputRef = useRef<HTMLInputElement | null>(null);
   const realPortraitUploadInputRef = useRef<HTMLInputElement | null>(null);
   const virtualPortraitUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const realPortraitValidationFlowRef = useRef(0);
 
   const refreshPortraitConfig = async () => {
     setIsRefreshingConfig(true);
@@ -408,11 +600,91 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     try {
       const nextAssets = await fetchRealPortraitLibraryAssets();
       setRealPortraitAssets(nextAssets);
+      setRealPortraitGroups((currentGroups) => mergeRealPortraitGroupsWithLocalAssets(currentGroups, nextAssets));
     } catch (loadError: any) {
       console.error('Failed to load real portrait library assets:', loadError);
       setRealPortraitError(loadError?.message || '加载真人人像资产失败');
     } finally {
       setIsLoadingRealPortraitAssets(false);
+    }
+  };
+
+  const refreshRealPortraitGroups = async () => {
+    setIsLoadingRealPortraitGroups(true);
+    setRealPortraitError('');
+    try {
+      const groups = await listArkAssetGroups({ groupType: ARK_REAL_PORTRAIT_GROUP_TYPE });
+      const nextGroups = await Promise.all(groups.map(async (group) => {
+        const assets = await listArkAssets({
+          groupId: group.id,
+          groupType: ARK_REAL_PORTRAIT_GROUP_TYPE,
+          projectName: group.projectName,
+        });
+
+        return {
+          group,
+          assets,
+          assetCount: assets.length,
+          coverImageUrl: assets[0]?.url || '',
+        };
+      }));
+      const latestAssetByAssetId = new Map<string, ArkAsset>();
+      nextGroups.forEach((groupView) => {
+        groupView.assets.forEach((asset) => {
+          latestAssetByAssetId.set(asset.id, asset);
+        });
+      });
+
+      let didUpdateLocalAssets = false;
+      const nextLocalAssetsDraft = realPortraitAssets.map((item) => {
+        const latest = latestAssetByAssetId.get(item.assetId);
+        if (!latest) {
+          return item;
+        }
+
+        const nextStatus = normalizeArkAssetStatus(latest.status || item.status);
+        const nextSourceUrl = latest.url || item.sourceUrl;
+        const nextGroupId = latest.groupId || item.groupId;
+        const nextProjectName = latest.projectName || item.projectName;
+        const hasChanged = nextStatus !== item.status
+          || nextSourceUrl !== item.sourceUrl
+          || nextGroupId !== item.groupId
+          || nextProjectName !== item.projectName;
+
+        if (!hasChanged) {
+          return item;
+        }
+
+        didUpdateLocalAssets = true;
+        return {
+          ...item,
+          status: nextStatus,
+          sourceUrl: nextSourceUrl,
+          groupId: nextGroupId,
+          projectName: nextProjectName,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+      const nextLocalAssets = didUpdateLocalAssets
+        ? await saveRealPortraitLibraryAssets(nextLocalAssetsDraft)
+        : realPortraitAssets;
+
+      if (didUpdateLocalAssets) {
+        setRealPortraitAssets(nextLocalAssets);
+      }
+
+      const mergedGroups = mergeRealPortraitGroupsWithLocalAssets(nextGroups, nextLocalAssets);
+      setRealPortraitGroups(mergedGroups);
+      if (selectedRealPortraitGroupId && !mergedGroups.some((item) => item.group.id === selectedRealPortraitGroupId)) {
+        setSelectedRealPortraitGroupId('');
+      }
+      setRealPortraitFeedback('已手动刷新真人人像分组和素材列表。');
+    } catch (loadError: any) {
+      console.error('Failed to load real portrait asset groups:', loadError);
+      setRealPortraitError(loadError?.message || '加载真人人像分组失败');
+    } finally {
+      setIsLoadingRealPortraitGroups(false);
     }
   };
 
@@ -641,7 +913,9 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   }, [data, filters]);
 
   const publicPortraitCount = filteredData.length;
-  const realPortraitCount = realPortraitAssets.length;
+  const realPortraitCount = realPortraitGroups.reduce((total, group) => total + group.assetCount, 0);
+  const realPortraitGroupCount = realPortraitGroups.length;
+  const isLoadingRealPortraitLibrary = isLoadingRealPortraitAssets || isLoadingRealPortraitGroups;
   const virtualPortraitCount = virtualPortraitGroups.reduce((total, group) => total + group.assetCount, 0);
   const virtualPortraitGroupCount = virtualPortraitGroups.length;
   const isLoadingVirtualPortraitLibrary = isLoadingVirtualPortraitAssets || isLoadingVirtualPortraitGroups;
@@ -657,6 +931,18 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     });
     return result;
   }, [virtualPortraitAssets]);
+  const realPortraitAssetByAssetId = useMemo(() => {
+    const result = new Map<string, RealPortraitLibraryAsset>();
+    realPortraitAssets.forEach((item) => {
+      if (item.assetId) {
+        result.set(item.assetId, item);
+      }
+    });
+    return result;
+  }, [realPortraitAssets]);
+  const selectedRealPortraitGroup = useMemo(() => (
+    realPortraitGroups.find((item) => item.group.id === selectedRealPortraitGroupId) || null
+  ), [selectedRealPortraitGroupId, realPortraitGroups]);
   const selectedVirtualPortraitGroup = useMemo(() => (
     virtualPortraitGroups.find((item) => item.group.id === selectedVirtualPortraitGroupId) || null
   ), [selectedVirtualPortraitGroupId, virtualPortraitGroups]);
@@ -672,8 +958,12 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   };
 
   const resetRealPortraitDraft = () => {
+    realPortraitValidationFlowRef.current += 1;
+    setIsOpeningRealPortraitValidation(false);
+    setIsQueryingRealPortraitGroup(false);
     setRealPortraitDraft(EMPTY_REAL_PORTRAIT_DRAFT);
     setRealPortraitDraftError('');
+    setRealPortraitUploadStep('');
   };
 
   const handleRealPortraitFile = async (file: File) => {
@@ -686,6 +976,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
       ...prev,
       imageDataUrl,
       fileNameHint: file.name || prev.fileNameHint,
+      file,
     }));
     setRealPortraitDraftError('');
   };
@@ -726,9 +1017,164 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   };
 
   const handleOpenAddRealPortraitModal = () => {
+    if (!selectedRealPortraitGroup?.group.id) {
+      setRealPortraitError('请先进入一个真人人像分组，再上传素材资产。');
+      return;
+    }
+    const group = selectedRealPortraitGroup.group;
     setRealPortraitFeedback('');
     resetRealPortraitDraft();
+    setRealPortraitDraft((prev) => ({
+      ...prev,
+      projectName: group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
+      groupId: group.id,
+    }));
     setIsAddRealPortraitModalOpen(true);
+  };
+
+  const handleOpenRealGroupModal = () => {
+    setRealPortraitFeedback('');
+    resetRealPortraitDraft();
+    setIsRealGroupModalOpen(true);
+  };
+
+  const handleStartRealPortraitValidation = async () => {
+    const projectName = realPortraitDraft.projectName.trim() || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME;
+
+    setIsCreatingRealPortraitSession(true);
+    realPortraitValidationFlowRef.current += 1;
+    const flowId = realPortraitValidationFlowRef.current;
+    const isCurrentValidationFlow = () => realPortraitValidationFlowRef.current === flowId;
+    setIsOpeningRealPortraitValidation(false);
+    setIsQueryingRealPortraitGroup(false);
+    setRealPortraitDraftError('');
+    setRealPortraitUploadStep('正在生成 App 内真人认证链接...');
+
+    try {
+      const session = await createRealPortraitValidationSession({
+        callbackURL: REAL_PORTRAIT_VALIDATION_CALLBACK_URL,
+        projectName,
+      });
+      if (!isCurrentValidationFlow()) {
+        return;
+      }
+
+      setRealPortraitDraft((prev) => ({
+        ...prev,
+        projectName,
+        bytedToken: session.bytedToken,
+        h5Link: session.h5Link,
+        groupId: '',
+      }));
+
+      if (typeof window.electronAPI?.openRealPortraitValidation !== 'function') {
+        throw new Error('当前环境缺少 Electron App 内认证能力。');
+      }
+
+      setIsCreatingRealPortraitSession(false);
+      setIsOpeningRealPortraitValidation(true);
+      setRealPortraitUploadStep('已打开 App 内真人认证窗口，请在 120 秒内完成认证。');
+
+      const result = await window.electronAPI.openRealPortraitValidation({
+        h5Link: session.h5Link,
+        callbackURL: session.callbackURL || REAL_PORTRAIT_VALIDATION_CALLBACK_URL,
+      });
+      if (!isCurrentValidationFlow()) {
+        return;
+      }
+
+      const returnedCallbackURL = String(result?.callbackURL || '').trim();
+      if (!returnedCallbackURL) {
+        setRealPortraitUploadStep('');
+        return;
+      }
+
+      const parsed = parseRealPortraitValidationCallback(returnedCallbackURL);
+      if (parsed.resultCode && parsed.resultCode !== '10000') {
+        setRealPortraitDraft((prev) => ({
+          ...prev,
+          bytedToken: parsed.bytedToken || prev.bytedToken,
+        }));
+        setRealPortraitDraftError(`真人认证未通过，resultCode：${parsed.resultCode}`);
+        setRealPortraitUploadStep('');
+        return;
+      }
+
+      const bytedToken = parsed.bytedToken || session.bytedToken;
+      if (!bytedToken) {
+        setRealPortraitDraftError('认证回跳地址中缺少 BytedToken。');
+        setRealPortraitUploadStep('');
+        return;
+      }
+
+      setIsOpeningRealPortraitValidation(false);
+      setIsQueryingRealPortraitGroup(true);
+      setRealPortraitUploadStep('真人认证已通过，正在查询 GroupId...');
+      const validationResult = await getRealPortraitValidationResult({
+        bytedToken,
+        projectName,
+      });
+      if (!isCurrentValidationFlow()) {
+        return;
+      }
+
+      setRealPortraitDraft((prev) => ({
+        ...prev,
+        projectName: validationResult.projectName,
+        bytedToken,
+        groupId: validationResult.groupId,
+      }));
+      setRealPortraitUploadStep(`已获取素材组 GroupId：${validationResult.groupId}`);
+    } catch (validationError: any) {
+      if (!isCurrentValidationFlow()) {
+        return;
+      }
+      console.error('Failed to complete real portrait validation:', validationError);
+      setRealPortraitDraftError(validationError?.message || '真人认证失败。');
+      setRealPortraitUploadStep('');
+    } finally {
+      if (isCurrentValidationFlow()) {
+        setIsCreatingRealPortraitSession(false);
+        setIsOpeningRealPortraitValidation(false);
+        setIsQueryingRealPortraitGroup(false);
+      }
+    }
+  };
+
+  const handleSaveRealPortraitGroup = async () => {
+    const groupId = realPortraitDraft.groupId.trim();
+    const projectName = realPortraitDraft.projectName.trim() || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME;
+
+    if (!groupId) {
+      setRealPortraitDraftError('请先完成真人认证并查询 GroupId。');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const group: ArkAssetGroup = {
+      id: groupId,
+      name: groupId,
+      title: groupId,
+      description: '',
+      groupType: ARK_REAL_PORTRAIT_GROUP_TYPE,
+      projectName,
+      createTime: now,
+      updateTime: now,
+    };
+
+    setRealPortraitGroups((currentGroups) => mergeRealPortraitGroupsWithLocalAssets([
+      {
+        group,
+        assets: [],
+        assetCount: 0,
+        coverImageUrl: '',
+      },
+      ...currentGroups.filter((item) => item.group.id !== group.id),
+    ], realPortraitAssets));
+    setSelectedRealPortraitGroupId(group.id);
+    setRealPortraitFeedback(`已创建真人人像分组：${group.id}`);
+    setIsRealGroupModalOpen(false);
+    resetRealPortraitDraft();
   };
 
   const resetVirtualPortraitDraft = () => {
@@ -937,6 +1383,43 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     }
   };
 
+  const handleDeleteRealPortraitAsset = async (asset: ArkAsset) => {
+    const assetId = asset.id.trim();
+    if (!assetId) {
+      return;
+    }
+    if (!isConfirmingRealAssetDelete) {
+      setIsConfirmingRealAssetDelete(true);
+      return;
+    }
+
+    setDeletingRealAssetId(assetId);
+    setRealPortraitError('');
+
+    try {
+      await deleteArkAsset({
+        assetId,
+        projectName: asset.projectName || selectedRealPortraitGroup?.group.projectName,
+      });
+      const nextLocalAssets = await saveRealPortraitLibraryAssets(
+        realPortraitAssets.filter((item) => item.assetId !== assetId),
+      );
+      setRealPortraitAssets(nextLocalAssets);
+      setRealPortraitGroups((currentGroups) => mergeRealPortraitGroupsWithLocalAssets(
+        removeRealPortraitAssetFromGroupViews(currentGroups, assetId),
+        nextLocalAssets,
+      ));
+      setRealPortraitFeedback('已删除真人人像素材资产。');
+      setRealAssetDetail(null);
+      setIsConfirmingRealAssetDelete(false);
+    } catch (deleteError: any) {
+      console.error('Failed to delete real portrait asset:', deleteError);
+      setRealPortraitError(deleteError?.message || '删除真人人像素材资产失败。');
+    } finally {
+      setDeletingRealAssetId('');
+    }
+  };
+
   const handleDeleteVirtualPortraitAsset = async (asset: ArkAsset) => {
     const assetId = asset.id.trim();
     if (!assetId) {
@@ -974,6 +1457,89 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     }
   };
 
+  const handleOpenAssetGroupEditor = (target: AssetGroupEditTarget, group: ArkAssetGroup) => {
+    setAssetGroupEditError('');
+    setEditingAssetGroup({
+      target,
+      groupId: group.id,
+      name: group.name || group.title || '',
+      description: group.description || '',
+      projectName: group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME,
+    });
+  };
+
+  const handleSaveAssetGroupInfo = async () => {
+    if (!editingAssetGroup) {
+      return;
+    }
+
+    const name = editingAssetGroup.name.replace(/\s+/gu, ' ').trim();
+    const description = editingAssetGroup.description.trim();
+    const projectName = editingAssetGroup.projectName.trim() || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME;
+
+    if (!name) {
+      setAssetGroupEditError('请填写 Asset Group 名称。');
+      return;
+    }
+    if (name.length > 64) {
+      setAssetGroupEditError('Asset Group 名称不能超过 64 个字符。');
+      return;
+    }
+    if (description.length > 300) {
+      setAssetGroupEditError('Asset Group 描述不能超过 300 个字符。');
+      return;
+    }
+
+    setIsUpdatingAssetGroup(true);
+    setAssetGroupEditError('');
+    if (editingAssetGroup.target === 'real') {
+      setRealPortraitError('');
+    } else {
+      setVirtualPortraitError('');
+    }
+
+    try {
+      await updateArkAssetGroup({
+        groupId: editingAssetGroup.groupId,
+        name,
+        description,
+        projectName,
+      });
+
+      const updateGroup = (group: ArkAssetGroup): ArkAssetGroup => ({
+        ...group,
+        name,
+        title: name,
+        description,
+        projectName,
+        updateTime: new Date().toISOString(),
+      });
+
+      if (editingAssetGroup.target === 'real') {
+        setRealPortraitGroups((currentGroups) => currentGroups.map((groupView) => (
+          groupView.group.id === editingAssetGroup.groupId
+            ? { ...groupView, group: updateGroup(groupView.group) }
+            : groupView
+        )));
+        setRealPortraitFeedback(`已更新真人人像分组「${name}」。`);
+      } else {
+        setVirtualPortraitGroups((currentGroups) => currentGroups.map((groupView) => (
+          groupView.group.id === editingAssetGroup.groupId
+            ? { ...groupView, group: updateGroup(groupView.group) }
+            : groupView
+        )));
+        setVirtualPortraitFeedback(`已更新素材资产组合「${name}」。`);
+      }
+
+      setEditingAssetGroup(null);
+    } catch (updateError: any) {
+      console.error('Failed to update portrait asset group:', updateError);
+      setAssetGroupEditError(updateError?.message || '更新 Asset Group 信息失败。');
+    } finally {
+      setIsUpdatingAssetGroup(false);
+    }
+  };
+
   const handleDeleteVirtualPortraitGroup = async (groupView: VirtualPortraitAssetGroupView) => {
     const group = groupView.group;
     if (groupView.assetCount > 0) {
@@ -1008,6 +1574,40 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     }
   };
 
+  const handleDeleteRealPortraitGroup = async (groupView: RealPortraitAssetGroupView) => {
+    const group = groupView.group;
+    if (groupView.assetCount > 0) {
+      setRealPortraitError('请先删除该分组下的全部素材资产，再删除真人人像分组。');
+      return;
+    }
+
+    const groupName = group.name || group.title || group.id;
+    const confirmed = window.confirm(`确定删除真人人像分组「${groupName}」吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingRealGroupId(group.id);
+    setRealPortraitError('');
+
+    try {
+      await deleteArkAssetGroup({
+        groupId: group.id,
+        projectName: group.projectName,
+      });
+      setRealPortraitFeedback(`已删除真人人像分组「${groupName}」`);
+      if (selectedRealPortraitGroupId === group.id) {
+        setSelectedRealPortraitGroupId('');
+      }
+      setRealPortraitGroups((currentGroups) => currentGroups.filter((item) => item.group.id !== group.id));
+    } catch (deleteError: any) {
+      console.error('Failed to delete real portrait asset group:', deleteError);
+      setRealPortraitError(deleteError?.message || '删除真人人像分组失败。');
+    } finally {
+      setDeletingRealGroupId('');
+    }
+  };
+
   const resetSeedreamPortraitDraft = () => {
     setSeedreamPortraitDraft(EMPTY_SEEDREAM_PORTRAIT_DRAFT);
     setSeedreamPortraitDraftError('');
@@ -1021,8 +1621,11 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
 
   const handleSaveRealPortraitAsset = async () => {
     const description = realPortraitDraft.description.trim();
-    const assetId = realPortraitDraft.assetId.trim();
+    let assetId = realPortraitDraft.assetId.trim();
+    const projectName = realPortraitDraft.projectName.trim() || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME;
+    const groupId = realPortraitDraft.groupId.trim();
     const imageDataUrl = realPortraitDraft.imageDataUrl.trim();
+    const file = realPortraitDraft.file;
 
     if (!description) {
       setRealPortraitDraftError('请填写描述。');
@@ -1032,8 +1635,12 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
       setRealPortraitDraftError('请先粘贴或上传图片。');
       return;
     }
-    if (!assetId) {
-      setRealPortraitDraftError('请填写 assetId。');
+    if (!assetId && !groupId) {
+      setRealPortraitDraftError('请先完成真人认证并查询 GroupId，或手动填写已有 assetId。');
+      return;
+    }
+    if (!assetId && !file) {
+      setRealPortraitDraftError('自动创建 Ark 素材资产需要上传原始图片文件，请重新选择或粘贴图片。');
       return;
     }
 
@@ -1041,6 +1648,20 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     setRealPortraitDraftError('');
 
     try {
+      let uploadedRealPortrait: Awaited<ReturnType<typeof uploadRealPortraitAsset>> | null = null;
+      if (!assetId) {
+        setRealPortraitUploadStep('上传图片到 TOS 并调用 Ark CreateAsset...');
+        uploadedRealPortrait = await uploadRealPortraitAsset({
+          file: file!,
+          description,
+          groupId,
+          projectName,
+          initialStatusWaitMs: 0,
+        });
+        assetId = uploadedRealPortrait.asset.id;
+      }
+
+      setRealPortraitUploadStep('保存本地预览...');
       const recordId = crypto.randomUUID?.() || `real-portrait-${Date.now()}`;
       const savedFile = await saveMediaToAssetLibrary({
         sourceUrl: imageDataUrl,
@@ -1056,21 +1677,35 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
         description,
         assetId,
         imageUrl: savedFile.url,
+        groupId: uploadedRealPortrait?.groupId || groupId,
+        projectName,
+        status: uploadedRealPortrait ? normalizeArkAssetStatus(uploadedRealPortrait.asset.status) : '',
+        sourceUrl: uploadedRealPortrait?.uploadedUrl || '',
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       const nextAssets = await saveRealPortraitLibraryAssets([nextAsset, ...realPortraitAssets]);
 
       setRealPortraitAssets(nextAssets);
+      setRealPortraitGroups((currentGroups) => mergeRealPortraitGroupsWithLocalAssets(currentGroups, nextAssets));
       setRealPortraitError('');
-      setRealPortraitFeedback(`已新增真人人像资产「${description}」`);
+      setRealPortraitFeedback(
+        uploadedRealPortrait
+          ? `已创建并新增真人人像资产「${description}」，assetId：${assetId}`
+          : `已新增真人人像资产「${description}」`,
+      );
       setActiveTab('real');
       setIsAddRealPortraitModalOpen(false);
+      if (groupId) {
+        setSelectedRealPortraitGroupId(groupId);
+      }
       resetRealPortraitDraft();
     } catch (saveError: any) {
       console.error('Failed to save real portrait asset:', saveError);
       setRealPortraitDraftError(saveError?.message || '保存真人人像资产失败。');
     } finally {
       setIsSavingRealPortraitAsset(false);
+      setRealPortraitUploadStep('');
     }
   };
 
@@ -1285,7 +1920,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                 {activeTab === 'public'
                   ? loading ? '加载中...' : `平台公开 ${publicPortraitCount} 人`
                   : activeTab === 'real'
-                    ? isLoadingRealPortraitAssets ? '加载中...' : `真人人像 ${realPortraitCount} 人`
+                    ? isLoadingRealPortraitLibrary ? '加载中...' : `真人分组 ${realPortraitGroupCount} 组 / ${realPortraitCount} 张`
                     : activeTab === 'virtualUpload'
                       ? isLoadingVirtualPortraitLibrary ? '加载中...' : `虚拟组合 ${virtualPortraitGroupCount} 组 / ${virtualPortraitCount} 张`
                       : isLoadingSeedreamPortraitAssets ? '加载中...' : `Seedream ${seedreamPortraitCount} 张`}
@@ -1299,7 +1934,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
         <div className="flex flex-wrap items-center gap-3">
           <div className={`inline-flex gap-1.5 rounded-[1.35rem] border p-1 ${secondaryButtonClass}`}>
             {([
-              { key: 'real', label: '真人人像', count: realPortraitCount },
+              { key: 'real', label: '真人人像', count: realPortraitGroupCount },
               { key: 'virtualUpload', label: '虚拟人像上传', count: virtualPortraitGroupCount },
               { key: 'seedream', label: 'Seedream 生成', count: seedreamPortraitCount },
               { key: 'public', label: '平台公开', count: publicPortraitCount },
@@ -1465,20 +2100,67 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
           <div className="space-y-5">
             <StudioPanel className="flex flex-wrap items-start justify-between gap-4 p-5" tone="soft">
               <div>
-                <div className="studio-eyebrow">Real Portraits</div>
-                <h2 className="mt-2 text-xl font-semibold text-[var(--studio-text)]">真人人像资产</h2>
-                <p className={`mt-2 max-w-3xl text-sm leading-6 ${dimTextClass}`}>
-                  手动维护可复用的真人参考图，获取网址:https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement。
+                <div className="studio-eyebrow">{selectedRealPortraitGroup ? 'Real Portrait Group' : 'Real Portrait Groups'}</div>
+                <h2 className="mt-2 text-xl font-semibold text-[var(--studio-text)]">
+                  {selectedRealPortraitGroup
+                    ? (selectedRealPortraitGroup.group.name || selectedRealPortraitGroup.group.title || selectedRealPortraitGroup.group.id)
+                    : '真人人像素材分组'}
+                </h2>
+                <p className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
+                  真人分组由 H5 真人认证创建；进入分组后可向该真人继续上传同人资产。
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleOpenAddRealPortraitModal}
-                className="studio-button studio-button-primary px-4"
-              >
-                <Plus className="h-4 w-4" />
-                添加真人人像资产
-              </button>
+              <div className="flex flex-wrap gap-3">
+                {selectedRealPortraitGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRealPortraitGroupId('')}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    返回分组列表
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void refreshRealPortraitGroups()}
+                  disabled={isLoadingRealPortraitGroups}
+                  className="studio-button studio-button-secondary px-4"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingRealPortraitGroups ? 'animate-spin' : ''}`} />
+                  手动刷新
+                </button>
+                {selectedRealPortraitGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAssetGroupEditor('real', selectedRealPortraitGroup.group)}
+                    disabled={isUpdatingAssetGroup}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    更新分组信息
+                  </button>
+                ) : null}
+                {selectedRealPortraitGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteRealPortraitGroup(selectedRealPortraitGroup)}
+                    disabled={selectedRealPortraitGroup.assetCount > 0 || deletingRealGroupId === selectedRealPortraitGroup.group.id}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    删除分组
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={selectedRealPortraitGroup ? handleOpenAddRealPortraitModal : handleOpenRealGroupModal}
+                  className="studio-button studio-button-primary px-4"
+                >
+                  {selectedRealPortraitGroup ? <Upload className="h-4 w-4" /> : <FolderPlus className="h-4 w-4" />}
+                  {selectedRealPortraitGroup ? '上传素材资产' : '创建真人分组'}
+                </button>
+              </div>
             </StudioPanel>
 
             {realPortraitFeedback ? (
@@ -1493,7 +2175,24 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
               </div>
             ) : null}
 
-            {isLoadingRealPortraitAssets ? (
+            {selectedRealPortraitGroup ? (
+              <StudioPanel className="grid gap-3 p-4 md:grid-cols-3" tone="soft">
+                <div>
+                  <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${dimTextClass}`}>Group ID</div>
+                  <div className="mt-2 break-all font-mono text-xs text-[var(--studio-text)]">{selectedRealPortraitGroup.group.id}</div>
+                </div>
+                <div>
+                  <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${dimTextClass}`}>ProjectName</div>
+                  <div className="mt-2 text-sm text-[var(--studio-text)]">{selectedRealPortraitGroup.group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME}</div>
+                </div>
+                <div>
+                  <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${dimTextClass}`}>Assets</div>
+                  <div className="mt-2 text-sm text-[var(--studio-text)]">{selectedRealPortraitGroup.assetCount} 个素材</div>
+                </div>
+              </StudioPanel>
+            ) : null}
+
+            {isLoadingRealPortraitLibrary ? (
               <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {Array.from({ length: 10 }).map((_, index) => (
                   <div key={index} className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-2xl border ${skeletonClass}`}>
@@ -1501,53 +2200,166 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                   </div>
                 ))}
               </div>
-            ) : realPortraitAssets.length === 0 ? (
+            ) : !selectedRealPortraitGroup && realPortraitGroups.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] py-20">
                 <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
-                  <Users className="h-6 w-6 text-[var(--studio-muted)]" />
+                  <FolderOpen className="h-6 w-6 text-[var(--studio-muted)]" />
                 </span>
-                <p className="text-lg font-medium text-[var(--studio-text)]">真人人像库还是空的</p>
-                <p className="mt-2 text-sm text-[var(--studio-muted)]">先添加一张带 `assetId` 的真人参考图，后续就能在任务里直接选用。</p>
+                <p className="text-lg font-medium text-[var(--studio-text)]">还没有真人人像分组</p>
+                <p className="mt-2 text-sm text-[var(--studio-muted)]">先完成真人认证创建分组，再进入分组上传该真人的素材。</p>
               </div>
+            ) : selectedRealPortraitGroup ? (
+              selectedRealPortraitGroup.assets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] py-20">
+                  <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                    <Upload className="h-6 w-6 text-[var(--studio-muted)]" />
+                  </span>
+                  <p className="text-lg font-medium text-[var(--studio-text)]">该真人分组还没有素材</p>
+                  <p className="mt-2 text-sm text-[var(--studio-muted)]">上传通过人脸一致性校验的图片后，状态 Active 即可选择使用。</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+                  {selectedRealPortraitGroup.assets.map((asset) => {
+                    const localAsset = realPortraitAssetByAssetId.get(asset.id);
+                    const imageUrl = localAsset?.imageUrl || asset.url;
+                    const description = localAsset?.description || asset.name || asset.id;
+                    const status = normalizeArkAssetStatus(asset.status);
+                    const isActive = isArkAssetActiveStatus(status);
+                    const isFailed = isArkAssetFailedStatus(status);
+                    const statusClass = isActive
+                      ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
+                      : isFailed
+                        ? 'border-red-500/25 bg-red-500/15 text-red-200'
+                        : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+
+                    return (
+                      <motion.div
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        key={asset.id}
+                        className={cx(
+                          'group overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl',
+                          'cursor-pointer border-transparent shadow-lg hover:border-sky-500',
+                        )}
+                        onClick={() => {
+                          setRealAssetDetail({ asset, localAsset });
+                          setIsConfirmingRealAssetDelete(false);
+                        }}
+                      >
+                        <div className="relative aspect-[3/4] overflow-hidden">
+                          {imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt={description}
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-black/10 text-sm text-[var(--studio-muted)]">无预览</div>
+                          )}
+                          <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col gap-2">
+                            <span className={`w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
+                              {status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 border-t border-[var(--studio-border)] px-3 py-3">
+                          <h4 className="line-clamp-2 text-sm font-semibold text-[var(--studio-text)] md:text-base">
+                            {description}
+                          </h4>
+                          <p className={`line-clamp-1 font-mono text-[10px] md:text-xs ${dimTextClass}`}>
+                            {asset.id}
+                          </p>
+                          <p className={`text-[10px] md:text-xs ${dimTextClass}`}>
+                            {asset.createTime ? new Date(asset.createTime).toLocaleString() : '创建时间未知'}
+                          </p>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )
             ) : (
               <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
-                {realPortraitAssets.map((item) => (
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    key={item.id}
-                    className={cx(
-                      'group overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl',
-                      onSelect
-                        ? 'cursor-pointer border-transparent shadow-lg hover:border-sky-500'
-                        : 'border-[var(--studio-border)]',
-                    )}
-                    onClick={onSelect ? () => handleSelectPortrait(item.imageUrl, item.assetId, { description: item.description, submitMode: 'auto' }) : undefined}
-                  >
-                    <div className="relative aspect-[3/4] overflow-hidden">
-                      <img
-                        src={item.imageUrl}
-                        alt={item.description}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                        loading="lazy"
-                      />
-
-                      <div className="pointer-events-none absolute left-3 top-3 max-w-[calc(100%-1.5rem)] translate-y-1 rounded-full border border-black/10 bg-black/72 px-2.5 py-1 text-[10px] font-medium text-cyan-50 opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.35)] backdrop-blur-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
-                        <span className="block truncate">asset://{item.assetId}</span>
+                {realPortraitGroups.map((groupView) => {
+                  const group = groupView.group;
+                  const groupName = group.name || group.title || group.id;
+                  return (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      key={group.id}
+                      className="group overflow-hidden rounded-xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] shadow-lg transition-colors hover:border-sky-500 md:rounded-2xl"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRealPortraitGroupId(group.id)}
+                        className="block w-full text-left"
+                      >
+                        <div className="relative aspect-[3/4] overflow-hidden">
+                          {groupView.coverImageUrl ? (
+                            <img
+                              src={groupView.coverImageUrl}
+                              alt={groupName}
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-black/10 text-sm text-[var(--studio-muted)]">暂无素材</div>
+                          )}
+                        </div>
+                        <div className="space-y-1.5 border-t border-[var(--studio-border)] px-3 py-3">
+                          <h4 className="line-clamp-2 text-sm font-semibold text-[var(--studio-text)] md:text-base">
+                            {groupName}
+                          </h4>
+                          <p className={`line-clamp-1 text-[10px] md:text-xs ${dimTextClass}`}>
+                            {groupView.assetCount} 个素材
+                          </p>
+                          <p className={`line-clamp-1 text-[10px] md:text-xs ${dimTextClass}`}>
+                            {group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME}
+                          </p>
+                          <p className={`line-clamp-1 font-mono text-[10px] md:text-xs ${dimTextClass}`}>
+                            {group.id}
+                          </p>
+                        </div>
+                      </button>
+                      <div className="mt-2 space-y-2 border-t border-[var(--studio-border)] px-3 pb-3 pt-3">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenAssetGroupEditor('real', group);
+                          }}
+                          disabled={isUpdatingAssetGroup}
+                          className="studio-button studio-button-secondary w-full justify-center px-3 py-2 text-xs"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          更新分组信息
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteRealPortraitGroup(groupView);
+                          }}
+                          disabled={groupView.assetCount > 0 || deletingRealGroupId === group.id}
+                          className={cx(
+                            'inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-xs font-medium transition-colors',
+                            groupView.assetCount > 0 || deletingRealGroupId === group.id
+                              ? 'cursor-not-allowed border-[var(--studio-border)] text-[var(--studio-muted)] opacity-60'
+                              : secondaryButtonClass,
+                          )}
+                        >
+                          {deletingRealGroupId === group.id ? <img src="./assets/loading.gif" alt="" className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          {groupView.assetCount > 0 ? '需先清空素材' : '删除分组'}
+                        </button>
                       </div>
-                    </div>
-
-                    <div className="space-y-1.5 border-t border-[var(--studio-border)] px-3 py-3">
-                      <h4 className="line-clamp-2 text-sm font-semibold text-[var(--studio-text)] md:text-base">
-                        {item.description}
-                      </h4>
-                      <p className={`text-[10px] md:text-xs ${dimTextClass}`}>
-                        {new Date(item.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1585,6 +2397,17 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                   <RefreshCw className={`h-4 w-4 ${isLoadingVirtualPortraitGroups ? 'animate-spin' : ''}`} />
                   手动刷新
                 </button>
+                {selectedVirtualPortraitGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAssetGroupEditor('virtual', selectedVirtualPortraitGroup.group)}
+                    disabled={isUpdatingAssetGroup}
+                    className="studio-button studio-button-secondary px-4"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    更新组合信息
+                  </button>
+                ) : null}
                 {selectedVirtualPortraitGroup ? (
                   <button
                     type="button"
@@ -1770,7 +2593,19 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                           </p>
                         </div>
                       </button>
-                      <div className="mt-2 border-t border-[var(--studio-border)] px-3 pb-3 pt-3">
+                      <div className="mt-2 space-y-2 border-t border-[var(--studio-border)] px-3 pb-3 pt-3">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenAssetGroupEditor('virtual', group);
+                          }}
+                          disabled={isUpdatingAssetGroup}
+                          className="studio-button studio-button-secondary w-full justify-center px-3 py-2 text-xs"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          更新组合信息
+                        </button>
                         <button
                           type="button"
                           onClick={(event) => {
@@ -2346,6 +3181,290 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
       </StudioModal>
 
       <StudioModal
+        open={Boolean(editingAssetGroup)}
+        onClose={() => {
+          if (!isUpdatingAssetGroup) {
+            setEditingAssetGroup(null);
+            setAssetGroupEditError('');
+          }
+        }}
+        themeMode={resolvedThemeMode}
+        className="max-w-2xl overflow-hidden p-0"
+        closeOnOverlayClick={!isUpdatingAssetGroup}
+      >
+        {editingAssetGroup ? (
+          <div className="relative">
+            <div className="border-b border-[var(--studio-border)] px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="studio-eyebrow">Update Asset Group</div>
+                  <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">
+                    {editingAssetGroup.target === 'real' ? '更新真人人像分组信息' : '更新虚拟人像组合信息'}
+                  </h2>
+                  <p className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
+                    当前接口仅支持更新 Asset Group 的名称和描述。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isUpdatingAssetGroup) {
+                      setEditingAssetGroup(null);
+                      setAssetGroupEditError('');
+                    }
+                  }}
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${secondaryButtonClass}`}
+                  aria-label="关闭"
+                  disabled={isUpdatingAssetGroup}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-5 px-6 py-6">
+              <div className={`break-all rounded-2xl border p-3 font-mono text-xs leading-5 ${softPanelClass}`}>
+                GroupId: {editingAssetGroup.groupId}<br />
+                ProjectName: {editingAssetGroup.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME}
+              </div>
+
+              <label className="block">
+                <span className={`text-xs font-semibold uppercase tracking-[0.2em] ${dimTextClass}`}>Name</span>
+                <input
+                  value={editingAssetGroup.name}
+                  maxLength={64}
+                  onChange={(event) => {
+                    setEditingAssetGroup((current) => current ? { ...current, name: event.target.value } : current);
+                    setAssetGroupEditError('');
+                  }}
+                  placeholder="Asset Group 名称"
+                  className="studio-input mt-2"
+                />
+                <span className={`mt-1 block text-right text-[10px] ${dimTextClass}`}>{editingAssetGroup.name.length}/64</span>
+              </label>
+
+              <label className="block">
+                <span className={`text-xs font-semibold uppercase tracking-[0.2em] ${dimTextClass}`}>Description</span>
+                <textarea
+                  value={editingAssetGroup.description}
+                  maxLength={300}
+                  onChange={(event) => {
+                    setEditingAssetGroup((current) => current ? { ...current, description: event.target.value } : current);
+                    setAssetGroupEditError('');
+                  }}
+                  placeholder="Asset Group 描述"
+                  className="studio-textarea mt-2 min-h-28"
+                />
+                <span className={`mt-1 block text-right text-[10px] ${dimTextClass}`}>{editingAssetGroup.description.length}/300</span>
+              </label>
+
+              {assetGroupEditError ? (
+                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {assetGroupEditError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-[var(--studio-border)] px-6 py-5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isUpdatingAssetGroup) {
+                    setEditingAssetGroup(null);
+                    setAssetGroupEditError('');
+                  }
+                }}
+                disabled={isUpdatingAssetGroup}
+                className="studio-button studio-button-secondary px-4"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveAssetGroupInfo()}
+                disabled={isUpdatingAssetGroup}
+                className="studio-button studio-button-primary px-4"
+              >
+                {isUpdatingAssetGroup ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                保存更新
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </StudioModal>
+
+      <StudioModal
+        open={Boolean(realAssetDetail)}
+        onClose={() => {
+          if (!deletingRealAssetId) {
+            setRealAssetDetail(null);
+            setIsConfirmingRealAssetDelete(false);
+          }
+        }}
+        themeMode={resolvedThemeMode}
+        className="max-w-4xl overflow-hidden p-0"
+        closeOnOverlayClick={!deletingRealAssetId}
+      >
+        {realAssetDetail ? (() => {
+          const asset = realAssetDetail.asset;
+          const localAsset = realAssetDetail.localAsset || realPortraitAssetByAssetId.get(asset.id);
+          const imageUrl = localAsset?.imageUrl || asset.url;
+          const description = localAsset?.description || asset.name || asset.id;
+          const sourceUrl = asset.url || localAsset?.sourceUrl || '';
+          const status = normalizeArkAssetStatus(asset.status);
+          const isActive = isArkAssetActiveStatus(status);
+          const statusClass = isActive
+            ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
+            : isArkAssetFailedStatus(status)
+              ? 'border-red-500/25 bg-red-500/15 text-red-200'
+              : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+          const detailRows = [
+            ['assetId', asset.id],
+            ['状态', status],
+            ['素材名称', asset.name || '未命名'],
+            ['素材类型', asset.assetType || 'Image'],
+            ['GroupId', asset.groupId || selectedRealPortraitGroup?.group.id || ''],
+            ['ProjectName', asset.projectName || selectedRealPortraitGroup?.group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME],
+            ['创建时间', asset.createTime ? new Date(asset.createTime).toLocaleString() : '未知'],
+            ['更新时间', asset.updateTime ? new Date(asset.updateTime).toLocaleString() : '未知'],
+          ];
+
+          return (
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.22),transparent_58%)]" />
+              <div className="relative border-b border-[var(--studio-border)] px-6 py-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="studio-eyebrow">Real Asset Detail</div>
+                    <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">真人人像素材详情</h2>
+                    <p className={`mt-2 max-w-2xl text-sm leading-6 ${dimTextClass}`}>
+                      {description}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!deletingRealAssetId) {
+                        setRealAssetDetail(null);
+                        setIsConfirmingRealAssetDelete(false);
+                      }
+                    }}
+                    className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${secondaryButtonClass}`}
+                    aria-label="关闭"
+                    disabled={Boolean(deletingRealAssetId)}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid max-h-[74vh] gap-6 overflow-y-auto px-6 py-6 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
+                <div className="space-y-4">
+                  <div className="overflow-hidden rounded-3xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)]">
+                    <div className="relative flex min-h-[18rem] items-center justify-center bg-black/5">
+                      {imageUrl ? (
+                        <img src={imageUrl} alt={description} className="max-h-[30rem] w-full object-contain" />
+                      ) : (
+                        <div className="flex min-h-[18rem] w-full items-center justify-center text-sm text-[var(--studio-muted)]">无预览</div>
+                      )}
+                      <span className={`absolute left-3 top-3 w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
+                        {status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {onSelect && imageUrl && isActive ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSelectPortrait(imageUrl, asset.id, { description, submitMode: 'auto' });
+                        setRealAssetDetail(null);
+                      }}
+                      className="studio-button studio-button-primary w-full justify-center px-4"
+                    >
+                      使用该素材
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="space-y-4">
+                  <div className={`rounded-2xl border p-4 ${softPanelClass}`}>
+                    <div className="text-sm font-semibold text-[var(--studio-text)]">资产信息</div>
+                    <div className="mt-4 space-y-3">
+                      {detailRows.map(([label, value]) => (
+                        <div key={label} className="grid gap-2 border-b border-[var(--studio-border)] pb-3 last:border-b-0 last:pb-0 md:grid-cols-[8rem_minmax(0,1fr)]">
+                          <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${dimTextClass}`}>{label}</div>
+                          <div className="break-all font-mono text-xs leading-5 text-[var(--studio-text)]">{value || '-'}</div>
+                        </div>
+                      ))}
+                      <div className="grid gap-2 border-b border-[var(--studio-border)] pb-3 last:border-b-0 last:pb-0 md:grid-cols-[8rem_minmax(0,1fr)]">
+                        <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${dimTextClass}`}>源 URL</div>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="min-w-0 flex-1 truncate font-mono text-xs leading-5 text-[var(--studio-text)]" title={sourceUrl || '-'}>
+                            {sourceUrl || '-'}
+                          </div>
+                          {sourceUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => void navigator.clipboard?.writeText(sourceUrl)}
+                              className="inline-flex h-8 shrink-0 items-center justify-center rounded-xl border border-[var(--studio-border)] px-3 text-xs font-medium text-[var(--studio-text)] transition-colors hover:border-cyan-400/40 hover:bg-cyan-400/10"
+                            >
+                              复制
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isConfirmingRealAssetDelete ? (
+                    <div className={cx(
+                      'rounded-2xl border px-4 py-3 text-sm leading-6',
+                      resolvedThemeMode === 'light'
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : 'border-red-500/25 bg-red-500/10 text-red-100',
+                    )}>
+                      删除后该 assetId 将不可再用于新任务。再次点击“确认删除素材”执行删除。
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t border-[var(--studio-border)] px-6 py-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsConfirmingRealAssetDelete(false);
+                    setRealAssetDetail(null);
+                  }}
+                  disabled={Boolean(deletingRealAssetId)}
+                  className="studio-button studio-button-secondary px-4"
+                >
+                  关闭
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteRealPortraitAsset(asset)}
+                  disabled={Boolean(deletingRealAssetId)}
+                  className={cx(
+                    'inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium transition-colors',
+                    isConfirmingRealAssetDelete
+                      ? resolvedThemeMode === 'light'
+                        ? 'border-red-300 bg-red-50 text-red-700 hover:border-red-400 hover:bg-red-100'
+                        : 'border-red-500/40 bg-red-500/20 text-red-100 hover:bg-red-500/30'
+                      : secondaryButtonClass,
+                  )}
+                >
+                  {deletingRealAssetId ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
+                  {isConfirmingRealAssetDelete ? '确认删除素材' : '删除素材'}
+                </button>
+              </div>
+            </div>
+          );
+        })() : null}
+      </StudioModal>
+
+      <StudioModal
         open={Boolean(virtualAssetDetail)}
         onClose={() => {
           if (!deletingVirtualAssetId) {
@@ -2629,6 +3748,123 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
       </StudioModal>
 
       <StudioModal
+        open={isRealGroupModalOpen}
+        onClose={() => {
+          if (!isCreatingRealPortraitSession && !isOpeningRealPortraitValidation && !isQueryingRealPortraitGroup) {
+            setIsRealGroupModalOpen(false);
+            resetRealPortraitDraft();
+          }
+        }}
+        themeMode={resolvedThemeMode}
+        className="max-w-3xl overflow-hidden p-0"
+        closeOnOverlayClick={!isCreatingRealPortraitSession && !isOpeningRealPortraitValidation && !isQueryingRealPortraitGroup}
+      >
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.22),transparent_58%)]" />
+          <div className="relative border-b border-[var(--studio-border)] px-6 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="studio-eyebrow">Real Portrait Group</div>
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">创建真人人像分组</h2>
+                <p className={`mt-2 max-w-2xl text-sm leading-6 ${dimTextClass}`}>
+                  生成 H5 真人认证链接并完成认证，认证通过后会创建该真人对应的 Asset Group。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isCreatingRealPortraitSession && !isOpeningRealPortraitValidation && !isQueryingRealPortraitGroup) {
+                    setIsRealGroupModalOpen(false);
+                    resetRealPortraitDraft();
+                  }
+                }}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${secondaryButtonClass}`}
+                aria-label="关闭"
+                disabled={isCreatingRealPortraitSession || isOpeningRealPortraitValidation || isQueryingRealPortraitGroup}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-5 px-6 py-6">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">ProjectName</span>
+              <input
+                value={realPortraitDraft.projectName}
+                onChange={(event) => {
+                  setRealPortraitDraft((prev) => ({ ...prev, projectName: event.target.value }));
+                  setRealPortraitDraftError('');
+                }}
+                placeholder="default"
+                className="studio-input mt-2"
+              />
+            </label>
+
+            <StudioPanel className="space-y-3 p-4" tone="soft">
+              <div className="text-sm font-semibold text-[var(--studio-text)]">真人认证</div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleStartRealPortraitValidation()}
+                  disabled={isCreatingRealPortraitSession || isOpeningRealPortraitValidation || isQueryingRealPortraitGroup}
+                  className="studio-button studio-button-primary px-4"
+                >
+                  {isCreatingRealPortraitSession || isOpeningRealPortraitValidation || isQueryingRealPortraitGroup
+                    ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" />
+                    : <ExternalLink className="h-4 w-4" />}
+                  开始 App 内认证
+                </button>
+                {realPortraitDraft.groupId ? (
+                  <span className="break-all font-mono text-xs text-cyan-300">GroupId: {realPortraitDraft.groupId}</span>
+                ) : null}
+              </div>
+              <p className={`text-sm leading-6 ${dimTextClass}`}>
+                系统会自动生成 H5 认证链接，在 App 内窗口完成认证，并自动查询素材组 GroupId。
+              </p>
+            </StudioPanel>
+
+            {realPortraitDraftError ? (
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {realPortraitDraftError}
+              </div>
+            ) : null}
+
+            {realPortraitUploadStep ? (
+              <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+                {realPortraitUploadStep}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-[var(--studio-border)] px-6 py-5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isCreatingRealPortraitSession && !isOpeningRealPortraitValidation && !isQueryingRealPortraitGroup) {
+                  setIsRealGroupModalOpen(false);
+                  resetRealPortraitDraft();
+                }
+              }}
+              disabled={isCreatingRealPortraitSession || isOpeningRealPortraitValidation || isQueryingRealPortraitGroup}
+              className="studio-button studio-button-secondary px-4"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSaveRealPortraitGroup()}
+              disabled={!realPortraitDraft.groupId.trim() || isCreatingRealPortraitSession || isOpeningRealPortraitValidation || isQueryingRealPortraitGroup}
+              className="studio-button studio-button-primary px-4"
+            >
+              <FolderPlus className="h-4 w-4" />
+              保存真人分组
+            </button>
+          </div>
+        </div>
+      </StudioModal>
+
+      <StudioModal
         open={isAddRealPortraitModalOpen}
         onClose={() => {
           if (!isSavingRealPortraitAsset) {
@@ -2637,7 +3873,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
           }
         }}
         themeMode={resolvedThemeMode}
-        className="max-w-3xl overflow-hidden p-0"
+        className="max-w-5xl overflow-hidden p-0"
         closeOnOverlayClick={!isSavingRealPortraitAsset}
       >
         <div className="relative">
@@ -2646,9 +3882,9 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="studio-eyebrow">Real Portraits</div>
-                <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">添加真人人像资产</h2>
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--studio-text)]">上传真人人像资产</h2>
                 <p className={`mt-2 max-w-2xl text-sm leading-6 ${dimTextClass}`}>
-                  填写描述和 `assetId`，再粘贴或上传图片。保存后会写入现有资产库目录，后续任务可直接选择这张真人参考图。
+                  向当前真人分组上传同人素材。系统会调用 CreateAsset，并在入库时做人脸一致性校验。
                 </p>
               </div>
               <button
@@ -2683,25 +3919,17 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                 />
               </label>
 
-              <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">assetId</span>
-                <input
-                  value={realPortraitDraft.assetId}
-                  onChange={(event) => {
-                    setRealPortraitDraft((prev) => ({ ...prev, assetId: event.target.value }));
-                    setRealPortraitDraftError('');
-                  }}
-                  placeholder="请输入火山素材 assetId"
-                  className="studio-input mt-2"
-                />
-              </label>
-
               <StudioPanel className="space-y-3 p-4" tone="soft">
-                <div className="text-sm font-semibold text-[var(--studio-text)]">保存规则</div>
+                <div className="text-sm font-semibold text-[var(--studio-text)]">当前分组</div>
+                <div className={`break-all font-mono text-xs leading-5 ${dimTextClass}`}>
+                  GroupId: {realPortraitDraft.groupId || selectedRealPortraitGroup?.group.id || '-'}
+                </div>
+                <div className={`break-all font-mono text-xs leading-5 ${dimTextClass}`}>
+                  ProjectName: {realPortraitDraft.projectName || selectedRealPortraitGroup?.group.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME}
+                </div>
                 <ul className={`space-y-2 text-sm leading-6 ${dimTextClass}`}>
-                  <li>图片会按现有资产库存储逻辑落到本地目录。</li>
-                  <li>后续选中这张图时，会把当前 `assetId` 一起回填到任务参考图。</li>
-                  <li>如果同一人物有多个角度，建议分别建不同条目，避免混淆。</li>
+                  <li>单张图片需小于 30 MB，且素材中只能包含同一真人。</li>
+                  <li>创建后状态可能为 Processing，点击“手动刷新”可同步 Active/Failed 状态。</li>
                 </ul>
               </StudioPanel>
             </div>
@@ -2747,7 +3975,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                   <button
                     type="button"
                     onClick={() => {
-                      setRealPortraitDraft((prev) => ({ ...prev, imageDataUrl: '', fileNameHint: '' }));
+                      setRealPortraitDraft((prev) => ({ ...prev, imageDataUrl: '', fileNameHint: '', file: null }));
                       setRealPortraitDraftError('');
                     }}
                     className="studio-button studio-button-secondary px-4"
@@ -2774,6 +4002,14 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
             </div>
           ) : null}
 
+          {realPortraitUploadStep ? (
+            <div className="px-6 pb-2">
+              <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+                {realPortraitUploadStep}
+              </div>
+            </div>
+          ) : null}
+
           <div className="flex items-center justify-end gap-3 border-t border-[var(--studio-border)] px-6 py-5">
             <button
               type="button"
@@ -2794,8 +4030,8 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
               disabled={isSavingRealPortraitAsset}
               className="studio-button studio-button-primary px-4"
             >
-              {isSavingRealPortraitAsset ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              保存到真人人像库
+              {isSavingRealPortraitAsset ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+              上传素材资产
             </button>
           </div>
         </div>

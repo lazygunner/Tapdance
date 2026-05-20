@@ -11,7 +11,12 @@ export type RealPortraitLibraryAsset = {
   description: string;
   assetId: string;
   imageUrl: string;
+  groupId?: string;
+  projectName?: string;
+  status?: string;
+  sourceUrl?: string;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type SeedreamGeneratedPortraitAsset = {
@@ -43,6 +48,30 @@ const VIRTUAL_PORTRAIT_LIBRARY_STATE_KEY = 'portraitLibrary.virtualAssets';
 const SEEDREAM_GENERATED_PORTRAIT_LIBRARY_STATE_KEY = 'portraitLibrary.seedreamGeneratedAssets';
 
 export const SEEDREAM_GENERATED_PORTRAIT_MODEL = 'doubao-seedream-5-0-260128';
+
+export function parseRealPortraitValidationCallback(value: string) {
+  const normalizedValue = String(value || '').trim();
+  if (!normalizedValue) {
+    return {
+      bytedToken: '',
+      resultCode: '',
+    };
+  }
+
+  try {
+    const parsedUrl = new URL(normalizedValue, 'https://tapdance.local');
+    return {
+      bytedToken: parsedUrl.searchParams.get('bytedToken') || parsedUrl.searchParams.get('BytedToken') || '',
+      resultCode: parsedUrl.searchParams.get('resultCode') || parsedUrl.searchParams.get('ResultCode') || '',
+    };
+  } catch {
+    const params = new URLSearchParams(normalizedValue.replace(/^\?/u, ''));
+    return {
+      bytedToken: params.get('bytedToken') || params.get('BytedToken') || '',
+      resultCode: params.get('resultCode') || params.get('ResultCode') || '',
+    };
+  }
+}
 
 export function buildSeedreamGeneratedPortraitPrompt(prompt: string) {
   const normalizedPrompt = String(prompt || '').trim();
@@ -150,7 +179,12 @@ function normalizeRealPortraitLibraryAsset(value: unknown): RealPortraitLibraryA
     description,
     assetId,
     imageUrl,
+    groupId: String(candidate.groupId || '').trim(),
+    projectName: String(candidate.projectName || '').trim(),
+    status: String(candidate.status || '').trim(),
+    sourceUrl: String(candidate.sourceUrl || '').trim(),
     createdAt,
+    updatedAt: String(candidate.updatedAt || '').trim() || createdAt,
   };
 }
 

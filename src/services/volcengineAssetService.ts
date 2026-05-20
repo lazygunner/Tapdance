@@ -7,15 +7,20 @@ const ARK_ASSET_ENDPOINT = 'https://ark.cn-beijing.volcengineapi.com';
 const ARK_ASSET_VERSION = '2024-01-01';
 export const DEFAULT_VIRTUAL_PORTRAIT_ASSET_GROUP_NAME = 'Tapdance 虚拟人像';
 export const DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME = 'default';
+export const ARK_VIRTUAL_PORTRAIT_GROUP_TYPE = 'AIGC';
+export const ARK_REAL_PORTRAIT_GROUP_TYPE = 'LivenessFace';
 
 type ArkAssetApiAction =
   | 'CreateAssetGroup'
+  | 'UpdateAssetGroup'
   | 'CreateAsset'
   | 'ListAssetGroups'
   | 'ListAssets'
   | 'GetAsset'
   | 'DeleteAsset'
-  | 'DeleteAssetGroup';
+  | 'DeleteAssetGroup'
+  | 'CreateVisualValidateSession'
+  | 'GetVisualValidateResult';
 
 export type ArkAssetStatus = 'Processing' | 'Active' | 'Failed' | string;
 
@@ -45,6 +50,19 @@ export type ArkAsset = {
 export type UploadVirtualPortraitAssetResult = {
   asset: ArkAsset;
   group: ArkAssetGroup;
+  uploadedUrl: string;
+  uploadedKey: string;
+};
+
+export type RealPortraitValidationSession = {
+  bytedToken: string;
+  h5Link: string;
+  callbackURL: string;
+};
+
+export type UploadRealPortraitAssetResult = {
+  asset: ArkAsset;
+  groupId: string;
   uploadedUrl: string;
   uploadedKey: string;
 };
@@ -158,7 +176,7 @@ function getArkAssetCredentials() {
   const tosConfig = loadApiSettings().tos;
 
   if (!isTosConfigComplete(tosConfig)) {
-    throw new Error('请先在 API 配置中启用并填写 TOS 配置。虚拟人像上传需要 TOS 公网 URL，同时使用同一组 AccessKey 调用 Ark 素材资产 API。');
+    throw new Error('请先在 API 配置中启用并填写 TOS 配置。素材上传需要 TOS 公网 URL，同时使用同一组 AccessKey 调用 Ark 素材资产 API。');
   }
 
   return {
@@ -186,12 +204,14 @@ async function callArkAssetApi<T>(action: ArkAssetApiAction, body: Record<string
 export async function listArkAssetGroups(params?: {
   name?: string;
   groupIds?: string[];
+  groupType?: string;
   projectName?: string;
   baseUrl?: string;
 }) {
+  const groupType = String(params?.groupType || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE).trim() || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE;
   const result = await callArkAssetApi<any>('ListAssetGroups', {
     Filter: {
-      GroupType: 'AIGC',
+      GroupType: groupType,
       ...(params?.name?.trim() ? { Name: params.name.trim() } : {}),
       ...(params?.groupIds?.length ? { GroupIds: params.groupIds } : {}),
     },
@@ -209,6 +229,7 @@ export async function listArkAssetGroups(params?: {
 export async function listArkAssets(params?: {
   groupId?: string;
   groupIds?: string[];
+  groupType?: string;
   statuses?: string[];
   name?: string;
   projectName?: string;
@@ -221,9 +242,10 @@ export async function listArkAssets(params?: {
   ]
     .map((item) => String(item || '').trim())
     .filter(Boolean);
+  const groupType = String(params?.groupType || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE).trim() || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE;
   const result = await callArkAssetApi<any>('ListAssets', {
     Filter: {
-      GroupType: 'AIGC',
+      GroupType: groupType,
       ...(groupIds.length > 0 ? { GroupIds: Array.from(new Set(groupIds)) } : {}),
       ...(params?.statuses?.length ? { Statuses: params.statuses.map((item) => normalizeArkAssetStatus(item)) } : {}),
       ...(params?.name?.trim() ? { Name: params.name.trim() } : {}),
@@ -327,6 +349,60 @@ export async function createArkAsset(params: {
   return normalizeAsset(result, assetId, groupId, projectName);
 }
 
+export async function createRealPortraitValidationSession(params: {
+  callbackURL: string;
+  projectName?: string;
+  baseUrl?: string;
+}) {
+  const callbackURL = String(params.callbackURL || '').trim();
+  const projectName = normalizeProjectName(params.projectName);
+
+  if (!callbackURL) {
+    throw new Error('请填写 CallbackURL。');
+  }
+
+  const result = await callArkAssetApi<any>('CreateVisualValidateSession', {
+    CallbackURL: callbackURL,
+    ProjectName: projectName,
+  }, params.baseUrl);
+  const session: RealPortraitValidationSession = {
+    bytedToken: String(result?.BytedToken || result?.bytedToken || '').trim(),
+    h5Link: String(result?.H5Link || result?.h5Link || '').trim(),
+    callbackURL: String(result?.CallbackURL || result?.callbackURL || callbackURL).trim(),
+  };
+
+  if (!session.bytedToken || !session.h5Link) {
+    throw new Error('CreateVisualValidateSession 未返回 H5Link 或 BytedToken。');
+  }
+
+  return session;
+}
+
+export async function getRealPortraitValidationResult(params: {
+  bytedToken: string;
+  projectName?: string;
+  baseUrl?: string;
+}) {
+  const bytedToken = String(params.bytedToken || '').trim();
+  const projectName = normalizeProjectName(params.projectName);
+
+  if (!bytedToken) {
+    throw new Error('请填写 BytedToken。');
+  }
+
+  const result = await callArkAssetApi<any>('GetVisualValidateResult', {
+    BytedToken: bytedToken,
+    ProjectName: projectName,
+  }, params.baseUrl);
+  const groupId = String(result?.GroupId || result?.groupId || '').trim();
+
+  if (!groupId) {
+    throw new Error('GetVisualValidateResult 未返回 GroupId。请确认真人认证已通过且 BytedToken 未过期。');
+  }
+
+  return { groupId, projectName };
+}
+
 export async function deleteArkAsset(params: {
   assetId: string;
   projectName?: string;
@@ -359,6 +435,39 @@ export async function deleteArkAssetGroup(params: {
     GroupId: groupId,
     ProjectName: normalizeProjectName(params.projectName),
   }, params.baseUrl);
+}
+
+export async function updateArkAssetGroup(params: {
+  groupId: string;
+  name?: string;
+  description?: string;
+  projectName?: string;
+  baseUrl?: string;
+}) {
+  const groupId = String(params.groupId || '').trim();
+  const name = String(params.name || '').trim();
+  const description = String(params.description || '').trim();
+  const hasName = Object.prototype.hasOwnProperty.call(params, 'name');
+  const hasDescription = Object.prototype.hasOwnProperty.call(params, 'description');
+
+  if (!groupId) {
+    throw new Error('缺少素材资产组合 ID。');
+  }
+  if (name.length > 64) {
+    throw new Error('Asset Group 名称不能超过 64 个字符。');
+  }
+  if (description.length > 300) {
+    throw new Error('Asset Group 描述不能超过 300 个字符。');
+  }
+
+  const result = await callArkAssetApi<any>('UpdateAssetGroup', {
+    Id: groupId,
+    ...(hasName ? { Name: name } : {}),
+    ...(hasDescription ? { Description: description } : {}),
+    ProjectName: normalizeProjectName(params.projectName),
+  }, params.baseUrl);
+
+  return String(result?.Id || result?.id || groupId).trim();
 }
 
 export async function getArkAsset(params: {
@@ -476,6 +585,70 @@ export async function uploadVirtualPortraitAsset(params: {
   return {
     asset,
     group,
+    uploadedUrl: uploaded.url,
+    uploadedKey: uploaded.key,
+  };
+}
+
+export async function uploadRealPortraitAsset(params: {
+  file: File;
+  description: string;
+  groupId: string;
+  projectName?: string;
+  baseUrl?: string;
+  initialStatusWaitMs?: number | null;
+  onStatus?: (asset: ArkAsset) => void;
+}) : Promise<UploadRealPortraitAssetResult> {
+  if (!params.file.type.startsWith('image/')) {
+    throw new Error('仅支持图片文件。');
+  }
+  if (params.file.size > 30 * 1024 * 1024) {
+    throw new Error('单张图片需小于 30 MB。');
+  }
+
+  const groupId = String(params.groupId || '').trim();
+  if (!groupId) {
+    throw new Error('缺少真人人像素材组 GroupId。');
+  }
+
+  const tosConfig = loadApiSettings().tos;
+  if (!isTosConfigComplete(tosConfig)) {
+    throw new Error('请先在 API 配置中启用并填写 TOS 配置。');
+  }
+
+  const projectName = normalizeProjectName(params.projectName);
+  const uploaded = await uploadFileToTos(params.file, tosConfig!, {
+    mediaLabel: '真人人像图片',
+    defaultPrefix: 'real-portraits',
+  });
+  const createdAsset = await createArkAsset({
+    groupId,
+    url: uploaded.url,
+    name: params.description || params.file.name,
+    projectName,
+    baseUrl: params.baseUrl,
+  });
+
+  let asset = createdAsset;
+  const shouldWaitForInitialStatus = typeof params.initialStatusWaitMs !== 'number' || params.initialStatusWaitMs > 0;
+
+  if (shouldWaitForInitialStatus) {
+    try {
+      asset = await waitForArkAssetStatus({
+        assetId: createdAsset.id,
+        projectName,
+        baseUrl: params.baseUrl,
+        timeoutMs: params.initialStatusWaitMs ?? 20000,
+        onStatus: params.onStatus,
+      });
+    } catch (error) {
+      console.warn('Failed to refresh created real portrait Ark asset status:', error);
+    }
+  }
+
+  return {
+    asset,
+    groupId,
     uploadedUrl: uploaded.url,
     uploadedKey: uploaded.key,
   };

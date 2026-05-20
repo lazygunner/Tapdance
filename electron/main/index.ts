@@ -27,6 +27,11 @@ type MockApiStartOptions = {
   scenario?: string
 }
 
+type RealPortraitValidationWindowOptions = {
+  h5Link?: string
+  callbackURL?: string
+}
+
 function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     const details = [error.message]
@@ -45,6 +50,127 @@ function normalizeErrorMessage(error: unknown): string {
     return details.filter(Boolean).join(' | ')
   }
   return String(error || 'Unknown error')
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+function isCallbackNavigation(navigationUrl: string, callbackURL: string): boolean {
+  try {
+    const navigated = new URL(navigationUrl)
+    const callback = new URL(callbackURL)
+    return navigated.origin === callback.origin
+      && navigated.pathname.replace(/\/+$/u, '') === callback.pathname.replace(/\/+$/u, '')
+  } catch {
+    return Boolean(callbackURL) && navigationUrl.startsWith(callbackURL)
+  }
+}
+
+function openRealPortraitValidationWindow(options: RealPortraitValidationWindowOptions): Promise<{ callbackURL: string }> {
+  const h5Link = String(options?.h5Link || '').trim()
+  const callbackURL = String(options?.callbackURL || '').trim()
+
+  if (!isHttpUrl(h5Link)) {
+    throw new Error('真人认证 H5Link 无效')
+  }
+  if (!isHttpUrl(callbackURL)) {
+    throw new Error('真人认证 CallbackURL 无效')
+  }
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    let settled = false
+    const authWindow = new BrowserWindow({
+      width: 430,
+      height: 760,
+      minWidth: 360,
+      minHeight: 640,
+      title: '真人人像认证',
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      modal: false,
+      autoHideMenuBar: true,
+      backgroundColor: '#050b16',
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+      icon: nativeImage.createFromPath(iconPath),
+    })
+
+    const finish = (resultURL: string) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      resolvePromise({ callbackURL: resultURL })
+      if (!authWindow.isDestroyed()) {
+        authWindow.close()
+      }
+    }
+
+    const fail = (error: Error) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      if (!authWindow.isDestroyed()) {
+        authWindow.close()
+      }
+      rejectPromise(error)
+    }
+
+    authWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+      const isAuthContents = webContents.id === authWindow.webContents.id
+      callback(isAuthContents && ['media', 'camera', 'microphone'].includes(permission))
+    })
+
+    authWindow.webContents.setWindowOpenHandler((details) => {
+      if (isCallbackNavigation(details.url, callbackURL)) {
+        finish(details.url)
+        return { action: 'deny' }
+      }
+      if (isHttpUrl(details.url)) {
+        authWindow.loadURL(details.url).catch((error) => {
+          fail(new Error(`加载真人认证页面失败：${normalizeErrorMessage(error)}`))
+        })
+      }
+      return { action: 'deny' }
+    })
+
+    const handleNavigation = (event: Electron.Event, targetUrl: string) => {
+      if (!isCallbackNavigation(targetUrl, callbackURL)) {
+        return
+      }
+      event.preventDefault()
+      finish(targetUrl)
+    }
+
+    authWindow.webContents.on('will-redirect', handleNavigation)
+    authWindow.webContents.on('will-navigate', handleNavigation)
+    authWindow.webContents.on('did-navigate', (_event, targetUrl) => {
+      if (isCallbackNavigation(targetUrl, callbackURL)) {
+        finish(targetUrl)
+      }
+    })
+
+    authWindow.on('closed', () => {
+      authWindow.webContents.session.setPermissionRequestHandler(null)
+      if (!settled) {
+        settled = true
+        resolvePromise({ callbackURL: '' })
+      }
+    })
+
+    authWindow.loadURL(h5Link).catch((error) => {
+      fail(new Error(`加载真人认证页面失败：${normalizeErrorMessage(error)}`))
+    })
+  })
 }
 
 const WINDOW_APPEARANCE: Record<WindowAppearanceMode, {
@@ -233,6 +359,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
     await shell.openExternal(url)
+  })
+
+  ipcMain.handle('real-portrait:openValidation', async (_, options?: RealPortraitValidationWindowOptions) => {
+    return openRealPortraitValidationWindow(options || {})
   })
 
   ipcMain.handle('tos:uploadVideo', async (_, payload: TosUploadPayload) => {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildSeedreamGeneratedPortraitPrompt,
+  parseRealPortraitValidationCallback,
   SEEDREAM_GENERATED_PORTRAIT_MODEL,
 } from '../src/services/portraitLibrary.ts';
 
@@ -20,4 +21,11 @@ test('buildSeedreamGeneratedPortraitPrompt expands user prompt into a 16:9 chara
 
 test('Seedream generated portrait model is pinned to the supported model id', () => {
   assert.equal(SEEDREAM_GENERATED_PORTRAIT_MODEL, 'doubao-seedream-5-0-260128');
+});
+
+test('parseRealPortraitValidationCallback extracts token and result code from callback URL', () => {
+  const parsed = parseRealPortraitValidationCallback('https://example.com/callback?bytedToken=token-123&resultCode=10000&verify_type=real_time');
+
+  assert.equal(parsed.bytedToken, 'token-123');
+  assert.equal(parsed.resultCode, '10000');
 });

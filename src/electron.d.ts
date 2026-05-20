@@ -12,6 +12,7 @@ export interface IElectronAPI {
   setMockApiScenario: (scenario: MockApiScenario) => Promise<MockApiServerStatus>;
   setWindowAppearance: (themeMode: 'light' | 'dark') => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;
+  openRealPortraitValidation: (options: { h5Link: string; callbackURL: string }) => Promise<{ callbackURL: string }>;
   uploadVideoToTos: (payload: {
     config: TosConfig;
     fileName: string;

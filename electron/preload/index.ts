@@ -15,6 +15,7 @@ const api = {
   setMockApiScenario: (scenario: MockApiScenario) => ipcRenderer.invoke('mock-api:setScenario', scenario),
   setWindowAppearance: (themeMode: 'light' | 'dark') => ipcRenderer.invoke('window:setAppearance', themeMode),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  openRealPortraitValidation: (options: { h5Link: string; callbackURL: string }) => ipcRenderer.invoke('real-portrait:openValidation', options),
   uploadVideoToTos: (payload: {
     config: TosConfig
     fileName: string

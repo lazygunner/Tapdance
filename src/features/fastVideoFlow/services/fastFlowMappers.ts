@@ -5,6 +5,9 @@ import type {
   FastReferenceImageType,
   FastReferenceVideo,
   FastReferenceVideoType,
+  FastPlanCharacter,
+  FastDirectorPose,
+  FastDirectorSceneLayout,
   FastSceneDraft,
   FastVideoInput,
   FastVideoPlan,
@@ -16,9 +19,11 @@ import { normalizeFastVideoExecutionPrompt } from './fastPromptBuilders.ts';
 import { hasHumanFaceMosaicSuffix, syncHumanFaceMosaicPrompt } from './fastScenePrompt.ts';
 import type { SeedanceDraft, SeedanceExecutorId, SeedanceOverlayTemplateId } from '../../seedance/types.ts';
 import { normalizeSeedanceModelVersion } from '../../seedance/modelVersions.ts';
+import { createEmptyFastDirectorState, normalizeFastDirectorState } from './fastDirectorState.ts';
 
 type NormalizableFastVideoProject = Partial<Omit<FastVideoProject, 'scenes'>> & {
   scenes?: Array<Partial<FastSceneDraft>>;
+  characters?: Array<Partial<FastPlanCharacter>>;
 };
 
 function normalizeFastVideoAspectRatio(value: unknown): FastVideoInput['aspectRatio'] {
@@ -98,7 +103,9 @@ export function createDefaultFastSeedanceDraft(input: FastVideoInput, videoPromp
 export function createEmptyFastVideoProject(): FastVideoProject {
   return {
     input: createEmptyFastVideoInput(),
+    characters: [],
     scenes: [],
+    director: createEmptyFastDirectorState(),
     videoPrompt: null,
     seedanceDraft: null,
     executionConfig: {
@@ -226,6 +233,17 @@ function normalizeReferenceImages(value: unknown, legacyReferenceImageUrl?: stri
           description: typeof candidate.description === 'string' ? candidate.description : '',
           selectedForVideo: isFastAssetSelectedForVideo(candidate.selectedForVideo),
           submitMode: normalizeFastReferenceSubmitMode(candidate.submitMode),
+          origin: candidate.origin && typeof candidate.origin === 'object'
+            ? {
+              kind: candidate.origin.kind === 'history'
+                || candidate.origin.kind === 'storyboard'
+                || candidate.origin.kind === 'director-capture'
+                ? candidate.origin.kind
+                : 'upload',
+              sceneId: typeof candidate.origin.sceneId === 'string' ? candidate.origin.sceneId : undefined,
+              captureId: typeof candidate.origin.captureId === 'string' ? candidate.origin.captureId : undefined,
+            }
+            : undefined,
         };
         return normalizedItem;
       })
@@ -264,6 +282,9 @@ function normalizeSceneDraft(scene: Partial<FastSceneDraft>, index: number): Fas
     negativePrompt: typeof scene.negativePrompt === 'string' ? scene.negativePrompt : '',
     negativePromptZh: typeof scene.negativePromptZh === 'string' ? scene.negativePromptZh : '',
     continuityAnchors: normalizeStringList(scene.continuityAnchors),
+    characterIds: normalizeStringList(scene.characterIds),
+    directorLayout: normalizeDirectorLayout(scene.directorLayout),
+    selectedReferenceImageIds: normalizeStringList(scene.selectedReferenceImageIds),
     imageUrl: typeof scene.imageUrl === 'string' ? scene.imageUrl : '',
     imageStorageKey: typeof scene.imageStorageKey === 'string' ? scene.imageStorageKey : '',
     locked: Boolean(scene.locked),
@@ -271,6 +292,79 @@ function normalizeSceneDraft(scene: Partial<FastSceneDraft>, index: number): Fas
     status: scene.status || (scene.imageUrl ? 'completed' : 'idle'),
     error: typeof scene.error === 'string' ? scene.error : '',
   };
+}
+
+const DIRECTOR_POSES = new Set<FastDirectorPose>([
+  'stand', 't-pose', 'walk', 'run', 'sit', 'crouch', 'kneel-one', 'kneel-two',
+  'hands-on-hips', 'lean', 'bow', 'think', 'fight', 'kick', 'throw', 'push',
+  'wave', 'reach', 'cross-arms', 'phone',
+]);
+
+function normalizeDirectorLayout(value: unknown): FastDirectorSceneLayout | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Partial<FastDirectorSceneLayout>;
+  if (!Array.isArray(candidate.characters)) return undefined;
+  const characters = candidate.characters.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const roleId = typeof entry.roleId === 'string' ? entry.roleId.trim() : '';
+    const position = Array.isArray(entry.position) && entry.position.length === 3
+      ? entry.position.map((item) => Number(item)) as [number, number, number]
+      : null;
+    if (!roleId || !position || position.some((item) => !Number.isFinite(item))) return [];
+    return [{
+      roleId,
+      position,
+      rotationY: Number.isFinite(entry.rotationY) ? Number(entry.rotationY) : 0,
+      scale: Number.isFinite(entry.scale) ? Math.max(0.25, Math.min(3, Number(entry.scale))) : 1,
+      pose: DIRECTOR_POSES.has(entry.pose as FastDirectorPose) ? entry.pose as FastDirectorPose : 'stand',
+    }];
+  });
+  if (characters.length === 0) return undefined;
+  return {
+    reasoning: typeof candidate.reasoning === 'string' ? candidate.reasoning : undefined,
+    ...(candidate.camera
+      && Array.isArray(candidate.camera.position)
+      && candidate.camera.position.length === 3
+      && Array.isArray(candidate.camera.target)
+      && candidate.camera.target.length === 3
+      ? {
+        camera: {
+          position: candidate.camera.position.map(Number) as [number, number, number],
+          target: candidate.camera.target.map(Number) as [number, number, number],
+          fov: Number.isFinite(candidate.camera.fov)
+            ? Math.max(18, Math.min(90, Number(candidate.camera.fov)))
+            : 40,
+        },
+      }
+      : {}),
+    characters,
+  };
+}
+
+function normalizePlanCharacters(value: unknown): FastPlanCharacter[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const usedIds = new Set<string>();
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => {
+      const candidate = item as Partial<FastPlanCharacter>;
+      let id = typeof candidate.id === 'string' && candidate.id.trim()
+        ? candidate.id.trim()
+        : `角色${index + 1}`;
+      if (usedIds.has(id)) {
+        id = `角色${index + 1}`;
+      }
+      usedIds.add(id);
+      return {
+        id,
+        name: typeof candidate.name === 'string' && candidate.name.trim()
+          ? candidate.name.trim()
+          : id,
+        description: typeof candidate.description === 'string' ? candidate.description.trim() : '',
+      };
+    });
 }
 
 export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceDraft {
@@ -341,7 +435,9 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
                     : reference.referenceType === 'style'
                       ? '风格参考图'
                       : '参考图'
-            }${submitAsAsset ? '，提交时使用 asset 素材' : ''}`,
+            }${reference.description?.trim() ? `，${reference.description.trim()}` : ''}${
+              submitAsAsset ? '，提交时使用 asset 素材' : ''
+            }`,
           };
         }),
         ...selectedReadyScenes.map((scene, index) => ({
@@ -481,6 +577,10 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
     ? value.executionConfig.executor
     : base.executionConfig.executor;
   const normalizedReferenceImages = normalizeReferenceImages(input.referenceImages, typeof legacyInput.referenceImageUrl === 'string' ? legacyInput.referenceImageUrl : '');
+  const normalizedCharacters = normalizePlanCharacters(value?.characters);
+  const normalizedScenes = Array.isArray(value?.scenes)
+    ? value!.scenes.map((scene, index) => normalizeSceneDraft(scene, index))
+    : [];
   const fallbackSeedanceDraft = createDefaultFastSeedanceDraft(
     {
       ...base.input,
@@ -538,9 +638,14 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
       quickCutEnabled: typeof input.quickCutEnabled === 'boolean' ? input.quickCutEnabled : base.input.quickCutEnabled,
       negativePrompt: typeof input.negativePrompt === 'string' ? input.negativePrompt : base.input.negativePrompt,
     },
-    scenes: Array.isArray(value?.scenes)
-      ? value!.scenes.map((scene, index) => normalizeSceneDraft(scene, index))
-      : [],
+    characters: normalizedCharacters,
+    scenes: normalizedScenes,
+    director: normalizeFastDirectorState(
+      value?.director,
+      normalizedReferenceImages,
+      normalizedScenes,
+      normalizedCharacters,
+    ),
     videoPrompt: value?.videoPrompt
       ? {
         prompt: typeof value.videoPrompt.prompt === 'string' ? value.videoPrompt.prompt : '',
@@ -591,6 +696,7 @@ export function createFallbackFastVideoPlan(input: FastVideoInput): FastVideoPla
     : FAST_VIDEO_PROMPT_CONFIG.fallback.videoPromptZhSuffix;
   if (input.quickCutEnabled) {
     return {
+      characters: [],
       scenes: [],
       videoPrompt: {
         prompt: normalizeFastVideoExecutionPrompt(input, `${promptBase}。${fallbackVideoPromptSuffix}`),
@@ -600,6 +706,20 @@ export function createFallbackFastVideoPlan(input: FastVideoInput): FastVideoPla
   }
 
   const sceneCount = input.preferredSceneCount === 'auto' ? 3 : input.preferredSceneCount;
+  const fallbackCharacters: FastPlanCharacter[] = input.referenceImages
+    .filter((reference) => reference.referenceType === 'person' && reference.imageUrl.trim())
+    .map((reference, index) => ({
+      id: `角色${index + 1}`,
+      name: reference.description?.trim() || `角色 ${index + 1}`,
+      description: reference.description?.trim() || '',
+    }));
+  if (fallbackCharacters.length === 0) {
+    fallbackCharacters.push({
+      id: '角色1',
+      name: '角色 1',
+      description: '故事中的主要出镜角色',
+    });
+  }
   const scenes = Array.from({ length: sceneCount }, (_, index) => ({
     id: `fast-scene-${index + 1}`,
     title: index === 0
@@ -614,6 +734,7 @@ export function createFallbackFastVideoPlan(input: FastVideoInput): FastVideoPla
     negativePrompt: input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePrompt,
     negativePromptZh: input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePromptZh,
     continuityAnchors: [],
+    characterIds: fallbackCharacters.map((character) => character.id),
     imageUrl: '',
     locked: false,
     selectedForVideo: true,
@@ -622,6 +743,7 @@ export function createFallbackFastVideoPlan(input: FastVideoInput): FastVideoPla
   }));
 
   return {
+    characters: fallbackCharacters,
     scenes,
     videoPrompt: {
       prompt: normalizeFastVideoExecutionPrompt(input, `${promptBase}。${fallbackVideoPromptSuffix}`),

@@ -17,6 +17,7 @@ import {
   PlaySquare,
   Plus,
   Settings2,
+  ScanLine,
   Sun,
   Table2,
   TimerReset,
@@ -46,6 +47,7 @@ export type WorkspaceView =
   | 'apiConfig'
   | 'fastInput'
   | 'fastStoryboard'
+  | 'fastDirector'
   | 'fastVideo';
 
 export type WorkspaceThemeMode = 'light' | 'dark';
@@ -141,6 +143,7 @@ const NAV_ITEMS_BY_PROJECT: Record<SupportedWorkspaceProjectType, NavItem[]> = {
   'fast-video': [
     { view: 'fastInput', label: '极速输入', icon: LayoutDashboard },
     { view: 'fastStoryboard', label: '分镜确认', icon: PanelsTopLeft },
+    { view: 'fastDirector', label: '3D 预演', icon: ScanLine },
     { view: 'fastVideo', label: '视频生成', icon: Video },
   ],
 };
@@ -257,6 +260,9 @@ function isNavItemDisabled(project: Project, view: WorkspaceView) {
     return project.shots.length === 0;
   }
   if (view === 'fastStoryboard') {
+    return project.fastFlow.scenes.length === 0;
+  }
+  if (view === 'fastDirector') {
     return project.fastFlow.scenes.length === 0;
   }
   if (view === 'fastVideo') {

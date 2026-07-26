@@ -10,6 +10,8 @@ import type { ProjectGroupImageAsset, ProjectGroupMediaAsset } from '../../../se
 import type { ApiSettings, Asset, ModelSourceId, Project } from '../../../types.ts';
 import type {
   FastReferenceAudio,
+  FastDirectorCamera,
+  FastDirectorState,
   FastReferenceImage,
   FastReferenceVideo,
   FastSceneDraft,
@@ -25,9 +27,11 @@ import {
   syncFastFlowSeedanceDraft,
 } from './fastFlowMappers.ts';
 import { syncHumanFaceMosaicPrompt } from './fastScenePrompt.ts';
+import { createPromptBasedDirectorPlacements, inferPromptCharacterLayout, normalizeFastDirectorState } from './fastDirectorState.ts';
 import { fetchSeedanceTask, submitSeedanceTask } from './seedanceBridgeClient.ts';
 import { fetchHappyHorseTask, submitHappyHorseTask } from './aliyunHappyHorseService.ts';
 import { createSeedanceTask, deleteSeedanceTask, getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
+import { isTosConfigComplete, uploadFileToTos } from '../../../services/tosUploadService.ts';
 import { validateSeedanceDraft } from '../../seedance/services/seedanceDraft.ts';
 import type { SeedanceBaseTemplateId, SeedanceDraft, SeedanceExecutorId } from '../../seedance/types.ts';
 import { SEEDANCE_TEMPLATE_REGISTRY } from '../../seedance/config/seedanceTemplateRegistry.ts';
@@ -80,7 +84,7 @@ type FastVideoFlowActionDeps = {
   setFastFlow: (updater: (current: Project['fastFlow']) => Project['fastFlow']) => void;
   updateProjectRecord: (projectId: string, updater: (current: Project) => Project) => void;
   updateFastFlowByProjectId: (projectId: string, updater: (current: Project['fastFlow']) => Project['fastFlow']) => void;
-  setView: (view: 'fastStoryboard' | 'fastVideo') => void;
+  setView: (view: 'fastStoryboard' | 'fastDirector' | 'fastVideo') => void;
   setHasKey: Dispatch<SetStateAction<boolean>>;
   setApiSettings: Dispatch<SetStateAction<ApiSettings>>;
   setIsGeneratingFastPlan: Dispatch<SetStateAction<boolean>>;
@@ -126,7 +130,7 @@ function inferFastReferenceImageTypeFromMaterial(material: ProjectGroupImageAsse
   if (sourceText.includes('style')) {
     return 'style';
   }
-  if (sourceText.includes('scene') || sourceText.includes('shot') || sourceText.includes('分镜') || sourceText.includes('首帧') || sourceText.includes('尾帧')) {
+  if (sourceText.includes('scene') || sourceText.includes('shot') || sourceText.includes('director') || sourceText.includes('分镜') || sourceText.includes('机位预演') || sourceText.includes('首帧') || sourceText.includes('尾帧')) {
     return 'scene';
   }
 
@@ -169,7 +173,11 @@ function getFastReferenceAssetType(referenceType?: FastReferenceImage['reference
   return 'prop';
 }
 
-function resolveFastSceneReferenceAssets(input: FastVideoInput, prompt: string): Asset[] {
+function resolveFastSceneReferenceAssets(
+  input: FastVideoInput,
+  prompt: string,
+  selectedReferenceImageIds: string[] = [],
+): Asset[] {
   const readyReferenceImages = input.referenceImages.filter((reference) => reference.imageUrl.trim());
   const referencedIndexes = new Set<number>();
 
@@ -180,13 +188,13 @@ function resolveFastSceneReferenceAssets(input: FastVideoInput, prompt: string):
     }
   }
 
-  if (referencedIndexes.size === 0) {
+  if (referencedIndexes.size === 0 && selectedReferenceImageIds.length === 0) {
     return [];
   }
 
   return readyReferenceImages
     .map((reference, index): Asset | null => {
-      if (!referencedIndexes.has(index)) {
+      if (!referencedIndexes.has(index) && !selectedReferenceImageIds.includes(reference.id)) {
         return null;
       }
 
@@ -300,6 +308,18 @@ function isPermissionError(error: any) {
   );
 }
 
+function isCloudAccessibleImageUrl(imageUrl: string) {
+  try {
+    const url = new URL(imageUrl);
+    return (url.protocol === 'https:' || url.protocol === 'http:')
+      && url.hostname !== '127.0.0.1'
+      && url.hostname !== 'localhost'
+      && url.hostname !== '::1';
+  } catch {
+    return false;
+  }
+}
+
 export function createFastVideoFlowActions({
   apiSettings,
   project,
@@ -339,6 +359,327 @@ export function createFastVideoFlowActions({
         ...patch,
       },
     }));
+  };
+
+  const handleSyncFastDirector = () => {
+    setFastFlow((current) => ({
+      ...current,
+      director: normalizeFastDirectorState(
+        current.director,
+        current.input.referenceImages,
+        current.scenes,
+        current.characters,
+      ),
+    }));
+  };
+
+  const handleUpdateFastDirector = (
+    updater: (current: FastDirectorState) => FastDirectorState,
+  ) => {
+    setFastFlow((current) => ({
+      ...current,
+      director: updater(current.director),
+    }));
+  };
+
+  const handlePreviewFastScene3d = (sceneId: string) => {
+    setFastFlow((current) => {
+      const syncedDirector = normalizeFastDirectorState(
+        current.director,
+        current.input.referenceImages,
+        current.scenes,
+        current.characters,
+      );
+      const storyboardScene = current.scenes.find((scene) => scene.id === sceneId);
+      if (!storyboardScene) {
+        return current;
+      }
+      const layout = inferPromptCharacterLayout(storyboardScene);
+      const nextCharacters = [...syncedDirector.characters];
+      const palette = ['#4f8cff', '#ef5b5b', '#14b8a6', '#f59e0b', '#a855f7', '#ec4899', '#84cc16', '#06b6d4'];
+      while (nextCharacters.length < layout.count) {
+        const index = nextCharacters.length;
+        const isMain = index === 0 && Boolean(layout.mainName);
+        nextCharacters.push({
+          id: `director-character-preview-${sceneId}-${index + 1}`,
+          roleId: `角色${index + 1}`,
+          bodyType: 'mannequin',
+          name: isMain
+            ? layout.mainName
+            : layout.groupName
+              ? `${layout.groupName} ${isMain ? '' : index}`.trim()
+              : `角色 ${index + 1}`,
+          description: '根据分镜提示词自动创建',
+          color: palette[index % palette.length],
+        });
+      }
+      if (layout.mainName) {
+        let mainIndex = nextCharacters.findIndex((character) => (
+          `${character.name} ${character.description || ''}`.includes(layout.mainName)
+        ));
+        if (mainIndex < 0) {
+          mainIndex = nextCharacters.findIndex((character) => /^角色\s*\d+$/u.test(character.name));
+          if (mainIndex >= 0) {
+            nextCharacters[mainIndex] = { ...nextCharacters[mainIndex], name: layout.mainName };
+          }
+        }
+        if (layout.groupCount > 0) {
+          const groupCharacters = nextCharacters
+            .map((character, index) => ({ character, index }))
+            .filter(({ index }) => index !== mainIndex)
+            .slice(0, layout.groupCount);
+          groupCharacters.forEach(({ character, index }, groupIndex) => {
+            if (/^角色\s*\d+$/u.test(character.name)) {
+              nextCharacters[index] = {
+                ...character,
+                name: `${layout.groupName || '群体角色'} ${groupIndex + 1}`,
+              };
+            }
+          });
+        }
+      }
+      const placements = createPromptBasedDirectorPlacements(storyboardScene, nextCharacters);
+      return {
+        ...current,
+        director: {
+          ...syncedDirector,
+          characters: nextCharacters,
+          activeSceneId: sceneId,
+          scenes: syncedDirector.scenes.map((scene) => scene.sceneId === sceneId ? {
+            ...scene,
+            placements,
+            camera: storyboardScene.directorLayout?.camera
+              ? {
+                ...scene.camera,
+                position: [...storyboardScene.directorLayout.camera.position],
+                target: [...storyboardScene.directorLayout.camera.target],
+                fov: storyboardScene.directorLayout.camera.fov,
+              }
+              : layout.mainName
+                ? {
+                  ...scene.camera,
+                  position: [0, 1.6, 4.2],
+                  target: [0, 1.05, 0],
+                  fov: 38,
+                }
+                : scene.camera,
+            updatedAt: new Date().toISOString(),
+          } : scene),
+        },
+      };
+    });
+    setView('fastDirector');
+  };
+
+  const handleRegenerateFastScene3d = async (sceneId: string) => {
+    const sourceScene = project.fastFlow.scenes.find((scene) => scene.id === sceneId);
+    if (!sourceScene) return;
+    const generatedPlan = await generateFastVideoPlanWithModel(
+      {
+        ...project.fastFlow.input,
+        prompt: sourceScene.imagePromptZh?.trim() || sourceScene.imagePrompt,
+        preferredSceneCount: 1,
+        quickCutEnabled: false,
+      },
+      getTextModelName(),
+      useMockMode,
+      getTextModelSourceId(),
+    );
+    const generatedScene = generatedPlan.scenes[0];
+    if (!generatedScene) {
+      throw new Error('文本模型未返回 3D 场景布局。');
+    }
+    setFastFlow((current) => {
+      const nextCharacters = [...current.characters];
+      const roleMap = new Map<string, string>();
+      let nextRoleNumber = nextCharacters.reduce((maximum, character) => {
+        const match = character.id.match(/(\d+)$/u);
+        return match ? Math.max(maximum, Number(match[1])) : maximum;
+      }, 0) + 1;
+      (generatedPlan.characters || []).forEach((generatedCharacter) => {
+        const existing = nextCharacters.find((character) => (
+          character.name === generatedCharacter.name
+          || character.description.includes(generatedCharacter.name)
+        ));
+        if (existing) {
+          roleMap.set(generatedCharacter.id, existing.id);
+          return;
+        }
+        const roleId = `角色${nextRoleNumber++}`;
+        roleMap.set(generatedCharacter.id, roleId);
+        nextCharacters.push({ ...generatedCharacter, id: roleId });
+      });
+      const remapRoleId = (roleId: string) => roleMap.get(roleId) || roleId;
+      const nextScenes = current.scenes.map((scene) => scene.id === sceneId ? {
+        ...scene,
+        characterIds: (generatedScene.characterIds || []).map(remapRoleId),
+        directorLayout: generatedScene.directorLayout ? {
+          ...generatedScene.directorLayout,
+          characters: generatedScene.directorLayout.characters.map((entry) => ({
+            ...entry,
+            roleId: remapRoleId(entry.roleId),
+          })),
+        } : undefined,
+      } : scene);
+      const syncedDirector = normalizeFastDirectorState(
+        current.director,
+        current.input.referenceImages,
+        nextScenes,
+        nextCharacters,
+      );
+      const nextScene = nextScenes.find((scene) => scene.id === sceneId)!;
+      return {
+        ...current,
+        characters: nextCharacters,
+        scenes: nextScenes,
+        director: {
+          ...syncedDirector,
+          activeSceneId: sceneId,
+          scenes: syncedDirector.scenes.map((scene) => scene.sceneId === sceneId ? {
+            ...scene,
+            placements: createPromptBasedDirectorPlacements(nextScene, syncedDirector.characters),
+            camera: nextScene.directorLayout?.camera ? {
+              ...scene.camera,
+              position: [...nextScene.directorLayout.camera.position],
+              target: [...nextScene.directorLayout.camera.target],
+              fov: nextScene.directorLayout.camera.fov,
+            } : scene.camera,
+            updatedAt: new Date().toISOString(),
+          } : scene),
+        },
+      };
+    });
+  };
+
+  const handleCaptureFastDirector = async ({
+    sceneId,
+    dataUrl,
+    camera,
+    aspectRatio,
+  }: {
+    sceneId: string;
+    dataUrl: string;
+    camera: FastDirectorCamera;
+    aspectRatio: FastVideoInput['aspectRatio'];
+  }) => {
+    const captureId = crypto.randomUUID?.() || `director-capture-${Date.now()}`;
+    const referenceImageId = `fast-director-reference-${captureId}`;
+    const storyboardScene = project.fastFlow.scenes.find((scene) => scene.id === sceneId);
+    const tosConfig = apiSettings.tos;
+    if (!isTosConfigComplete(tosConfig)) {
+      throw new Error('导出机位截图前，请先在 API 配置中启用并完整填写 TOS 配置。分镜图生成必须使用云端可访问的截图 URL。');
+    }
+    const captureBlob = await fetch(dataUrl).then((response) => response.blob());
+    const captureFile = new File(
+      [captureBlob],
+      `director-${sceneId}-${captureId}.png`,
+      { type: captureBlob.type || 'image/png' },
+    );
+    const tosImage = await uploadFileToTos(captureFile, tosConfig!, {
+      mediaLabel: '3D 机位截图',
+      defaultPrefix: 'director-captures',
+    });
+    await persistGeneratedMediaUrl(dataUrl, {
+      kind: 'image',
+      assetId: `${project.id}:fast-director:${sceneId}:${captureId}`,
+      title: `${storyboardScene?.title || '分镜'} 3D 机位预演`,
+      fileNameHint: `director-${sceneId}-${captureId}.png`,
+    });
+    const description = '3D 白模机位预演图，仅用于约束人物数量、位置、动作姿态、朝向、景别、构图和摄影机角度。人物身份、面部、服装和视觉风格以人物参考图为准，不得继承白模外观。';
+
+    setFastFlow((current) => {
+      const syncedDirector = normalizeFastDirectorState(
+        current.director,
+        current.input.referenceImages,
+        current.scenes,
+        current.characters,
+      );
+      const now = new Date().toISOString();
+
+      return {
+        ...current,
+        input: {
+          ...current.input,
+          referenceImages: [
+            ...current.input.referenceImages,
+            {
+              id: referenceImageId,
+              imageUrl: tosImage.url,
+              assetId: '',
+              referenceType: 'scene',
+              description,
+              selectedForVideo: true,
+              submitMode: 'reference_image',
+              origin: {
+                kind: 'director-capture',
+                sceneId,
+                captureId,
+              },
+            },
+          ],
+        },
+        director: {
+          ...syncedDirector,
+          scenes: syncedDirector.scenes.map((scene) => (
+            scene.sceneId === sceneId
+              ? {
+                ...scene,
+                captures: [
+                  ...scene.captures,
+                  {
+                    id: captureId,
+                    imageUrl: tosImage.url,
+                    referenceImageId,
+                    camera,
+                    aspectRatio,
+                    createdAt: now,
+                  },
+                ],
+                updatedAt: now,
+              }
+              : scene
+          )),
+        },
+        seedanceDraft: {
+          ...(current.seedanceDraft || createDefaultFastSeedanceDraft(current.input, current.videoPrompt?.prompt)),
+          baseTemplateId: 'multi_image_reference',
+        },
+      };
+    });
+  };
+
+  const handleDeleteFastDirectorCapture = (sceneId: string, captureId: string) => {
+    setFastFlow((current) => {
+      const capture = current.director.scenes
+        .find((scene) => scene.sceneId === sceneId)
+        ?.captures.find((item) => item.id === captureId);
+      if (!capture) {
+        return current;
+      }
+      return {
+        ...current,
+        input: {
+          ...current.input,
+          referenceImages: current.input.referenceImages.filter((reference) => (
+            reference.id !== capture.referenceImageId
+          )),
+        },
+        scenes: current.scenes.map((scene) => ({
+          ...scene,
+          selectedReferenceImageIds: scene.selectedReferenceImageIds?.filter((id) => (
+            id !== capture.referenceImageId
+          )),
+        })),
+        director: {
+          ...current.director,
+          scenes: current.director.scenes.map((scene) => scene.sceneId === sceneId ? {
+            ...scene,
+            captures: scene.captures.filter((item) => item.id !== captureId),
+            updatedAt: new Date().toISOString(),
+          } : scene),
+        },
+      };
+    });
   };
 
   const handleAddFastReferenceImage = () => {
@@ -761,6 +1102,7 @@ export function createFastVideoFlowActions({
         name: current.nameCustomized ? current.name : buildFastProjectName(current.fastFlow.input),
         fastFlow: normalizeFastVideoProject({
           ...current.fastFlow,
+          characters: plan.characters || [],
           scenes: plan.scenes,
           videoPrompt: {
             prompt: plan.videoPrompt.promptZh || plan.videoPrompt.prompt,
@@ -848,6 +1190,7 @@ export function createFastVideoFlowActions({
           negativePrompt: current.input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePrompt,
           negativePromptZh: current.input.negativePrompt || FAST_VIDEO_PROMPT_CONFIG.fallback.defaultNegativePromptZh,
           continuityAnchors: [],
+          characterIds: current.characters.map((character) => character.id),
           imageUrl: '',
           imageStorageKey: '',
           locked: false,
@@ -922,7 +1265,54 @@ export function createFastVideoFlowActions({
     }));
     try {
       const imageSourceId = getOperationSourceId(`fast-scene-image-${sceneId}`, 'image');
-      const referenceAssets = resolveFastSceneReferenceAssets(project.fastFlow.input, prompt);
+      const resolvedReferenceAssets = resolveFastSceneReferenceAssets(
+        project.fastFlow.input,
+        prompt,
+        scene.selectedReferenceImageIds,
+      );
+      const referenceAssets = await Promise.all(resolvedReferenceAssets.map(async (asset) => {
+        if (isCloudAccessibleImageUrl(asset.imageUrl || '')) {
+          return asset;
+        }
+        const tosConfig = apiSettings.tos;
+        if (!isTosConfigComplete(tosConfig)) {
+          throw new Error('选中的参考图仍是本地地址。请先在 API 配置中启用并完整填写 TOS 配置。');
+        }
+        const sourceUrl = asset.imageUrl || '';
+        const response = await fetch(sourceUrl);
+        if (!response.ok) {
+          throw new Error(`读取本地参考图失败：HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const file = new File(
+          [blob],
+          `storyboard-reference-${sceneId}-${Date.now()}.png`,
+          { type: blob.type || 'image/png' },
+        );
+        const uploaded = await uploadFileToTos(file, tosConfig!, {
+          mediaLabel: '分镜参考图',
+          defaultPrefix: 'storyboard-references',
+        });
+        setFastFlow((current) => ({
+          ...current,
+          input: {
+            ...current.input,
+            referenceImages: current.input.referenceImages.map((reference) => (
+              reference.imageUrl === sourceUrl ? { ...reference, imageUrl: uploaded.url } : reference
+            )),
+          },
+          director: {
+            ...current.director,
+            scenes: current.director.scenes.map((directorScene) => ({
+              ...directorScene,
+              captures: directorScene.captures.map((capture) => (
+                capture.imageUrl === sourceUrl ? { ...capture, imageUrl: uploaded.url } : capture
+              )),
+            })),
+          },
+        }));
+        return { ...asset, imageUrl: uploaded.url };
+      }));
       const promptWithReferenceHint = appendFastSceneReferenceHint(prompt, referenceAssets);
       const imageUrl = await generateStoryboardImage(
         promptWithReferenceHint,
@@ -1741,6 +2131,12 @@ export function createFastVideoFlowActions({
 
   return {
     handleFastInputChange,
+    handleSyncFastDirector,
+    handleUpdateFastDirector,
+    handlePreviewFastScene3d,
+    handleRegenerateFastScene3d,
+    handleCaptureFastDirector,
+    handleDeleteFastDirectorCapture,
     handleAddFastReferenceImage,
     handleAddFastReferenceImagesFromHistory,
     handleReplaceFastReferenceImageFromHistory,

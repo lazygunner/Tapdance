@@ -195,6 +195,10 @@ ${buildFastVideoPlanTasks(input).map((task, index) => `${index + 1}. ${task}`).j
 Output requirements:
 ${FAST_VIDEO_PROMPT_CONFIG.plan.outputRequirements.map((requirement) => `- ${requirement}`).join('\n')}
 - If Quick cut is enabled, scenes must be [].
+- Before creating scenes, identify the exact character count. Use stable sequential IDs 角色1, 角色2, 角色3... and never reuse an ID for a different character.
+- Every non-quick-cut scene must declare characterIds using only IDs from the top-level characters array.
+- Expand collective names and counts into distinct stable character IDs. directorLayout.characters must match characterIds one-to-one.
+- Allowed directorLayout pose values: stand, t-pose, walk, run, sit, crouch, kneel-one, kneel-two, hands-on-hips, lean, bow, think, fight, kick, throw, push, wave, reach, cross-arms, phone.
 - If reference images are present, videoPrompt.prompt and videoPrompt.promptZh must refer to them as 图片1, 图片2, 图片3... in order.
 - The numbering must correspond exactly to the reference image array order shown above.
 

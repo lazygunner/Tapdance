@@ -13,6 +13,7 @@ type ProjectDetailPageActionsProps = {
   isRefreshingFastVideoTask: boolean;
   isCancellingFastVideoTask: boolean;
   onGenerateFastPlan: () => void | Promise<void>;
+  onGoFastDirector: () => void;
   onGoFastVideo: () => void;
   onSkipFastStoryboard: () => void;
   onSubmitFastVideo: () => void | Promise<void>;
@@ -28,6 +29,7 @@ export function ProjectDetailPageActions({
   isRefreshingFastVideoTask,
   isCancellingFastVideoTask,
   onGenerateFastPlan,
+  onGoFastDirector,
   onGoFastVideo,
   onSkipFastStoryboard,
   onSubmitFastVideo,
@@ -63,27 +65,19 @@ export function ProjectDetailPageActions({
   }
 
   if (view === 'fastStoryboard') {
-    const readyReferenceImages = project.fastFlow.input.referenceImages.filter((reference) => reference.imageUrl.trim());
-    const readyReferenceVideos = project.fastFlow.input.referenceVideos.filter((reference) => reference.videoUrl.trim());
-    const readyReferenceAudios = project.fastFlow.input.referenceAudios.filter((reference) => reference.audioUrl.trim());
-    const readyImageCount = project.fastFlow.scenes.filter((scene) => scene.imageUrl && scene.selectedForVideo !== false).length;
-    const canProceedToVideo = (
-      readyImageCount > 0
-      || readyReferenceImages.length > 0
-      || readyReferenceVideos.length > 0
-      || readyReferenceAudios.length > 0
-    ) && Boolean(project.fastFlow.videoPrompt?.prompt);
+    const canProceedToDirector = project.fastFlow.scenes.length > 0
+      && Boolean(project.fastFlow.videoPrompt?.prompt);
     const canSkipStoryboard = Boolean(project.fastFlow.videoPrompt?.prompt?.trim());
 
     return (
       <>
         <button
           type="button"
-          onClick={onGoFastVideo}
-          disabled={!canProceedToVideo}
+          onClick={onGoFastDirector}
+          disabled={!canProceedToDirector}
           className="studio-button studio-button-primary"
         >
-          进入视频生成
+          进入 3D 预演
         </button>
         <button
           type="button"
@@ -94,6 +88,19 @@ export function ProjectDetailPageActions({
           跳过分镜图
         </button>
       </>
+    );
+  }
+
+  if (view === 'fastDirector') {
+    return (
+      <button
+        type="button"
+        onClick={onGoFastVideo}
+        disabled={!project.fastFlow.videoPrompt?.prompt?.trim()}
+        className="studio-button studio-button-primary"
+      >
+        进入视频生成
+      </button>
     );
   }
 

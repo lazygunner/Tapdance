@@ -20,6 +20,18 @@ export interface IElectronAPI {
     defaultPrefix?: string;
     data: ArrayBuffer;
   }) => Promise<{ url: string; key: string }>;
+  requestJson: (payload: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }) => Promise<{
+    ok: boolean;
+    status: number;
+    statusText: string;
+    text: string;
+  }>;
+  readBundledModel: (fileName: string) => Promise<string>;
   selectDirectory: (options?: { title?: string; defaultPath?: string }) => Promise<string>;
 }
 

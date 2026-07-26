@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell, ipcMain, nativeImage, dialog } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, nativeImage, dialog, net } from 'electron'
 import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import type { TosConfig } from '../../src/types.ts'
 import { buildTosObjectKey, createTosClient, resolveTosUrl } from '../../src/services/tosUploadService.ts'
@@ -20,6 +21,12 @@ type TosUploadPayload = {
   fileType?: string
   defaultPrefix?: string
   data: ArrayBuffer
+}
+type RemoteJsonRequestPayload = {
+  url: string
+  method?: string
+  headers?: Record<string, string>
+  body?: string
 }
 
 type MockApiStartOptions = {
@@ -396,6 +403,32 @@ app.whenReady().then(async () => {
       console.error('[Electron][TOS] Upload failed:', error)
       throw new Error(`TOS 主进程上传失败：${normalizeErrorMessage(error)}`)
     }
+  })
+
+  ipcMain.handle('http:requestJson', async (_, payload: RemoteJsonRequestPayload) => {
+    const url = String(payload?.url || '').trim()
+    if (!isHttpUrl(url)) {
+      throw new Error('远程请求 URL 无效')
+    }
+    const response = await net.fetch(url, {
+      method: payload.method || 'GET',
+      headers: payload.headers,
+      body: payload.body,
+    })
+    return {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      text: await response.text(),
+    }
+  })
+
+  ipcMain.handle('asset:readBundledModel', async (_, fileName: string) => {
+    if (fileName !== 'ue-mannequin-retopology.glb') {
+      throw new Error('不允许读取该模型资源')
+    }
+    const data = await readFile(join(__dirname, '../renderer/models', fileName))
+    return data.toString('base64')
   })
 
   ipcMain.handle('dialog:selectDirectory', async (_, options?: { title?: string; defaultPath?: string }) => {

@@ -98,12 +98,13 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
   }
 
   project.fastFlow.input.referenceImages.forEach((reference, index) => {
+    const isDirectorCapture = reference.origin?.kind === 'director-capture';
     pushItem({
       id: `${project.id}:fast-reference:${reference.id || index}`,
       kind: 'image',
       url: reference.imageUrl,
       title: reference.description || `参考图 ${index + 1}`,
-      sourceLabel: '极速参考图',
+      sourceLabel: isDirectorCapture ? '3D 白模机位预演' : '极速参考图',
     });
   });
 

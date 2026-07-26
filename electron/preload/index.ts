@@ -23,6 +23,13 @@ const api = {
     defaultPrefix?: string
     data: ArrayBuffer
   }) => ipcRenderer.invoke('tos:uploadVideo', payload),
+  requestJson: (payload: {
+    url: string
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+  }) => ipcRenderer.invoke('http:requestJson', payload),
+  readBundledModel: (fileName: string) => ipcRenderer.invoke('asset:readBundledModel', fileName),
   selectDirectory: (options?: { title?: string; defaultPath?: string }) => ipcRenderer.invoke('dialog:selectDirectory', options),
 }
 

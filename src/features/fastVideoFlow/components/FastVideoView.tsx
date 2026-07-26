@@ -1978,6 +1978,9 @@ export function FastVideoView({
                     value={executionConfig.apiModelKey}
                     onChange={(event) => onUpdateExecutionConfig({ apiModelKey: event.target.value as Props['executionConfig']['apiModelKey'] })}
                     className={controlClassName}
+                    panelMinWidth={210}
+                    triggerLabelClassName="whitespace-normal break-words pr-1 text-xs leading-4"
+                    optionLabelClassName="whitespace-normal break-words pr-1 text-xs leading-4"
                   >
                     <option value="standard">Seedance 2.0</option>
                     <option value="fast">Seedance 2.0 Fast</option>

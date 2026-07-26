@@ -7,6 +7,13 @@ export type FastTaskStatus = 'idle' | 'queued' | 'submitting' | 'generating' | '
 export type SeedanceHealthStatus = 'unknown' | 'logged_in' | 'logged_out' | 'error';
 export type FastReferenceImageType = 'person' | 'scene' | 'product' | 'style' | 'other';
 export type FastReferenceImageSubmitMode = 'auto' | 'reference_image';
+export type FastReferenceImageOriginKind = 'upload' | 'history' | 'storyboard' | 'director-capture';
+
+export interface FastReferenceImageOrigin {
+  kind: FastReferenceImageOriginKind;
+  sceneId?: string;
+  captureId?: string;
+}
 
 export interface FastReferenceImage {
   id: string;
@@ -16,6 +23,7 @@ export interface FastReferenceImage {
   description?: string;
   selectedForVideo?: boolean;
   submitMode?: FastReferenceImageSubmitMode;
+  origin?: FastReferenceImageOrigin;
 }
 
 export type FastReferenceVideoType = 'motion' | 'camera' | 'effect' | 'edit' | 'extend' | 'other';
@@ -71,6 +79,9 @@ export interface FastSceneDraft {
   negativePrompt?: string;
   negativePromptZh?: string;
   continuityAnchors: string[];
+  characterIds?: string[];
+  directorLayout?: FastDirectorSceneLayout;
+  selectedReferenceImageIds?: string[];
   imageUrl?: string;
   imageStorageKey?: string;
   locked?: boolean;
@@ -79,14 +90,136 @@ export interface FastSceneDraft {
   error?: string;
 }
 
+export interface FastDirectorSceneLayout {
+  reasoning?: string;
+  camera?: {
+    position: [number, number, number];
+    target: [number, number, number];
+    fov: number;
+  };
+  characters: Array<{
+    roleId: string;
+    position: [number, number, number];
+    rotationY: number;
+    scale?: number;
+    pose: FastDirectorPose;
+  }>;
+}
+
+export interface FastPlanCharacter {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface FastVideoPromptDraft {
   prompt: string;
   promptZh?: string;
 }
 
 export interface FastVideoPlan {
+  characters?: FastPlanCharacter[];
   scenes: FastSceneDraft[];
   videoPrompt: FastVideoPromptDraft;
+}
+
+export type FastDirectorPose =
+  | 'stand'
+  | 't-pose'
+  | 'walk'
+  | 'run'
+  | 'sit'
+  | 'crouch'
+  | 'kneel-one'
+  | 'kneel-two'
+  | 'hands-on-hips'
+  | 'lean'
+  | 'bow'
+  | 'think'
+  | 'fight'
+  | 'kick'
+  | 'throw'
+  | 'push'
+  | 'wave'
+  | 'reach'
+  | 'cross-arms'
+  | 'phone';
+export type FastDirectorBodyType =
+  | 'mannequin'
+  | 'female'
+  | 'broad'
+  | 'muscular'
+  | 'slim'
+  | 'teen'
+  | 'child'
+  | 'chibi';
+export type FastDirectorPrimitiveType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'plane';
+
+export interface FastDirectorCharacter {
+  id: string;
+  roleId: string;
+  bodyType?: FastDirectorBodyType;
+  sourcePlanId?: string;
+  sourceReferenceId?: string;
+  name: string;
+  color?: string;
+  description?: string;
+  referenceImageUrl?: string;
+}
+
+export interface FastDirectorPlacement {
+  characterId: string;
+  position: [number, number, number];
+  rotationY: number;
+  scale: number;
+  pose: FastDirectorPose;
+}
+
+export interface FastDirectorObject {
+  id: string;
+  name: string;
+  primitiveType: FastDirectorPrimitiveType;
+  color: string;
+}
+
+export interface FastDirectorObjectPlacement {
+  objectId: string;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+}
+
+export interface FastDirectorCamera {
+  position: [number, number, number];
+  target: [number, number, number];
+  fov: number;
+  aspectRatio?: VisualAspectRatio;
+}
+
+export interface FastDirectorCapture {
+  id: string;
+  imageUrl: string;
+  referenceImageId: string;
+  camera: FastDirectorCamera;
+  aspectRatio: VisualAspectRatio;
+  createdAt: string;
+}
+
+export interface FastDirectorScene {
+  sceneId: string;
+  placements: FastDirectorPlacement[];
+  objectPlacements: FastDirectorObjectPlacement[];
+  camera: FastDirectorCamera;
+  captures: FastDirectorCapture[];
+  updatedAt: string;
+}
+
+export interface FastDirectorState {
+  activeSceneId: string;
+  characters: FastDirectorCharacter[];
+  objects: FastDirectorObject[];
+  deletedCharacterIds: string[];
+  scenes: FastDirectorScene[];
 }
 
 export interface SeedanceTask {
@@ -123,7 +256,9 @@ export interface SeedanceHealth {
 
 export interface FastVideoProject {
   input: FastVideoInput;
+  characters: FastPlanCharacter[];
   scenes: FastSceneDraft[];
+  director: FastDirectorState;
   videoPrompt: FastVideoPromptDraft | null;
   seedanceDraft: SeedanceDraft | null;
   executionConfig: {

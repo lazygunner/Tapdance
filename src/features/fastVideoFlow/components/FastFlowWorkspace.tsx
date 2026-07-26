@@ -1,15 +1,30 @@
-import type { ChangeEvent, ReactNode } from 'react';
+import { lazy, Suspense, type ChangeEvent, type ReactNode } from 'react';
 
 import type { ApiSettings, Project } from '../../../types.ts';
 import type { ProjectGroupImageAsset, ProjectGroupMediaAsset } from '../../../services/projectGroups.ts';
 import type { WorkspaceThemeMode, WorkspaceView } from '../../../components/studio/WorkspaceViews.tsx';
-import type { SeedanceHealth, FastReferenceAudio, FastReferenceImage, FastReferenceVideo, FastSceneDraft, FastVideoInput, FastVideoPromptDraft } from '../types/fastTypes.ts';
+import type {
+  FastDirectorCamera,
+  FastDirectorState,
+  SeedanceHealth,
+  FastReferenceAudio,
+  FastReferenceImage,
+  FastReferenceVideo,
+  FastSceneDraft,
+  FastVideoInput,
+  FastVideoPromptDraft,
+} from '../types/fastTypes.ts';
 import type { SeedanceDraft } from '../../seedance/types.ts';
 import { FastInputView } from './FastInputView.tsx';
 import { FastStoryboardView } from './FastStoryboardView.tsx';
 import { FastVideoView } from './FastVideoView.tsx';
 import { SeedanceHealthPanel } from './SeedanceHealthPanel.tsx';
 import { canCancelFastVideoTask, getFastVideoDraftState } from '../utils/fastVideoTask.ts';
+
+const FastDirectorView = lazy(async () => {
+  const module = await import('./FastDirectorView.tsx');
+  return { default: module.FastDirectorView };
+});
 
 type FastFlowWorkspaceProps = {
   view: WorkspaceView;
@@ -31,6 +46,7 @@ type FastFlowWorkspaceProps = {
   onRefreshSeedanceHealth: () => void | Promise<void>;
   onChangeFastInput: (patch: Partial<FastVideoInput>) => void;
   onGenerateFastPlan: () => void | Promise<void>;
+  onGoFastDirector: () => void;
   onGoFastVideo: () => void;
   onOpenApiConfig: () => void;
   onAddReferenceImage: () => string | void;
@@ -55,6 +71,7 @@ type FastFlowWorkspaceProps = {
   onAddScene: () => string | void;
   onDeleteScene: (sceneId: string) => void;
   onGenerateSceneImage: (sceneId: string, mode: 'text-only' | 'previous-scene') => void | Promise<void>;
+  onPreviewScene3d: (sceneId: string) => void;
   onToggleSceneSelection: (sceneId: string) => void;
   onUploadSceneImage: (event: ChangeEvent<HTMLInputElement>, sceneId: string) => void | Promise<void>;
   onPreviewImage: (url: string | null) => void;
@@ -71,6 +88,16 @@ type FastFlowWorkspaceProps = {
   onCancelTask: () => void | Promise<void>;
   onToggleReferenceSelection: (referenceId: string) => void;
   onToggleReferenceAudioSelection: (referenceId: string) => void;
+  onSyncDirector: () => void;
+  onUpdateDirector: (updater: (current: FastDirectorState) => FastDirectorState) => void;
+  onCaptureDirector: (input: {
+    sceneId: string;
+    dataUrl: string;
+    camera: FastDirectorCamera;
+    aspectRatio: FastVideoInput['aspectRatio'];
+  }) => Promise<void>;
+  onDeleteDirectorCapture: (sceneId: string, captureId: string) => void;
+  onRegenerateDirectorScene: (sceneId: string) => Promise<void>;
 };
 
 export function FastFlowWorkspace({
@@ -93,6 +120,7 @@ export function FastFlowWorkspace({
   onRefreshSeedanceHealth,
   onChangeFastInput,
   onGenerateFastPlan,
+  onGoFastDirector,
   onGoFastVideo,
   onOpenApiConfig,
   onAddReferenceImage,
@@ -117,6 +145,7 @@ export function FastFlowWorkspace({
   onAddScene,
   onDeleteScene,
   onGenerateSceneImage,
+  onPreviewScene3d,
   onToggleSceneSelection,
   onUploadSceneImage,
   onPreviewImage,
@@ -130,6 +159,11 @@ export function FastFlowWorkspace({
   onCancelTask,
   onToggleReferenceSelection,
   onToggleReferenceAudioSelection,
+  onSyncDirector,
+  onUpdateDirector,
+  onCaptureDirector,
+  onDeleteDirectorCapture,
+  onRegenerateDirectorScene,
 }: FastFlowWorkspaceProps) {
   if (view === 'fastInput') {
     return (
@@ -174,6 +208,7 @@ export function FastFlowWorkspace({
     return (
       <FastStoryboardView
         input={project.fastFlow.input}
+        characters={project.fastFlow.characters}
         scenes={project.fastFlow.scenes}
         videoPrompt={project.fastFlow.videoPrompt}
         generatingImages={generatingFastSceneImages}
@@ -182,16 +217,42 @@ export function FastFlowWorkspace({
         onDeleteScene={onDeleteScene}
         onUpdatePrompt={onUpdatePrompt}
         onGenerateImage={(sceneId) => onGenerateSceneImage(sceneId, 'text-only')}
+        onPreview3d={onPreviewScene3d}
         onGenerateImageWithPrevious={(sceneId) => onGenerateSceneImage(sceneId, 'previous-scene')}
         onToggleSelection={onToggleSceneSelection}
         onUploadSceneImage={onUploadSceneImage}
         onPreviewImage={(url) => onPreviewImage(url)}
-        onNextVideo={onGoFastVideo}
+        onNextVideo={onGoFastDirector}
         onSkipStoryboard={onSkipStoryboard}
         renderImageModelPanel={renderImageModelPanel}
         themeMode={themeMode}
         hideHeader
       />
+    );
+  }
+
+  if (view === 'fastDirector') {
+    return (
+      <Suspense
+        fallback={(
+          <div className="flex min-h-[620px] items-center justify-center text-sm text-[var(--studio-muted)]">
+            正在加载 3D 白模导演台…
+          </div>
+        )}
+      >
+        <FastDirectorView
+          director={project.fastFlow.director}
+          input={project.fastFlow.input}
+          scenes={project.fastFlow.scenes}
+          onCapture={onCaptureDirector}
+          onDeleteCapture={onDeleteDirectorCapture}
+          onRegenerateScene={onRegenerateDirectorScene}
+          onNextVideo={onGoFastVideo}
+          onSyncDirector={onSyncDirector}
+          onUpdateDirector={onUpdateDirector}
+          onPreviewImage={(url) => onPreviewImage(url)}
+        />
+      </Suspense>
     );
   }
 

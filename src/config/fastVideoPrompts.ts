@@ -28,6 +28,7 @@ export const FAST_VIDEO_PROMPT_CONFIG = {
     referenceWithImage: (count: number) => `The user provided ${count} reference image${count > 1 ? 's' : ''}. Treat them as the strongest visual anchors for subject identity, environment, composition language, and continuity. You must respect each image's declared type and any provided description. If multiple images are present, preserve the role of each image distinctly in the plan.`,
     referenceWithoutImage: 'No reference image is provided. Infer the visual anchors from the text prompt.',
     tasks: [
+      'Identify every distinct on-screen character before writing scenes. Assign stable IDs 角色1, 角色2, 角色3... and keep the same ID across all scenes.',
       'Decide how many storyboard scenes the idea needs based on visual complexity, pacing, and scene transitions.',
       'Write storyboard image prompts that are optimized for still-image generation, not video generation.',
       'Make consecutive scenes explicitly preserve continuity whenever they share the same subject, environment, or visual style.',
@@ -40,17 +41,46 @@ export const FAST_VIDEO_PROMPT_CONFIG = {
       'videoPrompt.prompt and videoPrompt.promptZh must both be Simplified Chinese prompts suitable for Seedance execution.',
       'negativePrompt should be a concise execution-oriented negative prompt in English.',
       'negativePromptZh should be the Chinese reference version.',
+      'characters must list every distinct on-screen character exactly once with a stable ID, display name, and concise visual/narrative description.',
+      'Each scene.characterIds must contain only IDs declared in characters and must identify exactly who appears in that scene.',
+      'Expand named groups into individual characters. For example, 江南七怪 means seven distinct character IDs, not one group character.',
+      'Each scene must include directorLayout.characters with one entry per characterId. Use meters for position [x,y,z], radians for rotationY, scale near 1, and a supported pose.',
       'The video prompt must focus on opening state, motion, transition/progression, continuity, style, and exclusions.',
       'Do not include markdown fences or any explanation outside JSON.',
     ],
     responseShape: `{
+  "characters": [
+    {
+      "id": "角色1",
+      "name": "string",
+      "description": "string"
+    }
+  ],
   "scenes": [
     {
       "title": "string",
       "imagePrompt": "string",
       "imagePromptZh": "string",
       "negativePrompt": "string",
-      "negativePromptZh": "string"
+      "negativePromptZh": "string",
+      "characterIds": ["角色1"],
+      "directorLayout": {
+        "reasoning": "简述前景、背景和人物关系",
+        "camera": {
+          "position": [0, 1.6, 4.2],
+          "target": [0, 1.05, 0],
+          "fov": 38
+        },
+        "characters": [
+          {
+            "roleId": "角色1",
+            "position": [0, 0, 0.5],
+            "rotationY": 0,
+            "scale": 1,
+            "pose": "stand"
+          }
+        ]
+      }
     }
   ],
   "videoPrompt": {

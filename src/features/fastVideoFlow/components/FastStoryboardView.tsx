@@ -1,13 +1,14 @@
 import { useState, type ChangeEvent, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Circle, Image as ImageIcon, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 
-import type { FastSceneDraft, FastVideoInput, FastVideoPromptDraft } from '../types/fastTypes.ts';
+import type { FastPlanCharacter, FastSceneDraft, FastVideoInput, FastVideoPromptDraft } from '../types/fastTypes.ts';
 import { ClickPopover } from '../../../components/studio/ClickPopover.tsx';
 import { StudioModal, StudioPage, StudioPageHeader, StudioPanel } from '../../../components/studio/StudioPrimitives.tsx';
 import { PromptTokenEditor, type PromptReferenceItem } from './FastVideoView.tsx';
 
 type Props = {
   input: FastVideoInput;
+  characters: FastPlanCharacter[];
   scenes: FastSceneDraft[];
   videoPrompt: FastVideoPromptDraft | null;
   generatingImages: Record<string, boolean>;
@@ -16,6 +17,7 @@ type Props = {
   onDeleteScene: (sceneId: string) => void;
   onUpdatePrompt: (patch: Partial<FastVideoPromptDraft>) => void;
   onGenerateImage: (sceneId: string) => void;
+  onPreview3d: (sceneId: string) => void;
   onGenerateImageWithPrevious: (sceneId: string) => void;
   onToggleSelection: (sceneId: string) => void;
   onUploadSceneImage: (event: ChangeEvent<HTMLInputElement>, sceneId: string) => void;
@@ -49,6 +51,7 @@ function isSceneSelected(scene: FastSceneDraft) {
 
 export function FastStoryboardView({
   input,
+  characters,
   scenes,
   videoPrompt,
   generatingImages,
@@ -57,6 +60,7 @@ export function FastStoryboardView({
   onDeleteScene,
   onUpdatePrompt,
   onGenerateImage,
+  onPreview3d,
   onGenerateImageWithPrevious,
   onToggleSelection,
   onUploadSceneImage,
@@ -68,8 +72,6 @@ export function FastStoryboardView({
   hideHeader = false,
 }: Props) {
   const readyReferenceImages = input.referenceImages.filter((reference) => reference.imageUrl.trim());
-  const readyReferenceVideos = input.referenceVideos.filter((reference) => reference.videoUrl.trim());
-  const readyReferenceAudios = input.referenceAudios.filter((reference) => reference.audioUrl.trim());
   const promptReferenceItems: PromptReferenceItem[] = readyReferenceImages.map((reference, index) => ({
     token: getStoryboardPromptReferenceToken(index),
     imageUrl: reference.imageUrl,
@@ -123,12 +125,7 @@ export function FastStoryboardView({
 
   const readyImageCount = scenes.filter((scene) => scene.imageUrl).length;
   const selectedReadyImageCount = scenes.filter((scene) => scene.imageUrl && isSceneSelected(scene)).length;
-  const canProceedToVideo = (
-    selectedReadyImageCount > 0
-    || readyReferenceImages.length > 0
-    || readyReferenceVideos.length > 0
-    || readyReferenceAudios.length > 0
-  ) && Boolean(videoPrompt?.prompt);
+  const canProceedToDirector = scenes.length > 0 && Boolean(videoPrompt?.prompt);
   const canSkipStoryboard = Boolean(videoPrompt?.prompt);
 
   const confirmDeleteScene = () => {
@@ -163,10 +160,10 @@ export function FastStoryboardView({
               <button
                 type="button"
                 onClick={onNextVideo}
-                disabled={!canProceedToVideo}
+                disabled={!canProceedToDirector}
                 className="studio-button studio-button-primary"
               >
-                进入视频生成
+                进入 3D 预演
               </button>
               <button
                 type="button"
@@ -190,7 +187,24 @@ export function FastStoryboardView({
                 <div>画幅：{input.aspectRatio}</div>
                 <div>时长：{input.durationSec}s</div>
                 <div>分镜：{scenes.length}</div>
+                <div>角色：{characters.length}</div>
               </div>
+              {characters.length > 0 ? (
+                <div>
+                  <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--studio-dim)]">角色清单</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {characters.map((character) => (
+                      <span
+                        key={character.id}
+                        title={character.description}
+                        className="rounded-md border border-[var(--studio-border)] bg-[var(--studio-surface-contrast)] px-2 py-1 text-[11px] text-[var(--studio-text)]"
+                      >
+                        {character.id} · {character.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="leading-6">{input.prompt}</div>
             </div>
           </StudioPanel>
@@ -353,6 +367,43 @@ export function FastStoryboardView({
                         />
                       </div>
 
+                      {readyReferenceImages.length > 0 ? (
+                        <div>
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">生成参考图</div>
+                            <div className="text-[11px] text-[var(--studio-dim)]">
+                              {(scene.selectedReferenceImageIds || []).length}/{readyReferenceImages.length} 已选
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                            {readyReferenceImages.map((reference, referenceIndex) => {
+                              const isReferenceSelected = (scene.selectedReferenceImageIds || []).includes(reference.id);
+                              return (
+                                <button
+                                  key={reference.id}
+                                  type="button"
+                                  onClick={() => onUpdateScene(scene.id, {
+                                    selectedReferenceImageIds: isReferenceSelected
+                                      ? (scene.selectedReferenceImageIds || []).filter((id) => id !== reference.id)
+                                      : [...(scene.selectedReferenceImageIds || []), reference.id],
+                                  })}
+                                  className={`relative overflow-hidden rounded-lg border transition ${isReferenceSelected ? 'border-sky-400 ring-2 ring-sky-400/25' : 'border-[var(--studio-border)] opacity-65 hover:opacity-100'}`}
+                                  title={reference.description || `参考图 ${referenceIndex + 1}`}
+                                >
+                                  <img src={reference.imageUrl} alt={`选择参考图 ${referenceIndex + 1}`} className="aspect-video w-full object-cover" />
+                                  <span className={`absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full ${isReferenceSelected ? 'bg-sky-500 text-white' : 'bg-black/70 text-zinc-300'}`}>
+                                    {isReferenceSelected ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-2 text-[11px] leading-5 text-[var(--studio-dim)]">
+                            选中的图片会直接随当前分镜提交；也可在提示词中用 @ 指定。3D 机位截图会自动出现在此列表。
+                          </p>
+                        </div>
+                      ) : null}
+
                       <details className={detailsClass}>
                         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">图像提示词 (英文)</summary>
                         <textarea
@@ -375,7 +426,15 @@ export function FastStoryboardView({
                         </div>
                       ) : null}
 
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <button
+                          type="button"
+                          onClick={() => onPreview3d(scene.id)}
+                          disabled={!activeImagePrompt}
+                          className={`h-11 rounded-xl border px-4 text-sm transition-colors ${!activeImagePrompt ? 'cursor-not-allowed border-zinc-800 bg-zinc-900 text-zinc-600' : 'border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20'}`}
+                        >
+                          3D 预览
+                        </button>
                         <button
                           type="button"
                           onClick={() => onGenerateImage(scene.id)}

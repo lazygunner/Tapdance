@@ -188,6 +188,9 @@ export function StudioModal({
 type StudioSelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
   children: ReactNode;
   displayValue?: ReactNode;
+  panelMinWidth?: number;
+  triggerLabelClassName?: string;
+  optionLabelClassName?: string;
 };
 
 type ParsedSelectOption = {
@@ -249,6 +252,9 @@ export function StudioSelect({
   title,
   autoFocus,
   displayValue,
+  panelMinWidth = 0,
+  triggerLabelClassName,
+  optionLabelClassName,
 }: StudioSelectProps) {
   const options = useMemo(() => extractSelectOptions(children), [children]);
   const isControlled = value !== undefined;
@@ -304,7 +310,10 @@ export function StudioSelect({
       }
 
       const viewportPadding = 12;
-      const width = Math.min(buttonRect.width, window.innerWidth - viewportPadding * 2);
+      const width = Math.min(
+        Math.max(buttonRect.width, panelMinWidth),
+        window.innerWidth - viewportPadding * 2,
+      );
       let left = Math.min(buttonRect.left, window.innerWidth - width - viewportPadding);
       left = Math.max(viewportPadding, left);
       let top = buttonRect.bottom + 8;
@@ -323,7 +332,7 @@ export function StudioSelect({
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [open, options.length]);
+  }, [open, options.length, panelMinWidth]);
 
   useLayoutEffect(() => {
     const nextThemeMode = resolvePortalThemeMode();
@@ -388,7 +397,7 @@ export function StudioSelect({
           }
         }}
       >
-        <span className="min-w-0 flex-1 truncate text-left">
+        <span className={cx('min-w-0 flex-1 text-left', !triggerLabelClassName && 'truncate', triggerLabelClassName)}>
           {displayValue ?? (selectedOption?.label || '\u00A0')}
         </span>
         <ChevronDown className="studio-select-caret h-4 w-4 shrink-0" />
@@ -431,7 +440,9 @@ export function StudioSelect({
                             }
                           }}
                         >
-                          <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
+                          <span className={cx('min-w-0 flex-1 text-left', !optionLabelClassName && 'truncate', optionLabelClassName)}>
+                            {option.label}
+                          </span>
                           <Check className={cx('h-4 w-4 shrink-0 opacity-0 transition-opacity', isSelected && 'opacity-100')} />
                         </button>
                       );

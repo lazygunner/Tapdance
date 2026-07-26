@@ -90,6 +90,9 @@ export function getProjectResumeView(project: Project): WorkspaceView {
     if (hasGeneratedVideo) {
       return 'fastVideo';
     }
+    if (project.fastFlow.director.scenes.some((scene) => scene.captures.length > 0)) {
+      return 'fastDirector';
+    }
     if (project.fastFlow.scenes.length > 0) {
       return 'fastStoryboard';
     }

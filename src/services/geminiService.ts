@@ -200,6 +200,18 @@ export async function generateFastVideoPlanWithModel(input: FastVideoInput, mode
       responseSchema: {
         type: Type.OBJECT,
         properties: {
+          characters: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                name: { type: Type.STRING },
+                description: { type: Type.STRING },
+              },
+              required: ['id', 'name', 'description'],
+            },
+          },
           scenes: {
             type: Type.ARRAY,
             items: {
@@ -210,8 +222,39 @@ export async function generateFastVideoPlanWithModel(input: FastVideoInput, mode
                 imagePromptZh: { type: Type.STRING },
                 negativePrompt: { type: Type.STRING },
                 negativePromptZh: { type: Type.STRING },
+                characterIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                directorLayout: {
+                  type: Type.OBJECT,
+                  properties: {
+                    reasoning: { type: Type.STRING },
+                    camera: {
+                      type: Type.OBJECT,
+                      properties: {
+                        position: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                        target: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                        fov: { type: Type.NUMBER },
+                      },
+                      required: ['position', 'target', 'fov'],
+                    },
+                    characters: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          roleId: { type: Type.STRING },
+                          position: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                          rotationY: { type: Type.NUMBER },
+                          scale: { type: Type.NUMBER },
+                          pose: { type: Type.STRING },
+                        },
+                        required: ['roleId', 'position', 'rotationY', 'scale', 'pose'],
+                      },
+                    },
+                  },
+                  required: ['reasoning', 'camera', 'characters'],
+                },
               },
-              required: ['title', 'imagePrompt', 'imagePromptZh', 'negativePrompt', 'negativePromptZh'],
+              required: ['title', 'imagePrompt', 'imagePromptZh', 'negativePrompt', 'negativePromptZh', 'characterIds', 'directorLayout'],
             },
           },
           videoPrompt: {
@@ -223,19 +266,28 @@ export async function generateFastVideoPlanWithModel(input: FastVideoInput, mode
             required: ['prompt', 'promptZh'],
           },
         },
-        required: ['scenes', 'videoPrompt'],
+        required: ['characters', 'scenes', 'videoPrompt'],
       },
     },
   });
 
   const parsed = JSON.parse(response.text || '{}') as FastVideoPlan;
   const scenes = input.quickCutEnabled ? [] : (parsed.scenes || []);
+  const characters = Array.isArray(parsed.characters)
+    ? parsed.characters.map((character, index) => ({
+      id: character.id?.trim() || `角色${index + 1}`,
+      name: character.name?.trim() || character.id?.trim() || `角色 ${index + 1}`,
+      description: character.description?.trim() || '',
+    }))
+    : [];
   return {
+    characters,
     scenes: scenes.map((scene, index) => ({
       ...scene,
       id: `fast-scene-${index + 1}`,
       summary: typeof scene.summary === 'string' ? scene.summary : '',
       continuityAnchors: Array.isArray(scene.continuityAnchors) ? scene.continuityAnchors : [],
+      characterIds: Array.isArray(scene.characterIds) ? scene.characterIds : [],
       locked: false,
       selectedForVideo: true,
       status: 'idle',

@@ -45,15 +45,33 @@ function getBriefStyleContext(brief: Brief) {
 }
 
 async function requestJson(path: string, init: RequestInit) {
-  const response = await fetch(`${getBaseUrl()}${path}`, {
+  const url = `${getBaseUrl()}${path}`;
+  const headers = {
+    ...getHeaders(),
+    ...(init.headers || {}),
+  } as Record<string, string>;
+  const electronResponse = typeof window !== 'undefined'
+    && window.electronAPI?.isElectron
+    && typeof window.electronAPI.requestJson === 'function'
+    ? await window.electronAPI.requestJson({
+      url,
+      method: init.method,
+      headers,
+      body: typeof init.body === 'string' ? init.body : undefined,
+    })
+    : null;
+  const browserResponse = electronResponse ? null : await fetch(url, {
     ...init,
-    headers: {
-      ...getHeaders(),
-      ...(init.headers || {}),
-    },
+    headers,
   });
+  const response = electronResponse || {
+    ok: browserResponse!.ok,
+    status: browserResponse!.status,
+    statusText: browserResponse!.statusText,
+    text: await browserResponse!.text(),
+  };
 
-  const text = await response.text();
+  const text = response.text;
   let data: Record<string, any> = {};
   if (text) {
     try {
@@ -284,12 +302,21 @@ export async function generateFastVideoPlanWithModel(input: FastVideoInput, mode
 
   const result = await chatJson<FastVideoPlan>(modelName, buildFastVideoPlanPrompt(input));
   const scenes = input.quickCutEnabled ? [] : (result.scenes || []);
+  const characters = Array.isArray(result.characters)
+    ? result.characters.map((character, index) => ({
+      id: character.id?.trim() || `角色${index + 1}`,
+      name: character.name?.trim() || character.id?.trim() || `角色 ${index + 1}`,
+      description: character.description?.trim() || '',
+    }))
+    : [];
   return {
+    characters,
     scenes: scenes.map((scene, index) => ({
       ...scene,
       id: `fast-scene-${index + 1}`,
       summary: typeof scene.summary === 'string' ? scene.summary : '',
       continuityAnchors: Array.isArray(scene.continuityAnchors) ? scene.continuityAnchors : [],
+      characterIds: Array.isArray(scene.characterIds) ? scene.characterIds : [],
       locked: false,
       selectedForVideo: true,
       status: 'idle',

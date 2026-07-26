@@ -17,7 +17,7 @@ export type ProjectGroupImageAsset = {
   groupId: string;
   projectId: string;
   projectName: string;
-  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-reference' | 'fast-scene' | 'fast-task-last-frame' | 'image-creation' | 'portrait-public' | 'portrait-real' | 'portrait-virtual' | 'portrait-seedream';
+  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-reference' | 'fast-director-capture' | 'fast-scene' | 'fast-task-last-frame' | 'image-creation' | 'portrait-public' | 'portrait-real' | 'portrait-virtual' | 'portrait-seedream';
   title: string;
   sourceLabel: string;
   imageUrl: string;
@@ -215,14 +215,15 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
       return;
     }
 
+    const isDirectorCapture = reference.origin?.kind === 'director-capture';
     images.push({
       id: `${project.id}:fast-reference:${reference.id || index}`,
       groupId,
       projectId: project.id,
       projectName,
-      sourceType: 'fast-reference',
+      sourceType: isDirectorCapture ? 'fast-director-capture' : 'fast-reference',
       title: reference.description || `参考图 ${index + 1}`,
-      sourceLabel: '极速参考图',
+      sourceLabel: isDirectorCapture ? '3D 白模机位预演' : '极速参考图',
       imageUrl: reference.imageUrl,
       createdAt: projectCreatedAt,
     });

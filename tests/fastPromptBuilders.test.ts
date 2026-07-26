@@ -42,6 +42,8 @@ test('buildFastVideoPlanPrompt lets auto scene count be model-decided and keeps 
   assert.match(prompt, /decide the scene count based on idea complexity/);
   assert.match(prompt, /imagePrompt must be a professional English prompt/);
   assert.match(prompt, /videoPrompt\.prompt and videoPrompt\.promptZh must both be Simplified Chinese/);
+  assert.match(prompt, /stable sequential IDs 角色1, 角色2, 角色3/);
+  assert.match(prompt, /scene\.characterIds/);
   assert.doesNotMatch(prompt, /decide 1 or 2 scenes/);
   assert.doesNotMatch(prompt, /imagePrompt and videoPrompt should be professional English/);
 });

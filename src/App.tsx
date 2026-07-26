@@ -553,6 +553,12 @@ export default function App() {
 
   const {
     handleFastInputChange,
+    handleSyncFastDirector,
+    handleUpdateFastDirector,
+    handlePreviewFastScene3d,
+    handleRegenerateFastScene3d,
+    handleCaptureFastDirector,
+    handleDeleteFastDirectorCapture,
     handleAddFastReferenceImage,
     handleAddFastReferenceImagesFromHistory,
     handleReplaceFastReferenceImageFromHistory,
@@ -664,7 +670,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!['apiConfig', 'fastInput', 'fastStoryboard', 'fastVideo'].includes(view)) {
+    if (!['apiConfig', 'fastInput', 'fastStoryboard', 'fastDirector', 'fastVideo'].includes(view)) {
       return;
     }
 
@@ -1294,7 +1300,7 @@ export default function App() {
           onClearWaitingItems={clearWaitingSeedanceCliQueueItems}
         />
       )
-    : view === 'fastInput' || view === 'fastStoryboard' || view === 'fastVideo'
+    : view === 'fastInput' || view === 'fastStoryboard' || view === 'fastDirector' || view === 'fastVideo'
       ? (
         <FastFlowWorkspace
           view={view}
@@ -1316,6 +1322,7 @@ export default function App() {
           onRefreshSeedanceHealth={() => void refreshSeedanceHealth()}
           onChangeFastInput={handleFastInputChange}
           onGenerateFastPlan={() => void handleGenerateFastPlan()}
+          onGoFastDirector={() => setView('fastDirector')}
           onGoFastVideo={() => setView('fastVideo')}
           onOpenApiConfig={() => setView('apiConfig')}
           onAddReferenceImage={handleAddFastReferenceImage}
@@ -1340,6 +1347,8 @@ export default function App() {
           onAddScene={handleAddFastScene}
           onDeleteScene={handleDeleteFastScene}
           onGenerateSceneImage={handleGenerateFastSceneImage}
+          onPreviewScene3d={handlePreviewFastScene3d}
+          onRegenerateDirectorScene={handleRegenerateFastScene3d}
           onUploadSceneImage={handleUploadFastSceneImage}
           onPreviewImage={setPreviewImage}
           onSkipStoryboard={handleSkipFastStoryboard}
@@ -1353,6 +1362,10 @@ export default function App() {
           onToggleReferenceSelection={handleToggleFastReferenceSelection}
           onToggleReferenceAudioSelection={handleToggleFastReferenceAudioSelection}
           onToggleSceneSelection={handleToggleFastSceneSelection}
+          onSyncDirector={handleSyncFastDirector}
+          onUpdateDirector={handleUpdateFastDirector}
+          onCaptureDirector={handleCaptureFastDirector}
+          onDeleteDirectorCapture={handleDeleteFastDirectorCapture}
         />
       )
       : view === 'home' || view === 'groupDetail' || view === 'assetLibrary' || view === 'portraitLibrary'
@@ -1532,6 +1545,7 @@ export default function App() {
                       isRefreshingFastVideoTask={isRefreshingFastVideoTask}
                       isCancellingFastVideoTask={isCancellingFastVideoTask}
                       onGenerateFastPlan={() => void handleGenerateFastPlan()}
+                      onGoFastDirector={() => setView('fastDirector')}
                       onGoFastVideo={() => setView('fastVideo')}
                       onSkipFastStoryboard={handleSkipFastStoryboard}
                       onSubmitFastVideo={() => void handleSubmitFastVideo()}

@@ -57,9 +57,9 @@ async function requestJson(path: string, init: RequestInit) {
 
 function resolveModelId(modelKey: SeedanceApiModelKey) {
   const config = getSeedanceConfig();
-  const modelId = (modelKey === 'fast' ? config.fastApiModel : config.apiModel).trim();
+  const modelId = (modelKey === 'seedance25' ? config.seedance25ApiModel : modelKey === 'fast' ? config.fastApiModel : config.apiModel).trim();
   if (!modelId) {
-    throw new Error(modelKey === 'fast' ? '未配置 Seedance 2.0 Fast API 模型 / 接入点。' : '未配置 Seedance 2.0 API 模型 / 接入点。');
+    throw new Error(modelKey === 'seedance25' ? '未配置 Seedance 2.5 API 模型 / 接入点。' : modelKey === 'fast' ? '未配置 Seedance 2.0 Fast API 模型 / 接入点。' : '未配置 Seedance 2.0 API 模型 / 接入点。');
   }
   return modelId;
 }
@@ -130,7 +130,7 @@ async function normalizeDraftForApi(draft: SeedanceDraft): Promise<SeedanceDraft
 
 export async function createSeedanceTask(draft: SeedanceDraft, modelKey: SeedanceApiModelKey = 'standard'): Promise<SeedanceApiTask> {
   const normalizedDraft = await normalizeDraftForApi(draft);
-  const compiled = compileSeedanceRequest(normalizedDraft);
+  const compiled = compileSeedanceRequest(normalizedDraft, modelKey);
   const payload = await requestJson('/contents/generations/tasks', {
     method: 'POST',
     body: JSON.stringify({
@@ -139,6 +139,7 @@ export async function createSeedanceTask(draft: SeedanceDraft, modelKey: Seedanc
       resolution: compiled.resolution,
       ratio: compiled.ratio,
       duration: compiled.duration,
+      ...(modelKey === 'seedance25' ? { output_format: compiled.outputFormat } : {}),
       generate_audio: compiled.generateAudio,
       return_last_frame: compiled.returnLastFrame,
       watermark: compiled.watermark,

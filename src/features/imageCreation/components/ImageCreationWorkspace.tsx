@@ -837,6 +837,18 @@ export function ImageCreationWorkspace({
               }]);
               setIsPortraitPickerOpen(false);
             }}
+            onSelectMany={(assets) => {
+              addReferences(assets.map((asset) => {
+                const title = asset.description || asset.assetId || '人像参考图';
+                return {
+                  id: crypto.randomUUID(),
+                  title,
+                  sourceUrl: asset.imageUrl,
+                  fileName: `${title || 'portrait-reference'}.png`,
+                };
+              }));
+              setIsPortraitPickerOpen(false);
+            }}
           />
         </div>
       </StudioModal>

@@ -17,7 +17,7 @@ import { setCachedApiSettings } from '../../../services/apiConfig.ts';
 import type { ApiSettings, AspectRatio, Asset, Brief, ModelSourceId, Project, PromptLanguage, Shot, VideoConfig } from '../../../types.ts';
 import { createSeedanceTask, deleteSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { submitSeedanceTask } from '../../fastVideoFlow/services/seedanceBridgeClient.ts';
-import type { SeedanceDraft } from '../../seedance/types.ts';
+import type { SeedanceApiModelKey, SeedanceDraft } from '../../seedance/types.ts';
 import { getSeedanceApiModelKeyForModelSourceId } from '../../seedance/modelVersions.ts';
 import { buildCreativeSeedanceOptionsFromVideoConfig, buildShotSeedanceDraft, buildTransitionSeedanceDraft } from './creativeFlowSeedanceDraft.ts';
 import { buildSeedanceCliFailure, mapRemoteSeedanceStatus } from '../../fastVideoFlow/utils/fastVideoTask.ts';
@@ -118,11 +118,11 @@ type CreativeFlowActionDeps = {
   getOperationRecord: (operationKey: string) => any;
   findLoggedShotVideoOperation: (shotId: string) => any;
   findLoggedTransitionVideoOperation: (firstFrameUrl?: string, lastFrameUrl?: string) => any;
-  getSeedanceArkModelMeta: (modelKey?: 'standard' | 'fast') => {
+  getSeedanceArkModelMeta: (modelKey?: SeedanceApiModelKey) => {
     sourceId: ModelInvocationLogEntry['sourceId'];
     modelName: string;
   };
-  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: 'ark' | 'cli', apiModelKey?: 'standard' | 'fast') => Record<string, unknown>;
+  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: 'ark' | 'cli', apiModelKey?: SeedanceApiModelKey) => Record<string, unknown>;
   appendSeedanceLog: (entry: SeedanceLogEntry) => void;
   refreshSeedanceHealth: () => Promise<void>;
   openSeedanceErrorModal: (config: SeedanceErrorModalConfig) => void;

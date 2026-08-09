@@ -1,4 +1,5 @@
-import type { SeedanceBaseTemplateId, SeedanceTemplateDefinition } from '../types.ts';
+import type { SeedanceApiModelKey, SeedanceBaseTemplateId, SeedanceTemplateDefinition } from '../types.ts';
+import { getSeedanceCapabilities } from '../capabilities.ts';
 
 export const SEEDANCE_TEMPLATE_REGISTRY: Record<SeedanceBaseTemplateId, SeedanceTemplateDefinition> = {
   free_text: {
@@ -119,3 +120,29 @@ export const FAST_FLOW_TEMPLATE_IDS: SeedanceBaseTemplateId[] = [
   'first_last_frame',
   'multi_image_reference',
 ];
+
+export function getSeedanceTemplateDescription(
+  templateId: SeedanceBaseTemplateId,
+  modelKey: SeedanceApiModelKey,
+) {
+  const capability = getSeedanceCapabilities(modelKey);
+
+  switch (templateId) {
+    case 'multi_image_reference':
+      return `使用 1-${capability.maxImages} 张参考图锁定主体、场景或元素组合。`;
+    case 'motion_reference':
+      return `使用 1-${capability.maxVideos} 个参考视频控制动作与节奏。`;
+    case 'camera_reference':
+      return `使用 1-${capability.maxVideos} 个参考视频控制运镜方式。`;
+    case 'effect_reference':
+      return `使用 1-${capability.maxVideos} 个参考视频控制特效与运动轨迹。`;
+    case 'video_edit':
+      return `使用 1-${capability.maxVideos} 个参考视频进行元素增删改。`;
+    case 'video_stitch':
+      return `使用 2-${capability.maxVideos} 段参考视频进行拼接与补间。`;
+    case 'audio_guided':
+      return `使用 1-${capability.maxAudios} 个参考音频驱动视觉素材生成视频。`;
+    default:
+      return SEEDANCE_TEMPLATE_REGISTRY[templateId].description;
+  }
+}

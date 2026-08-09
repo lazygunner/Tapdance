@@ -1,14 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type LucideIcon, type ReactNode } from 'react';
-import { AlertTriangle, CheckCircle2, Circle, Clock3, Image as ImageIcon, Play, RefreshCw, Search, Video, Volume2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Circle, Clock3, Image as ImageIcon, Play, Plus, RefreshCw, ScanText, Search, Video, Volume2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import type { FastSceneDraft, FastVideoInput, FastVideoPromptDraft, SeedanceHealth, SeedanceTask } from '../types/fastTypes.ts';
-import type { SeedanceDraft, SeedanceModelVersion, SeedanceOverlayTemplateId } from '../../seedance/types.ts';
+import type { SeedanceApiModelKey, SeedanceBaseTemplateId, SeedanceDraft, SeedanceModelVersion, SeedanceOverlayTemplateId } from '../../seedance/types.ts';
 import { SEEDANCE_MODEL_VERSIONS } from '../../seedance/modelVersions.ts';
-import { FAST_FLOW_TEMPLATE_IDS, SEEDANCE_TEMPLATE_REGISTRY } from '../../seedance/config/seedanceTemplateRegistry.ts';
+import { FAST_FLOW_TEMPLATE_IDS, getSeedanceTemplateDescription, SEEDANCE_TEMPLATE_REGISTRY } from '../../seedance/config/seedanceTemplateRegistry.ts';
 import { ClickPopover } from '../../../components/studio/ClickPopover.tsx';
 import { StudioSelect } from '../../../components/studio/StudioPrimitives.tsx';
 import { getSeedanceCostEstimate } from '../utils/seedanceCostEstimate.ts';
+import { getSeedanceCapabilities, getSeedanceTemplateOptionConstraints, normalizeSeedanceDraftOptions } from '../../seedance/capabilities.ts';
+import { parsePromptReferenceTags } from '../utils/promptReferenceTags.ts';
+import type { ProjectGroupImageAsset, ProjectGroupMediaAsset } from '../../../services/projectGroups.ts';
+import {
+  FastHistoryReferenceMediaPickerModal,
+  toImageMaterial,
+  type HistoryReferencePickerTarget,
+} from './FastInputView.tsx';
 
 type SeedanceDraftPatch = Partial<Omit<SeedanceDraft, 'options' | 'prompt'>> & {
   options?: Partial<SeedanceDraft['options']>;
@@ -312,7 +320,7 @@ function renderPromptEditorContent(
     if (imageRef) {
       fragment.append(createPromptTokenChip(root, {
         token: imageRef.token,
-        kind: 'image',
+        kind: 'image' as const,
         title: imageRef.title,
         subtitle: imageRef.subtitle,
         imageUrl: imageRef.imageUrl,
@@ -630,6 +638,7 @@ export function PromptTokenEditor({
   const selectionRef = useRef<PromptEditorSelection | null>(null);
   const isComposingRef = useRef(false);
   const [mentionState, setMentionState] = useState<PromptEditorMentionState | null>(null);
+  const [parseFeedback, setParseFeedback] = useState('');
 
   const suggestionItems: PromptEditorSuggestionItem[] = [
     ...referenceItems.map((item) => ({
@@ -668,6 +677,12 @@ export function PromptTokenEditor({
   const insertPromptTagButtonClass = themeMode === 'light'
     ? 'inline-flex items-center gap-1.5 rounded-full border border-stone-300 px-2.5 py-1 text-[11px] text-stone-700 transition-colors hover:border-stone-400 hover:bg-stone-100'
     : 'inline-flex items-center gap-1.5 rounded-full border border-zinc-700 px-2.5 py-1 text-[11px] text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-900 hover:text-white';
+
+  useEffect(() => {
+    if (!parseFeedback) return;
+    const timer = window.setTimeout(() => setParseFeedback(''), 2400);
+    return () => window.clearTimeout(timer);
+  }, [parseFeedback]);
 
   const syncMentionState = () => {
     if (!editorRef.current || !editorShellRef.current) {
@@ -740,6 +755,15 @@ export function PromptTokenEditor({
     const needsLeadingSpace = currentSelection.start > 0 && !/\s/u.test(currentText[currentSelection.start - 1] || '');
     insertTextAtPromptSelection(editorRef.current, needsLeadingSpace ? ' @' : '@');
     commitFromEditorDom();
+  };
+
+  const parseExistingReferenceTags = () => {
+    const result = parsePromptReferenceTags(value, suggestionItems.map((item) => item.token));
+    setMentionState(null);
+    setParseFeedback(result.replacementCount > 0 ? `已解析 ${result.replacementCount} 个标签` : '没有可解析的标签');
+    if (result.value !== value) {
+      commitEditorValue(result.value);
+    }
   };
 
   const insertSuggestionToken = (item: PromptEditorSuggestionItem) => {
@@ -887,16 +911,26 @@ export function PromptTokenEditor({
     <div ref={editorShellRef} className="relative mt-3 min-w-0 flex-1">
       <div className="mb-2 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
         <span>
-          输入 <span className="text-rose-300">@</span> 选择素材；
+          {parseFeedback || <>输入 <span className="text-rose-300">@</span> 选择素材；</>}
         </span>
-        <button
-          type="button"
-          onClick={openMentionPicker}
-          className={insertPromptTagButtonClass}
-        >
-          <ImageIcon className="h-3.5 w-3.5" />
-          插入素材标签
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={parseExistingReferenceTags}
+            className={insertPromptTagButtonClass}
+          >
+            <ScanText className="h-3.5 w-3.5" />
+            解析素材标签
+          </button>
+          <button
+            type="button"
+            onClick={openMentionPicker}
+            className={insertPromptTagButtonClass}
+          >
+            <ImageIcon className="h-3.5 w-3.5" />
+            插入素材标签
+          </button>
+        </div>
       </div>
       <div className="fast-prompt-editor-shell rounded-xl border border-zinc-800 bg-zinc-950 focus-within:border-rose-500">
         <div
@@ -1053,7 +1087,11 @@ function formatElapsedTime(elapsedMs: number) {
 }
 
 type Props = {
+  projectId: string;
+  currentGroupId?: string;
   input: FastVideoInput;
+  historyImageMaterials: ProjectGroupImageAsset[];
+  historyMediaMaterials: ProjectGroupMediaAsset[];
   scenes: FastSceneDraft[];
   videoPrompt: FastVideoPromptDraft | null;
   seedanceDraft: SeedanceDraft;
@@ -1061,7 +1099,7 @@ type Props = {
   task: SeedanceTask;
   executionConfig: {
     executor: 'ark' | 'cli' | 'aliyun';
-    apiModelKey: 'standard' | 'fast';
+    apiModelKey: SeedanceApiModelKey;
     cliModelVersion: SeedanceModelVersion;
     pollIntervalSec: number;
     videoResolution: '480p' | '720p' | '1080p';
@@ -1080,6 +1118,13 @@ type Props = {
   onRefreshStatus: () => void;
   onCancelTask: () => void;
   onPreviewImage: (url: string) => void;
+  onAddReferenceImagesFromHistory: (materials: ProjectGroupImageAsset[]) => string[] | void;
+  onAddReferenceVideosFromHistory: (materials: ProjectGroupMediaAsset[]) => string[] | void;
+  onAddReferenceAudiosFromHistory: (materials: ProjectGroupMediaAsset[]) => string[] | void;
+  onAddReferenceFiles: (kind: 'image' | 'video' | 'audio', files: File[]) => Promise<string[]>;
+  onRemoveReferenceImage: (referenceId: string) => void;
+  onRemoveReferenceVideo: (referenceId: string) => void;
+  onRemoveReferenceAudio: (referenceId: string) => void;
   onToggleReferenceSelection: (referenceId: string) => void;
   onToggleReferenceVideoSelection: (referenceId: string) => void;
   onToggleReferenceAudioSelection: (referenceId: string) => void;
@@ -1450,7 +1495,11 @@ function SeedanceVideoPendingPreview({
 }
 
 export function FastVideoView({
+  projectId,
+  currentGroupId,
   input,
+  historyImageMaterials,
+  historyMediaMaterials,
   scenes,
   videoPrompt,
   seedanceDraft,
@@ -1471,6 +1520,13 @@ export function FastVideoView({
   onRefreshStatus,
   onCancelTask,
   onPreviewImage,
+  onAddReferenceImagesFromHistory,
+  onAddReferenceVideosFromHistory,
+  onAddReferenceAudiosFromHistory,
+  onAddReferenceFiles,
+  onRemoveReferenceImage,
+  onRemoveReferenceVideo,
+  onRemoveReferenceAudio,
   onToggleReferenceSelection,
   onToggleReferenceVideoSelection,
   onToggleReferenceAudioSelection,
@@ -1479,6 +1535,7 @@ export function FastVideoView({
   healthPanel,
   hideHeader = false,
 }: Props) {
+  const [historyReferencePickerTarget, setHistoryReferencePickerTarget] = useState<HistoryReferencePickerTarget>(null);
   const readyReferenceImages = input.referenceImages.filter((reference) => reference.imageUrl.trim());
   const readyStoryboardScenes = scenes.filter((scene) => scene.imageUrl);
   const selectedReferenceImages = readyReferenceImages.filter((reference) => isSelectedForVideo(reference.selectedForVideo));
@@ -1489,6 +1546,18 @@ export function FastVideoView({
   const selectedReferenceAudios = readyReferenceAudios.filter((reference) => isSelectedForVideo(reference.selectedForVideo));
   const selectedReferenceVideoCount = selectedReferenceVideos.length;
   const selectedReferenceAudioCount = selectedReferenceAudios.length;
+  const historyMediaMaterialsWithImages = (() => {
+    const mediaById = new Map(historyMediaMaterials.map((material) => [material.id, material]));
+    historyImageMaterials.forEach((material) => {
+      if (mediaById.has(material.id)) return;
+      mediaById.set(material.id, {
+        ...material,
+        kind: 'image',
+        url: material.imageUrl,
+      });
+    });
+    return Array.from(mediaById.values());
+  })();
   const selectedReferenceCount = readyReferenceImages.filter((reference) => isSelectedForVideo(reference.selectedForVideo)).length;
   const selectedSceneCount = readyStoryboardScenes.filter((scene) => isSelectedForVideo(scene.selectedForVideo)).length;
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -1548,6 +1617,13 @@ export function FastVideoView({
       || normalizedQueueStatus === 'generating'
     );
   const activeTemplate = SEEDANCE_TEMPLATE_REGISTRY[seedanceDraft.baseTemplateId];
+  const activeModelKey = executionConfig.executor === 'ark' ? executionConfig.apiModelKey : 'standard';
+  const activeTemplateDescription = getSeedanceTemplateDescription(seedanceDraft.baseTemplateId, activeModelKey);
+  const modelCapabilities = getSeedanceCapabilities(activeModelKey);
+  const templateConstraints = getSeedanceTemplateOptionConstraints(seedanceDraft.baseTemplateId, activeModelKey);
+  const availableTemplateIds = executionConfig.executor === 'ark' && executionConfig.apiModelKey === 'seedance25'
+    ? Object.keys(SEEDANCE_TEMPLATE_REGISTRY) as SeedanceBaseTemplateId[]
+    : FAST_FLOW_TEMPLATE_IDS;
   const costEstimate = getSeedanceCostEstimate(input, seedanceDraft, executionConfig);
   const promptReferenceItems: PromptReferenceItem[] = (() => {
     if (seedanceDraft.baseTemplateId === 'multi_image_reference') {
@@ -1739,7 +1815,7 @@ export function FastVideoView({
           <section className="min-w-0 overflow-hidden bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
             <div className="flex items-center justify-between gap-4 overflow-hidden">
               <div className="text-white font-semibold flex items-center whitespace-nowrap overflow-hidden">
-                参考素材确认
+                素材确认
                 <span className="ml-3 text-xs text-zinc-500 font-normal truncate">
                   {[
                     readyReferenceImages.length > 0 && `图 ${selectedReferenceCount}/${readyReferenceImages.length}已选`,
@@ -1748,6 +1824,24 @@ export function FastVideoView({
                     readyReferenceAudios.length > 0 && `音频 ${selectedReferenceAudioCount}/${readyReferenceAudios.length}已选`,
                   ].filter(Boolean).join(' · ')}
                 </span>
+              </div>
+              <div className="flex shrink-0 items-center">
+                <button
+                  type="button"
+                  disabled={readyReferenceImages.length >= modelCapabilities.maxImages
+                    && readyReferenceVideos.length >= modelCapabilities.maxVideos
+                    && readyReferenceAudios.length >= modelCapabilities.maxAudios}
+                  onClick={() => setHistoryReferencePickerTarget({
+                    kind: readyReferenceImages.length < modelCapabilities.maxImages
+                      ? 'image'
+                      : readyReferenceVideos.length < modelCapabilities.maxVideos ? 'video' : 'audio',
+                    mode: 'append',
+                  })}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 px-3 text-xs text-zinc-300 transition-colors hover:border-sky-500/50 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  添加素材
+                </button>
               </div>
             </div>
             <div className="mt-2 text-xs text-zinc-500">
@@ -1777,6 +1871,19 @@ export function FastVideoView({
                       title={isSelectedForVideo(reference.selectedForVideo) ? '已选中参与执行' : '未选中参与执行'}
                     >
                       {isSelectedForVideo(reference.selectedForVideo) ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onRemoveReferenceImage(reference.id);
+                      }}
+                      className="absolute left-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-400/25 bg-zinc-950/80 text-zinc-400 backdrop-blur-sm transition-colors hover:bg-red-500/20 hover:text-red-200"
+                      title="删除图片"
+                      aria-label={`删除图片 ${index + 1}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                   <div className="mt-2 text-sm text-zinc-300">图片{index + 1}</div>
@@ -1853,6 +1960,15 @@ export function FastVideoView({
                     >
                       {isSelectedForVideo(video.selectedForVideo) ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveReferenceVideo(video.id)}
+                      className="absolute left-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-400/25 bg-zinc-950/80 text-zinc-400 backdrop-blur-sm transition-colors hover:bg-red-500/20 hover:text-red-200"
+                      title="删除视频"
+                      aria-label={`删除视频 ${index + 1}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                   <div className="mt-2 text-sm text-violet-300">视频{index + 1}</div>
                   <div className="text-[11px] text-violet-500">{getFastReferenceVideoTypeLabel(video.referenceType)}</div>
@@ -1882,6 +1998,15 @@ export function FastVideoView({
                     >
                       {isSelectedForVideo(audio.selectedForVideo) ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveReferenceAudio(audio.id)}
+                      className="absolute left-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-400/25 bg-zinc-950/80 text-zinc-400 backdrop-blur-sm transition-colors hover:bg-red-500/20 hover:text-red-200"
+                      title="删除音频"
+                      aria-label={`删除音频 ${index + 1}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                   <div className="mt-2 text-sm text-emerald-300">音频{index + 1}</div>
                   <div className="text-[11px] text-emerald-500">{getFastReferenceAudioTypeLabel(audio.referenceType)}</div>
@@ -1892,7 +2017,12 @@ export function FastVideoView({
 
           <section className="min-w-0 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col min-h-[360px]">
             <div className="flex items-center justify-between gap-4">
-              <div className="text-white font-semibold">视频提示词（中文）</div>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="text-white font-semibold">视频提示词（中文）</div>
+                <span className="shrink-0 rounded-full border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--studio-muted)]">
+                  {Array.from(videoPrompt.promptZh || videoPrompt.prompt).length} 字
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={onRegeneratePrompt}
@@ -1955,10 +2085,10 @@ export function FastVideoView({
               <div className="text-right text-xs text-zinc-500">
                 {(executionConfig.executor === 'ark' ? 'Ark API' : executionConfig.executor === 'aliyun' ? '阿里云' : '本地 CLI')}
                 {' · '}
-                {`画幅：${seedanceDraft.options.ratio} · 时长：${seedanceDraft.options.duration || 10}s · ${seedanceDraft.options.resolution}`}
+                {`${seedanceDraft.options.ratio} · ${seedanceDraft.options.duration === -1 ? '自动时长' : `${seedanceDraft.options.duration || 10}s`} · ${seedanceDraft.options.resolution}/${(seedanceDraft.options.outputFormat || 'mp4').toUpperCase()}`}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-3">
+            <div className="mt-4 grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
               <label className="block">
                 <span className={fieldLabelClassName}>执行器</span>
                 <StudioSelect
@@ -1976,12 +2106,21 @@ export function FastVideoView({
                   <span className={fieldLabelClassName}>Ark 模型</span>
                   <StudioSelect
                     value={executionConfig.apiModelKey}
-                    onChange={(event) => onUpdateExecutionConfig({ apiModelKey: event.target.value as Props['executionConfig']['apiModelKey'] })}
+                    onChange={(event) => {
+                      const apiModelKey = event.target.value as Props['executionConfig']['apiModelKey'];
+                      const baseTemplateId = apiModelKey === 'seedance25' || FAST_FLOW_TEMPLATE_IDS.includes(seedanceDraft.baseTemplateId)
+                        ? seedanceDraft.baseTemplateId
+                        : 'multi_image_reference';
+                      onUpdateExecutionConfig({ apiModelKey });
+                      const normalized = normalizeSeedanceDraftOptions({ ...seedanceDraft, baseTemplateId }, apiModelKey);
+                      onUpdateDraft({ baseTemplateId, options: normalized.options });
+                    }}
                     className={controlClassName}
                     panelMinWidth={210}
                     triggerLabelClassName="whitespace-normal break-words pr-1 text-xs leading-4"
                     optionLabelClassName="whitespace-normal break-words pr-1 text-xs leading-4"
                   >
+                    <option value="seedance25">Seedance 2.5</option>
                     <option value="standard">Seedance 2.0</option>
                     <option value="fast">Seedance 2.0 Fast</option>
                   </StudioSelect>
@@ -2015,10 +2154,14 @@ export function FastVideoView({
                 <span className={fieldLabelClassName}>功能模板</span>
                 <StudioSelect
                   value={seedanceDraft.baseTemplateId}
-                  onChange={(event) => onUpdateDraft({ baseTemplateId: event.target.value as SeedanceDraft['baseTemplateId'] })}
+                  onChange={(event) => {
+                    const baseTemplateId = event.target.value as SeedanceDraft['baseTemplateId'];
+                    const normalized = normalizeSeedanceDraftOptions({ ...seedanceDraft, baseTemplateId }, activeModelKey);
+                    onUpdateDraft({ baseTemplateId, options: normalized.options });
+                  }}
                   className={controlClassName}
                 >
-                  {FAST_FLOW_TEMPLATE_IDS.map((templateId) => (
+                  {availableTemplateIds.map((templateId) => (
                     <option key={templateId} value={templateId}>{SEEDANCE_TEMPLATE_REGISTRY[templateId].title}</option>
                   ))}
                 </StudioSelect>
@@ -2028,7 +2171,10 @@ export function FastVideoView({
                 <StudioSelect
                   value={seedanceDraft.options.ratio}
                   onChange={(event) => onUpdateDraft({ options: { ratio: event.target.value as SeedanceDraft['options']['ratio'] } })}
+                  disabled={Boolean(templateConstraints.ratio)}
                   className={controlClassName}
+                  panelMinWidth={220}
+                  optionLabelClassName="whitespace-nowrap pr-2"
                 >
                   {SEEDANCE_RATIO_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -2036,32 +2182,49 @@ export function FastVideoView({
                 </StudioSelect>
               </label>
               <label className="block">
-                <span className={fieldLabelClassName}>时长(4-15s)</span>
-                <input
-                  type="number"
-                  min={4}
-                  max={15}
-                  value={seedanceDraft.options.duration || 10}
-                  onChange={(event) => onUpdateDraft({ options: { duration: Math.max(4, Math.min(15, Number(event.target.value) || 10)) } })}
-                  className={controlClassName}
-                />
-              </label>
-              <label className="block">
-                <span className={fieldLabelClassName}>分辨率</span>
+                <span className={fieldLabelClassName}>时长</span>
                 <StudioSelect
-                  value={seedanceDraft.options.resolution}
-                  onChange={(event) => onUpdateDraft({ options: { resolution: event.target.value as SeedanceDraft['options']['resolution'] } })}
+                  value={String(seedanceDraft.options.duration ?? 10)}
+                  onChange={(event) => onUpdateDraft({ options: { duration: Number(event.target.value) } })}
+                  disabled={typeof templateConstraints.duration === 'number'}
                   className={controlClassName}
                 >
-                  <option value="480p">480p</option>
-                  <option value="720p">720p</option>
-                  <option value="1080p">1080p</option>
+                  <option value="-1">自动（-1）</option>
+                  {Array.from({ length: modelCapabilities.maxDurationSec - 3 }, (_, index) => index + 4).map((duration) => (
+                    <option key={duration} value={duration}>{duration} 秒</option>
+                  ))}
+                </StudioSelect>
+              </label>
+              <label className="block">
+                <span className={fieldLabelClassName}>输出规格</span>
+                <StudioSelect
+                  value={`${seedanceDraft.options.resolution}|${seedanceDraft.options.outputFormat || 'mp4'}`}
+                  onChange={(event) => {
+                    const [resolution, outputFormat] = event.target.value.split('|');
+                    onUpdateDraft({
+                      options: {
+                        resolution: resolution as SeedanceDraft['options']['resolution'],
+                        outputFormat: outputFormat as SeedanceDraft['options']['outputFormat'],
+                      },
+                    });
+                  }}
+                  className={controlClassName}
+                  panelMinWidth={180}
+                  optionLabelClassName="whitespace-nowrap pr-2"
+                >
+                  {modelCapabilities.resolutions.flatMap((resolution) => (
+                    modelCapabilities.outputFormats.map((format) => (
+                      <option key={`${resolution}-${format}`} value={`${resolution}|${format}`}>
+                        {resolution} · {format.toUpperCase()}
+                      </option>
+                    ))
+                  ))}
                 </StudioSelect>
               </label>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300 md:col-span-2 xl:col-span-3">
                 <div className="flex items-baseline gap-2 overflow-hidden">
                   <span className="shrink-0 font-medium text-white">{activeTemplate.title}</span>
-                  <span className="truncate text-zinc-400">{activeTemplate.description}</span>
+                  <span className="truncate text-zinc-400">{activeTemplateDescription}</span>
                 </div>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 space-y-3 md:col-span-2 xl:col-span-3">
@@ -2228,6 +2391,37 @@ export function FastVideoView({
           </section>
         </div>
       </div>
+      <FastHistoryReferenceMediaPickerModal
+        target={historyReferencePickerTarget}
+        materials={historyMediaMaterialsWithImages}
+        currentGroupId={currentGroupId}
+        currentProjectId={projectId}
+        existingImageUrls={new Set(readyReferenceImages.map((reference) => reference.imageUrl.trim()))}
+        existingVideoUrls={new Set(readyReferenceVideos.map((reference) => reference.videoUrl.trim()))}
+        existingAudioUrls={new Set(readyReferenceAudios.map((reference) => reference.audioUrl.trim()))}
+        onClose={() => setHistoryReferencePickerTarget(null)}
+        onKindChange={(kind) => setHistoryReferencePickerTarget({ kind, mode: 'append' })}
+        onUploadFiles={async (kind, files) => {
+          await onAddReferenceFiles(kind, files);
+          setHistoryReferencePickerTarget(null);
+        }}
+        disabledKinds={[
+          ...(readyReferenceImages.length >= modelCapabilities.maxImages ? ['image' as const] : []),
+          ...(readyReferenceVideos.length >= modelCapabilities.maxVideos ? ['video' as const] : []),
+          ...(readyReferenceAudios.length >= modelCapabilities.maxAudios ? ['audio' as const] : []),
+        ]}
+        onAppend={(materials) => {
+          if (historyReferencePickerTarget?.kind === 'image') {
+            onAddReferenceImagesFromHistory(materials.map(toImageMaterial));
+          } else if (historyReferencePickerTarget?.kind === 'video') {
+            onAddReferenceVideosFromHistory(materials);
+          } else if (historyReferencePickerTarget?.kind === 'audio') {
+            onAddReferenceAudiosFromHistory(materials);
+          }
+          setHistoryReferencePickerTarget(null);
+        }}
+        onReplace={() => undefined}
+      />
     </motion.div>
   );
 }

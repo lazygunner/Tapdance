@@ -12,6 +12,8 @@ export const MOCK_API_SCENARIOS = [
   'concurrency_once',
   'concurrency_always',
   'submit_fail',
+  'task_type_constraint',
+  'ark_flow_limit_once',
 ];
 
 const __filename = fileURLToPath(import.meta.url);
@@ -249,9 +251,56 @@ export async function startMockApiServer(options = {}) {
   const state = new Map();
   const tasks = new Map();
   const assetKinds = new Map();
+  const arkAssetGroups = [
+    {
+      Id: 'mock-group-aigc-1',
+      Name: 'MOCK 虚拟人像',
+      Title: 'MOCK 虚拟人像',
+      Description: '本地 Mock 虚拟人像素材组',
+      GroupType: 'AIGC',
+      ProjectName: 'default',
+      CreateTime: new Date().toISOString(),
+      UpdateTime: new Date().toISOString(),
+    },
+    {
+      Id: 'mock-group-face-1',
+      Name: 'MOCK 真人人像',
+      Title: 'MOCK 真人人像',
+      Description: '本地 Mock 真人人像素材组',
+      GroupType: 'LivenessFace',
+      ProjectName: 'default',
+      CreateTime: new Date().toISOString(),
+      UpdateTime: new Date().toISOString(),
+    },
+  ];
+  const arkAssets = [
+    {
+      Id: 'mock-asset-aigc-1',
+      GroupId: 'mock-group-aigc-1',
+      Name: 'MOCK 虚拟人像素材',
+      AssetType: 'Image',
+      ProjectName: 'default',
+      URL: 'https://example.com/mock-aigc.png',
+      Status: 'Active',
+      CreateTime: new Date().toISOString(),
+      UpdateTime: new Date().toISOString(),
+    },
+    {
+      Id: 'mock-asset-face-1',
+      GroupId: 'mock-group-face-1',
+      Name: 'MOCK 真人人像素材',
+      AssetType: 'Image',
+      ProjectName: 'default',
+      URL: 'https://example.com/mock-face.png',
+      Status: 'Active',
+      CreateTime: new Date().toISOString(),
+      UpdateTime: new Date().toISOString(),
+    },
+  ];
   const runtime = {
     scenario: normalizeScenario(options.scenario || process.env.MOCK_API_SCENARIO),
     concurrencyFailuresLeft: normalizeScenario(options.scenario || process.env.MOCK_API_SCENARIO) === 'concurrency_once' ? 1 : 0,
+    arkFlowFailuresLeft: normalizeScenario(options.scenario || process.env.MOCK_API_SCENARIO) === 'ark_flow_limit_once' ? 1 : 0,
   };
 
   app.use(express.json({ limit: '100mb' }));
@@ -269,6 +318,7 @@ export async function startMockApiServer(options = {}) {
   function setScenario(value) {
     runtime.scenario = normalizeScenario(value);
     runtime.concurrencyFailuresLeft = runtime.scenario === 'concurrency_once' ? 1 : 0;
+    runtime.arkFlowFailuresLeft = runtime.scenario === 'ark_flow_limit_once' ? 1 : 0;
   }
 
   function getBaseUrl(server) {
@@ -317,6 +367,7 @@ export async function startMockApiServer(options = {}) {
       status: 'running',
       videoUrl: `${baseUrl}/api/seedance/file/${encodeURIComponent(id)}/mock-video.mp4`,
       imageUrl: `${baseUrl}/mock-media/image.png`,
+      taskTypeConstraint: kind === 'ark' && runtime.scenario === 'task_type_constraint',
     };
     tasks.set(id, task);
     return task;
@@ -404,6 +455,7 @@ export async function startMockApiServer(options = {}) {
       ratio: request.body?.ratio || request.body?.parameters?.aspect_ratio || '16:9',
       resolution: request.body?.resolution || request.body?.parameters?.resolution || '720p',
       duration: request.body?.duration || request.body?.parameters?.duration || 4,
+      output_format: request.body?.output_format || 'mp4',
     });
   });
 
@@ -413,7 +465,7 @@ export async function startMockApiServer(options = {}) {
       response.status(404).json({ error: { message: 'Mock task not found.' } });
       return;
     }
-    const status = getTaskStatus(task);
+    const status = task.taskTypeConstraint ? 'failed' : getTaskStatus(task);
     task.updatedAt = nowUnixSeconds();
     response.json({
       id: task.id,
@@ -428,6 +480,13 @@ export async function startMockApiServer(options = {}) {
       ratio: task.body?.ratio || task.body?.parameters?.aspect_ratio || '16:9',
       resolution: task.body?.resolution || task.body?.parameters?.resolution || '720p',
       duration: task.body?.duration || task.body?.parameters?.duration || 4,
+      output_format: task.body?.output_format || 'mp4',
+      ...(task.taskTypeConstraint ? {
+        error: {
+          code: 'InvalidParameter.TaskTypeConstraint',
+          message: 'Mock: current task type requires adaptive ratio or automatic duration.',
+        },
+      } : {}),
     });
   });
 
@@ -438,6 +497,93 @@ export async function startMockApiServer(options = {}) {
       task.updatedAt = nowUnixSeconds();
     }
     response.json({ ok: true });
+  });
+
+  app.post('/api/seedance/ark/assets/call', (request, response) => {
+    const action = String(request.body?.action || '').trim();
+    const body = request.body?.body || {};
+    const requestId = createId('mock-ark-request');
+
+    if (action === 'ListAssets' && runtime.arkFlowFailuresLeft > 0) {
+      runtime.arkFlowFailuresLeft -= 1;
+      response.status(429).json({
+        error: 'AccountFlowLimitExceeded: Mock Ark account flow limit exceeded.',
+        code: 'AccountFlowLimitExceeded',
+        action,
+        requestId,
+      });
+      return;
+    }
+
+    let result = {};
+    if (action === 'ListAssetGroups') {
+      const groupType = String(body?.Filter?.GroupType || '').trim();
+      const requestedIds = new Set(Array.isArray(body?.Filter?.GroupIds) ? body.Filter.GroupIds : []);
+      const items = arkAssetGroups.filter((item) => (
+        (!groupType || item.GroupType === groupType)
+        && (requestedIds.size === 0 || requestedIds.has(item.Id))
+      ));
+      result = {
+        Items: items,
+        TotalCount: items.length,
+        PageNumber: Number(body?.PageNumber) || 1,
+        PageSize: Number(body?.PageSize) || 100,
+      };
+    } else if (action === 'ListAssets') {
+      const groupType = String(body?.Filter?.GroupType || '').trim();
+      const groupIds = new Set(Array.isArray(body?.Filter?.GroupIds) ? body.Filter.GroupIds : []);
+      const groupTypeById = new Map(arkAssetGroups.map((group) => [group.Id, group.GroupType]));
+      const items = arkAssets.filter((item) => (
+        (groupIds.size === 0 || groupIds.has(item.GroupId))
+        && (!groupType || groupTypeById.get(item.GroupId) === groupType)
+      ));
+      result = {
+        Items: items,
+        TotalCount: items.length,
+        PageNumber: Number(body?.PageNumber) || 1,
+        PageSize: Number(body?.PageSize) || 100,
+      };
+    } else if (action === 'GetAsset') {
+      result = arkAssets.find((item) => item.Id === body?.Id) || {};
+    } else if (action === 'CreateAsset') {
+      const item = {
+        Id: createId('mock-asset'),
+        GroupId: String(body?.GroupId || ''),
+        Name: String(body?.Name || ''),
+        AssetType: String(body?.AssetType || 'Image'),
+        ProjectName: String(body?.ProjectName || 'default'),
+        URL: String(body?.URL || ''),
+        Status: 'Active',
+        CreateTime: new Date().toISOString(),
+        UpdateTime: new Date().toISOString(),
+      };
+      arkAssets.unshift(item);
+      result = item;
+    } else if (action === 'CreateAssetGroup') {
+      const item = {
+        Id: createId('mock-group'),
+        Name: String(body?.Name || ''),
+        Title: String(body?.Name || ''),
+        Description: String(body?.Description || ''),
+        GroupType: String(body?.GroupType || 'AIGC'),
+        ProjectName: String(body?.ProjectName || 'default'),
+        CreateTime: new Date().toISOString(),
+        UpdateTime: new Date().toISOString(),
+      };
+      arkAssetGroups.unshift(item);
+      result = item;
+    }
+
+    response.json({
+      Result: result,
+      ResponseMetadata: {
+        RequestId: requestId,
+        Action: action,
+        Version: '2024-01-01',
+        Service: 'ark',
+        Region: 'cn-beijing',
+      },
+    });
   });
 
   app.get('/api/seedance/health', (_request, response) => {

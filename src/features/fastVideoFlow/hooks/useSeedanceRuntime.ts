@@ -6,7 +6,7 @@ import type { SeedanceHealth } from '../types/fastTypes.ts';
 import { fetchSeedanceHealth } from '../services/seedanceBridgeClient.ts';
 import { SEEDANCE_MODEL_VERSIONS } from '../../seedance/modelVersions.ts';
 import { compileSeedanceRequest } from '../../seedance/services/seedanceDraft.ts';
-import type { SeedanceDraft } from '../../seedance/types.ts';
+import type { SeedanceApiModelKey, SeedanceDraft } from '../../seedance/types.ts';
 
 type SeedanceLogEntry = {
   operation: string;
@@ -33,8 +33,13 @@ export function useSeedanceRuntime({
   const [seedanceHealth, setSeedanceHealth] = useState<SeedanceHealth | null>(null);
   const [isRefreshingSeedanceHealth, setIsRefreshingSeedanceHealth] = useState(false);
 
-  const getSeedanceArkModelMeta = (modelKey: 'standard' | 'fast' = project.fastFlow.executionConfig.apiModelKey) => (
-    modelKey === 'fast'
+  const getSeedanceArkModelMeta = (modelKey: SeedanceApiModelKey = project.fastFlow.executionConfig.apiModelKey) => (
+    modelKey === 'seedance25'
+      ? {
+        sourceId: 'seedance.seedance25ApiModel' as const,
+        modelName: apiSettings.seedance.seedance25ApiModel.trim(),
+      }
+      : modelKey === 'fast'
       ? {
         sourceId: 'seedance.fastApiModel' as const,
         modelName: apiSettings.seedance.fastApiModel.trim(),
@@ -69,7 +74,7 @@ export function useSeedanceRuntime({
 
   const buildCompiledSeedanceRequestLogSnapshot = (draft: SeedanceDraft) => {
     try {
-      return compileSeedanceRequest(draft);
+      return compileSeedanceRequest(draft, project.fastFlow.executionConfig.apiModelKey);
     } catch (error: any) {
       return {
         compileError: error?.message || '编译 Seedance 请求失败。',

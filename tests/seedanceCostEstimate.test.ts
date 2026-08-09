@@ -46,9 +46,9 @@ function createDraft(overrides?: Partial<SeedanceDraft>): SeedanceDraft {
 test('resolveSeedanceEstimateDimensions reads 480p table values from JSON config', () => {
   const dimensions = resolveSeedanceEstimateDimensions('480p', '1:1');
 
-  assert.equal(dimensions.width, 660);
-  assert.equal(dimensions.height, 660);
-  assert.equal(dimensions.note, '清晰');
+  assert.equal(dimensions.width, 640);
+  assert.equal(dimensions.height, 640);
+  assert.equal(dimensions.source, 'seedance-2.5-doc');
 });
 
 test('resolveSeedanceEstimateDimensions supports 1080p ratio presets', () => {
@@ -75,10 +75,10 @@ test('getSeedanceCostEstimate uses configured dimensions for adaptive ratio esti
     cliModelVersion: 'seedance2.0',
   });
 
-  assert.equal(estimate.width, 1112);
-  assert.equal(estimate.height, 834);
+  assert.equal(estimate.width, 1120);
+  assert.equal(estimate.height, 832);
   assert.equal(estimate.dimensionPresetLabel, '720p · 4:3');
-  assert.equal(estimate.totalTokens, (1112 * 834 * 24 / 1024) * 8);
+  assert.equal(estimate.totalTokens, (1120 * 832 * 24 / 1024) * 8);
 });
 
 test('getSeedanceCostEstimate switches unit price when a reference video is selected', () => {

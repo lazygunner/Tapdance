@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-08",
-  "notes": "720p/480p 的 16:9、1:1、4:3 尺寸来自产品提供的费用估算表。1080p 为比例兜底估算值。9:16 与 3:4 为对应横版尺寸的转置结果；21:9 暂保留旧估算值，后续可直接在本文件调整。",
+  "updatedAt": "2026-08-08",
+  "notes": "720p/480p 尺寸按 Seedance 2.5 API 文档更新。1080p 仅供 Seedance 2.0 兜底估算。",
   "dimensions": {
     "1080p": {
       "16:9": {
@@ -52,53 +52,51 @@
         "source": "table"
       },
       "4:3": {
-        "width": 1112,
-        "height": 834,
-        "source": "table"
+        "width": 1120,
+        "height": 832,
+        "source": "seedance-2.5-doc"
       },
       "3:4": {
-        "width": 834,
-        "height": 1112,
-        "source": "derived:4:3"
+        "width": 832,
+        "height": 1120,
+        "source": "seedance-2.5-doc"
       },
       "21:9": {
-        "width": 1680,
-        "height": 720,
-        "source": "legacy"
+        "width": 1472,
+        "height": 624,
+        "source": "seedance-2.5-doc"
       }
     },
     "480p": {
       "16:9": {
-        "width": 864,
-        "height": 496,
-        "source": "table"
+        "width": 854,
+        "height": 480,
+        "source": "seedance-2.5-doc"
       },
       "9:16": {
-        "width": 496,
-        "height": 864,
-        "source": "derived:16:9"
+        "width": 480,
+        "height": 854,
+        "source": "seedance-2.5-doc"
       },
       "1:1": {
-        "width": 660,
-        "height": 660,
-        "source": "table",
-        "note": "清晰"
+        "width": 640,
+        "height": 640,
+        "source": "seedance-2.5-doc"
       },
       "4:3": {
-        "width": 768,
-        "height": 576,
-        "source": "table",
-        "note": "保险"
+        "width": 752,
+        "height": 560,
+        "source": "seedance-2.5-doc"
       },
       "3:4": {
-        "width": 576,
-        "height": 768,
-        "source": "derived:4:3"
+        "width": 560,
+        "height": 752,
+        "source": "seedance-2.5-doc"
       },
       "21:9": {
-        "width": 1120,
-        "height": 480,
-        "source": "legacy"
+        "width": 992,
+        "height": 432,
+        "source": "seedance-2.5-doc"
       }
     }
   }

@@ -7,6 +7,8 @@ export const MOCK_API_SCENARIO_OPTIONS: Array<{ value: MockApiScenario; label: s
   { value: 'concurrency_once', label: '并发限制一次', description: '第一次提交返回 ret=1310，后续提交成功，适合队列验证。' },
   { value: 'concurrency_always', label: '持续并发限制', description: '每次提交都返回 ret=1310，适合排队重试验证。' },
   { value: 'submit_fail', label: '提交失败', description: '提交返回普通失败，适合失败提示验证。' },
+  { value: 'task_type_constraint', label: '任务类型约束失败', description: 'Ark 轮询返回 InvalidParameter.TaskTypeConstraint，验证 2.5 异步错误提示。' },
+  { value: 'ark_flow_limit_once', label: 'Ark 素材限流一次', description: '首次查询素材返回 AccountFlowLimitExceeded，验证 429 诊断和重试。' },
 ];
 
 export type MockApiServerStatus = {

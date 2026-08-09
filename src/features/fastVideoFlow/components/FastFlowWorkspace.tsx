@@ -56,6 +56,7 @@ type FastFlowWorkspaceProps = {
   onReplaceReferenceVideoFromHistory: (referenceId: string, material: ProjectGroupMediaAsset) => void;
   onAddReferenceAudiosFromHistory: (materials: ProjectGroupMediaAsset[]) => string[] | void;
   onReplaceReferenceAudioFromHistory: (referenceId: string, material: ProjectGroupMediaAsset) => void;
+  onAddReferenceFiles: (kind: 'image' | 'video' | 'audio', files: File[]) => Promise<string[]>;
   onUploadReferenceImage: (event: ChangeEvent<HTMLInputElement>, referenceId: string) => void | Promise<void>;
   onPasteReferenceImage: (file: File, referenceId: string) => void | Promise<void>;
   onUpdateReferenceImage: (referenceId: string, patch: Partial<FastReferenceImage>) => void;
@@ -130,6 +131,7 @@ export function FastFlowWorkspace({
   onReplaceReferenceVideoFromHistory,
   onAddReferenceAudiosFromHistory,
   onReplaceReferenceAudioFromHistory,
+  onAddReferenceFiles,
   onUploadReferenceImage,
   onPasteReferenceImage,
   onUpdateReferenceImage,
@@ -169,6 +171,7 @@ export function FastFlowWorkspace({
     return (
       <FastInputView
         input={project.fastFlow.input}
+        apiModelKey={project.fastFlow.executionConfig.apiModelKey}
         isGenerating={isGeneratingFastPlan}
         hasPlan={project.fastFlow.scenes.length > 0}
         projectId={project.id}
@@ -260,7 +263,11 @@ export function FastFlowWorkspace({
     const { seedanceDraft, draftIssues } = getFastVideoDraftState(project);
     return (
       <FastVideoView
+        projectId={project.id}
+        currentGroupId={project.groupId || ''}
         input={project.fastFlow.input}
+        historyImageMaterials={historyImageMaterials}
+        historyMediaMaterials={historyMediaMaterials}
         scenes={project.fastFlow.scenes}
         videoPrompt={project.fastFlow.videoPrompt}
         seedanceDraft={seedanceDraft}
@@ -281,6 +288,13 @@ export function FastFlowWorkspace({
         onRefreshStatus={onRefreshStatus}
         onCancelTask={onCancelTask}
         onPreviewImage={(url) => onPreviewImage(url)}
+        onAddReferenceImagesFromHistory={onAddReferenceImagesFromHistory}
+        onAddReferenceVideosFromHistory={onAddReferenceVideosFromHistory}
+        onAddReferenceAudiosFromHistory={onAddReferenceAudiosFromHistory}
+        onAddReferenceFiles={onAddReferenceFiles}
+        onRemoveReferenceImage={onRemoveReferenceImage}
+        onRemoveReferenceVideo={onRemoveReferenceVideo}
+        onRemoveReferenceAudio={onRemoveReferenceAudio}
         onToggleReferenceSelection={onToggleReferenceSelection}
         onToggleReferenceVideoSelection={onToggleReferenceVideoSelection}
         onToggleReferenceAudioSelection={onToggleReferenceAudioSelection}

@@ -91,6 +91,7 @@ export function createDefaultFastSeedanceDraft(input: FastVideoInput, videoPromp
       ratio: input.aspectRatio,
       duration: input.durationSec,
       resolution: '720p',
+      outputFormat: 'mp4',
       generateAudio: true,
       returnLastFrame: false,
       useWebSearch: false,
@@ -110,7 +111,7 @@ export function createEmptyFastVideoProject(): FastVideoProject {
     seedanceDraft: null,
     executionConfig: {
       executor: 'ark',
-      apiModelKey: 'standard',
+      apiModelKey: 'seedance25',
       cliModelVersion: 'seedance2.0',
       pollIntervalSec: 15,
       videoResolution: '720p',
@@ -414,7 +415,14 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
       }] : [];
     }
 
-    if (baseDraft.baseTemplateId === 'multi_image_reference') {
+    if (baseDraft.baseTemplateId === 'multi_image_reference'
+      || baseDraft.baseTemplateId === 'motion_reference'
+      || baseDraft.baseTemplateId === 'camera_reference'
+      || baseDraft.baseTemplateId === 'effect_reference'
+      || baseDraft.baseTemplateId === 'video_edit'
+      || baseDraft.baseTemplateId === 'video_extend'
+      || baseDraft.baseTemplateId === 'video_stitch'
+      || baseDraft.baseTemplateId === 'audio_guided') {
       const referenceAssets = [
         ...selectedReferenceImages.map((reference, index) => {
           const referenceAssetId = (reference.assetId || '').trim();
@@ -467,6 +475,9 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
                       ? '视频延长参考'
                       : '其他参考视频'
           }${video.description?.trim() ? `，${video.description.trim()}` : ''}`,
+          durationSec: video.videoMeta?.durationSec,
+          width: video.videoMeta?.width,
+          height: video.videoMeta?.height,
         })),
         ...selectedReferenceAudios.map((audio, index) => ({
           id: audio.id || `fast-reference-audio-${index + 1}`,
@@ -485,6 +496,7 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
                     ? '节奏参考音频'
                     : '其他参考音频'
           }${audio.description?.trim() ? `，${audio.description.trim()}` : ''}`,
+          durationSec: audio.audioMeta?.durationSec,
         })),
       ];
 
@@ -513,6 +525,7 @@ export function syncFastFlowSeedanceDraft(fastFlow: FastVideoProject): SeedanceD
       ratio: baseDraft.options.ratio || fastFlow.input.aspectRatio,
       duration: baseDraft.options.duration || fastFlow.input.durationSec,
       resolution: normalizeSeedanceResolution(baseDraft.options.resolution),
+      outputFormat: baseDraft.options.outputFormat === 'mov' ? 'mov' as const : 'mp4' as const,
       generateAudio: overlaySet.has('auto_audio'),
       returnLastFrame: overlaySet.has('return_last_frame'),
       useWebSearch: overlaySet.has('web_search'),
@@ -576,6 +589,9 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
   const executionExecutor = value?.executionConfig?.executor === 'cli' || value?.executionConfig?.executor === 'ark' || value?.executionConfig?.executor === 'aliyun'
     ? value.executionConfig.executor
     : base.executionConfig.executor;
+  const executionApiModelKey = value?.executionConfig?.apiModelKey === 'seedance25'
+    ? 'seedance25'
+    : value?.executionConfig?.apiModelKey === 'fast' ? 'fast' : value?.executionConfig?.apiModelKey === 'standard' ? 'standard' : base.executionConfig.apiModelKey;
   const normalizedReferenceImages = normalizeReferenceImages(input.referenceImages, typeof legacyInput.referenceImageUrl === 'string' ? legacyInput.referenceImageUrl : '');
   const normalizedCharacters = normalizePlanCharacters(value?.characters);
   const normalizedScenes = Array.isArray(value?.scenes)
@@ -592,9 +608,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
     ? {
       ...fallbackSeedanceDraft,
       ...value.seedanceDraft,
-      baseTemplateId: value.seedanceDraft.baseTemplateId === 'audio_guided'
-        ? 'multi_image_reference'
-        : value.seedanceDraft.baseTemplateId,
+      baseTemplateId: value.seedanceDraft.baseTemplateId,
       prompt: {
         ...fallbackSeedanceDraft.prompt,
         ...(value.seedanceDraft.prompt || {}),
@@ -604,6 +618,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
         ...fallbackSeedanceDraft.options,
         ...(value.seedanceDraft.options || {}),
         resolution: normalizeSeedanceResolution(value.seedanceDraft.options?.resolution),
+        outputFormat: value.seedanceDraft.options?.outputFormat === 'mov' ? 'mov' as const : 'mp4' as const,
       },
       assets: Array.isArray(value.seedanceDraft.assets)
         ? value.seedanceDraft.assets
@@ -631,7 +646,9 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
       referenceVideos: normalizeReferenceVideos(input.referenceVideos),
       referenceAudios: normalizeReferenceAudios(input.referenceAudios),
       aspectRatio: normalizeFastVideoAspectRatio(input.aspectRatio),
-      durationSec: Number.isFinite(input.durationSec) ? Math.max(4, Math.min(15, Number(input.durationSec))) : base.input.durationSec,
+      durationSec: Number.isFinite(input.durationSec)
+        ? Math.max(4, Math.min(executionApiModelKey === 'seedance25' ? 30 : 15, Number(input.durationSec)))
+        : base.input.durationSec,
       preferredSceneCount: input.preferredSceneCount === 1 || input.preferredSceneCount === 2 || input.preferredSceneCount === 'auto'
         ? input.preferredSceneCount
         : base.input.preferredSceneCount,
@@ -655,7 +672,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
     seedanceDraft: normalizedSeedanceDraft,
     executionConfig: {
       executor: executionExecutor,
-      apiModelKey: value?.executionConfig?.apiModelKey === 'fast' ? 'fast' : 'standard',
+      apiModelKey: executionApiModelKey,
       cliModelVersion: normalizeSeedanceModelVersion(
         value?.executionConfig?.cliModelVersion ?? (value as any)?.cliConfig?.modelVersion,
         base.executionConfig.cliModelVersion,

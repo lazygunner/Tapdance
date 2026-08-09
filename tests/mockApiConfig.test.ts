@@ -37,6 +37,7 @@ test('applyMockApiSettings switches API settings to local mock endpoints and kee
     },
     seedance: {
       enabled: true,
+      seedance25ApiModel: 'doubao-seedance-2-5-260628',
       apiModel: 'seedance-standard',
       fastApiModel: 'seedance-fast',
       defaultExecutor: 'ark',

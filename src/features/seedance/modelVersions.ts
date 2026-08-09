@@ -1,6 +1,7 @@
 import type { SeedanceApiModelKey, SeedanceModelVersion } from './types.ts';
 
 export const SEEDANCE_API_MODEL_SOURCE_IDS = [
+  'seedance.seedance25ApiModel',
   'seedance.apiModel',
   'seedance.fastApiModel',
 ] as const;
@@ -31,6 +32,9 @@ export function isSeedanceApiModelSourceId(value: unknown): value is SeedanceApi
 }
 
 export function getSeedanceApiModelKeyForModelSourceId(sourceId: unknown): SeedanceApiModelKey | null {
+  if (sourceId === 'seedance.seedance25ApiModel') {
+    return 'seedance25';
+  }
   if (sourceId === 'seedance.apiModel') {
     return 'standard';
   }
@@ -41,6 +45,9 @@ export function getSeedanceApiModelKeyForModelSourceId(sourceId: unknown): Seeda
 }
 
 export function getSeedanceApiModelLabelForSourceId(sourceId: unknown): string {
+  if (sourceId === 'seedance.seedance25ApiModel') {
+    return 'Seedance 2.5';
+  }
   if (sourceId === 'seedance.fastApiModel') {
     return 'Seedance 2.0 Fast';
   }

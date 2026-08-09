@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ClipboardEvent, type ReactNode } from 'react';
-import { AlertTriangle, Check, CheckCircle2, HelpCircle, History, Image as ImageIcon, Search, Settings2, Sparkles, Upload, Users, Video, Volume2, X } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, GripVertical, HelpCircle, History, Image as ImageIcon, Pin, Search, Settings2, Sparkles, Upload, Users, Video, Volume2, X } from 'lucide-react';
 
 import type { FastReferenceAudio, FastReferenceImage, FastVideoInput } from '../types/fastTypes.ts';
 import { ClickPopover } from '../../../components/studio/ClickPopover.tsx';
@@ -9,6 +9,10 @@ import { FAST_VIDEO_PROMPT_CONFIG } from '../../../config/fastVideoPrompts.ts';
 import { VideoUrlPreview, VIDEO_REFERENCE_CONSTRAINTS } from './VideoUrlPreview.tsx';
 import { uploadFileToTos, uploadVideoToTos, isLikelyTosCorsError, isTosConfigComplete } from '../../../services/tosUploadService.ts';
 import type { ProjectGroupImageAsset, ProjectGroupMediaAsset } from '../../../services/projectGroups.ts';
+import type { SeedanceApiModelKey } from '../../seedance/types.ts';
+import { getSeedanceCapabilities } from '../../seedance/capabilities.ts';
+import { resolveMaterialsInSelectionOrder, toggleSelectionOrder } from '../utils/historyMaterialSelection.ts';
+import { reorderReferenceItems } from '../utils/referenceMaterialOrder.ts';
 
 const REFERENCE_TYPE_OPTIONS: Array<{ value: NonNullable<FastReferenceImage['referenceType']>; label: string }> = [
   { value: 'scene', label: '场景参考图' },
@@ -75,6 +79,7 @@ function VideoRequirementsPopover() {
 
 type Props = {
   input: FastVideoInput;
+  apiModelKey: SeedanceApiModelKey;
   isGenerating: boolean;
   hasPlan: boolean;
   projectId?: string;
@@ -123,7 +128,7 @@ const SCENE_COUNT_OPTIONS: Array<{ value: FastVideoInput['preferredSceneCount'];
   { value: 2, label: '双张分镜' },
 ];
 
-type HistoryReferencePickerTarget = {
+export type HistoryReferencePickerTarget = {
   kind: ProjectGroupMediaAsset['kind'];
   mode: 'append';
 } | {
@@ -131,6 +136,8 @@ type HistoryReferencePickerTarget = {
   mode: 'replace';
   referenceId: string;
 } | null;
+
+type ReferenceMaterialKind = 'image' | 'video' | 'audio';
 
 function normalizeMaterialSearchText(value: string) {
   return value.replace(/\s+/gu, '').toLowerCase();
@@ -146,7 +153,7 @@ function getHistoryMediaKindLabel(kind: ProjectGroupMediaAsset['kind']) {
   return '图片';
 }
 
-function toImageMaterial(material: ProjectGroupMediaAsset): ProjectGroupImageAsset {
+export function toImageMaterial(material: ProjectGroupMediaAsset): ProjectGroupImageAsset {
   return {
     id: material.id,
     groupId: material.groupId,
@@ -174,7 +181,7 @@ function compareHistoryMaterialsByCreatedAtDesc(left: ProjectGroupMediaAsset, ri
   return `${left.projectName}${left.title}`.localeCompare(`${right.projectName}${right.title}`, 'zh-Hans-CN');
 }
 
-function FastHistoryReferenceMediaPickerModal({
+export function FastHistoryReferenceMediaPickerModal({
   target,
   materials,
   currentGroupId,
@@ -185,6 +192,9 @@ function FastHistoryReferenceMediaPickerModal({
   onClose,
   onAppend,
   onReplace,
+  onKindChange,
+  disabledKinds = [],
+  onUploadFiles,
 }: {
   target: HistoryReferencePickerTarget;
   materials: ProjectGroupMediaAsset[];
@@ -196,9 +206,14 @@ function FastHistoryReferenceMediaPickerModal({
   onClose: () => void;
   onAppend: (materials: ProjectGroupMediaAsset[]) => void;
   onReplace: (material: ProjectGroupMediaAsset) => void;
+  onKindChange?: (kind: ProjectGroupMediaAsset['kind']) => void;
+  disabledKinds?: ProjectGroupMediaAsset['kind'][];
+  onUploadFiles?: (kind: ProjectGroupMediaAsset['kind'], files: File[]) => Promise<void>;
 }) {
   const [query, setQuery] = useState('');
-  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(() => new Set());
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
+  const [isUploadingLocalFiles, setIsUploadingLocalFiles] = useState(false);
+  const [localUploadError, setLocalUploadError] = useState('');
   const isOpen = Boolean(target);
   const isAppendMode = target?.mode === 'append';
   const targetKind = target?.kind || 'image';
@@ -214,8 +229,9 @@ function FastHistoryReferenceMediaPickerModal({
       return;
     }
     setQuery('');
-    setSelectedMaterialIds(new Set());
-  }, [isOpen, target?.mode, target && 'referenceId' in target ? target.referenceId : '']);
+    setSelectedMaterialIds([]);
+    setLocalUploadError('');
+  }, [isOpen, target?.kind, target?.mode, target && 'referenceId' in target ? target.referenceId : '']);
 
   const filteredMaterials = useMemo(() => {
     const normalizedQuery = normalizeMaterialSearchText(query);
@@ -238,7 +254,7 @@ function FastHistoryReferenceMediaPickerModal({
   const otherMaterials = currentGroupId
     ? filteredMaterials.filter((material) => material.groupId !== currentGroupId)
     : filteredMaterials;
-  const selectedMaterials = materials.filter((material) => selectedMaterialIds.has(material.id));
+  const selectedMaterials = resolveMaterialsInSelectionOrder(materials, selectedMaterialIds);
 
   const toggleSelectedMaterial = (material: ProjectGroupMediaAsset) => {
     if (existingUrls.has(material.url.trim())) {
@@ -246,13 +262,7 @@ function FastHistoryReferenceMediaPickerModal({
     }
 
     setSelectedMaterialIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(material.id)) {
-        next.delete(material.id);
-      } else {
-        next.add(material.id);
-      }
-      return next;
+      return toggleSelectionOrder(previous, material.id);
     });
   };
 
@@ -288,7 +298,8 @@ function FastHistoryReferenceMediaPickerModal({
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           {sectionMaterials.map((material) => {
             const isAlreadyAdded = existingUrls.has(material.url.trim());
-            const isSelected = selectedMaterialIds.has(material.id);
+            const selectedOrder = selectedMaterialIds.indexOf(material.id);
+            const isSelected = selectedOrder >= 0;
             const sourceProjectLabel = material.projectId === currentProjectId ? '当前项目' : material.projectName;
 
             return (
@@ -313,7 +324,7 @@ function FastHistoryReferenceMediaPickerModal({
                   <div className="fast-history-media-source-badge absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px]">{material.sourceLabel}</div>
                   {isSelected ? (
                     <div className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-sky-300/40 bg-sky-500/85 text-white">
-                      <Check className="h-4 w-4" />
+                      <span className="text-xs font-bold">{selectedOrder + 1}</span>
                     </div>
                   ) : null}
                   {isAppendMode && isAlreadyAdded ? (
@@ -346,7 +357,7 @@ function FastHistoryReferenceMediaPickerModal({
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">History Materials</div>
               <h3 className="mt-2 text-xl font-semibold text-[var(--studio-text)]">
-                {isAppendMode ? `从素材库添加参考${targetKindLabel}` : `从素材库替换参考${targetKindLabel}`}
+                {isAppendMode ? `选择${targetKindLabel}` : `替换${targetKindLabel}`}
               </h3>
               <p className="mt-2 text-sm leading-6 text-[var(--studio-muted)]">
                 同分组素材会优先展示；追加模式可多选，替换模式点击一张素材后立即应用。
@@ -371,6 +382,74 @@ function FastHistoryReferenceMediaPickerModal({
               className="min-w-0 flex-1 bg-transparent text-sm text-[var(--studio-text)] outline-none placeholder:text-[var(--studio-dim)]"
             />
           </label>
+
+          {isAppendMode && onKindChange ? (
+            <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl border border-[var(--studio-border)] bg-[var(--studio-surface-soft)] p-1.5">
+              {(['image', 'video', 'audio'] as const).map((kind) => {
+                const active = kind === targetKind;
+                const disabled = disabledKinds.includes(kind);
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onKindChange(kind)}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${active
+                      ? 'bg-[var(--studio-surface)] text-[var(--studio-text)] shadow-sm'
+                      : 'text-[var(--studio-muted)] hover:text-[var(--studio-text)]'
+                    }`}
+                  >
+                    {getHistoryMediaKindLabel(kind)}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {isAppendMode && onUploadFiles ? (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-[var(--studio-border)] bg-[var(--studio-surface-soft)] px-3 py-3">
+              <div>
+                <div className="text-sm font-medium text-[var(--studio-text)]">本地文件</div>
+                <div className="mt-1 text-xs text-[var(--studio-dim)]">
+                  支持一次选择多个{targetKindLabel}，按照文件选择顺序追加。
+                </div>
+              </div>
+              <label className={`studio-button studio-button-secondary shrink-0 px-3 py-2 text-xs ${isUploadingLocalFiles ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                {isUploadingLocalFiles ? <img src="./assets/loading.gif" alt="" className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
+                {isUploadingLocalFiles ? '上传中' : `选择${targetKindLabel}`}
+                <input
+                  type="file"
+                  multiple
+                  disabled={isUploadingLocalFiles}
+                  accept={targetKind === 'image'
+                    ? 'image/*'
+                    : targetKind === 'video'
+                      ? 'video/mp4,video/quicktime,.mp4,.mov'
+                      : '.mp3,.wav,audio/mpeg,audio/wav,audio/x-wav'}
+                  className="hidden"
+                  onChange={async (event) => {
+                    const files = event.currentTarget.files
+                      ? Array.from(event.currentTarget.files as FileList)
+                      : [];
+                    event.target.value = '';
+                    if (files.length === 0) return;
+                    setIsUploadingLocalFiles(true);
+                    setLocalUploadError('');
+                    try {
+                      await onUploadFiles(targetKind, files);
+                    } catch (error) {
+                      setLocalUploadError(error instanceof Error ? error.message : '本地文件上传失败。');
+                    } finally {
+                      setIsUploadingLocalFiles(false);
+                    }
+                  }}
+                />
+              </label>
+              {localUploadError ? (
+                <div className="w-full text-xs leading-5 text-red-400">{localUploadError}</div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
@@ -402,7 +481,7 @@ function FastHistoryReferenceMediaPickerModal({
                 className="studio-button studio-button-primary"
               >
                 <CheckCircle2 className="h-4 w-4" />
-                添加为参考{targetKindLabel}
+                添加{targetKindLabel}
               </button>
             </div>
           </div>
@@ -414,6 +493,7 @@ function FastHistoryReferenceMediaPickerModal({
 
 export function FastInputView({
   input,
+  apiModelKey,
   isGenerating,
   hasPlan,
   projectId,
@@ -455,8 +535,11 @@ export function FastInputView({
   const [uploadingAudioIds, setUploadingAudioIds] = useState<Record<string, boolean>>({});
   const [audioValidationErrors, setAudioValidationErrors] = useState<Record<string, string>>({});
   const [durationDraft, setDurationDraft] = useState(() => String(input.durationSec));
+  const [draggingReference, setDraggingReference] = useState<{ kind: ReferenceMaterialKind; id: string } | null>(null);
+  const [dragOverReference, setDragOverReference] = useState<{ kind: ReferenceMaterialKind; id: string } | null>(null);
 
-  const MAX_AUDIO_DURATION_SEC = 15;
+  const capabilities = getSeedanceCapabilities(apiModelKey);
+  const MAX_AUDIO_DURATION_SEC = capabilities.maxMediaDurationSec;
 
   const clearAudioValidationError = useCallback((referenceId: string) => {
     setAudioValidationErrors(prev => {
@@ -483,17 +566,17 @@ export function FastInputView({
   }, [clearAudioValidationError]);
 
   const validateAudioDuration = useCallback((referenceId: string, durationSec: number, audioUrl: string): boolean => {
-    if (durationSec > MAX_AUDIO_DURATION_SEC) {
+    if (durationSec < capabilities.minMediaDurationSec || durationSec > MAX_AUDIO_DURATION_SEC) {
       setAudioValidationErrors(prev => ({
         ...prev,
-        [referenceId]: `音频时长 ${durationSec.toFixed(1)}s 超过上限 ${MAX_AUDIO_DURATION_SEC}s，请裁剪后重新上传。`,
+        [referenceId]: `音频时长 ${durationSec.toFixed(1)}s 不在 ${capabilities.minMediaDurationSec}-${MAX_AUDIO_DURATION_SEC}s 范围内，请裁剪后重新上传。`,
       }));
       onUpdateReferenceAudio(referenceId, { audioUrl: '', audioMeta: null });
       return false;
     }
     clearAudioValidationError(referenceId);
     return true;
-  }, [clearAudioValidationError, onUpdateReferenceAudio]);
+  }, [MAX_AUDIO_DURATION_SEC, capabilities.minMediaDurationSec, clearAudioValidationError, onUpdateReferenceAudio]);
 
   const checkUploadedAudioDuration = useCallback((referenceId: string, url: string): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -549,12 +632,40 @@ export function FastInputView({
     ? referenceAudios.findIndex((reference) => reference.id === editingReferenceAudio.id)
     : -1;
   const totalReferenceMaterialCount = input.referenceImages.length + referenceVideos.length + referenceAudios.length;
+  const totalReferenceVideoDurationSec = referenceVideos.reduce((total, reference) => total + (reference.videoMeta?.durationSec || 0), 0);
+  const totalReferenceAudioDurationSec = referenceAudios.reduce((total, reference) => total + (reference.audioMeta?.durationSec || 0), 0);
   const existingReferenceVideoUrls = useMemo(() => new Set(
     referenceVideos.map((reference) => reference.videoUrl.trim()).filter(Boolean),
   ), [referenceVideos]);
   const existingReferenceAudioUrls = useMemo(() => new Set(
     referenceAudios.map((reference) => reference.audioUrl.trim()).filter(Boolean),
   ), [referenceAudios]);
+
+  const handleReferenceDrop = (kind: ReferenceMaterialKind, targetId: string) => {
+    if (!draggingReference || draggingReference.kind !== kind) return;
+    if (kind === 'image') {
+      onChange({ referenceImages: reorderReferenceItems(input.referenceImages, draggingReference.id, targetId) });
+    } else if (kind === 'video') {
+      onChange({ referenceVideos: reorderReferenceItems(referenceVideos, draggingReference.id, targetId) });
+    } else {
+      onChange({ referenceAudios: reorderReferenceItems(referenceAudios, draggingReference.id, targetId) });
+    }
+    setDraggingReference(null);
+    setDragOverReference(null);
+  };
+
+  const handlePinReference = (kind: ReferenceMaterialKind, referenceId: string) => {
+    if (kind === 'image') {
+      const firstId = input.referenceImages[0]?.id;
+      if (firstId) onChange({ referenceImages: reorderReferenceItems(input.referenceImages, referenceId, firstId) });
+    } else if (kind === 'video') {
+      const firstId = referenceVideos[0]?.id;
+      if (firstId) onChange({ referenceVideos: reorderReferenceItems(referenceVideos, referenceId, firstId) });
+    } else {
+      const firstId = referenceAudios[0]?.id;
+      if (firstId) onChange({ referenceAudios: reorderReferenceItems(referenceAudios, referenceId, firstId) });
+    }
+  };
 
   useEffect(() => {
     setDurationDraft(String(input.durationSec));
@@ -705,7 +816,7 @@ export function FastInputView({
   const commitDurationDraft = () => {
     const parsedDuration = Number(durationDraft);
     const nextDuration = Number.isFinite(parsedDuration)
-      ? Math.max(4, Math.min(15, Math.round(parsedDuration)))
+      ? Math.max(4, Math.min(capabilities.maxDurationSec, Math.round(parsedDuration)))
       : input.durationSec;
     setDurationDraft(String(nextDuration));
     if (nextDuration !== input.durationSec) {
@@ -792,13 +903,13 @@ export function FastInputView({
               <input
                 type="number"
                 min={4}
-                max={15}
+                max={capabilities.maxDurationSec}
                 value={durationDraft}
                 onChange={(event) => {
                   const nextValue = event.target.value;
                   setDurationDraft(nextValue);
                   const parsedDuration = Number(nextValue);
-                  if (Number.isFinite(parsedDuration) && parsedDuration >= 4 && parsedDuration <= 15) {
+                  if (Number.isFinite(parsedDuration) && parsedDuration >= 4 && parsedDuration <= capabilities.maxDurationSec) {
                     onChange({ durationSec: parsedDuration });
                   }
                 }}
@@ -878,6 +989,7 @@ export function FastInputView({
                 <button
                   type="button"
                   onClick={handleAddEmptyReferenceImage}
+                  disabled={input.referenceImages.length >= capabilities.maxImages}
                   className="fast-reference-add-button fast-reference-add-button-image"
                 >
                   <ImageIcon className="h-3.5 w-3.5" />
@@ -886,7 +998,7 @@ export function FastInputView({
                 <button
                   type="button"
                   onClick={handleAddEmptyReferenceVideo}
-                  disabled={referenceVideos.length >= 3}
+                  disabled={referenceVideos.length >= capabilities.maxVideos}
                   className="fast-reference-add-button fast-reference-add-button-video"
                 >
                   <Video className="h-3.5 w-3.5" />
@@ -895,7 +1007,7 @@ export function FastInputView({
                 <button
                   type="button"
                   onClick={handleAddEmptyReferenceAudio}
-                  disabled={referenceAudios.length >= 3}
+                  disabled={referenceAudios.length >= capabilities.maxAudios}
                   className="fast-reference-add-button fast-reference-add-button-audio"
                 >
                   <Volume2 className="h-3.5 w-3.5" />
@@ -915,7 +1027,22 @@ export function FastInputView({
                       return (
                         <div
                           key={`image-${reference.id}`}
-                          className={`w-40 shrink-0 overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] transition-colors sm:w-44 ${isEditing ? 'border-sky-400/60 ring-2 ring-sky-400/10' : 'border-[var(--studio-border)]'
+                          onDragOver={(event) => {
+                            if (draggingReference?.kind !== 'image') return;
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = 'move';
+                            setDragOverReference({ kind: 'image', id: reference.id });
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverReference?.kind === 'image' && dragOverReference.id === reference.id) setDragOverReference(null);
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            handleReferenceDrop('image', reference.id);
+                          }}
+                          className={`w-40 shrink-0 overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] transition-all sm:w-44 ${dragOverReference?.kind === 'image' && dragOverReference.id === reference.id
+                            ? 'border-sky-400 ring-2 ring-sky-400/30'
+                            : isEditing ? 'border-sky-400/60 ring-2 ring-sky-400/10' : 'border-[var(--studio-border)]'
                             }`}
                         >
                           <div className="relative aspect-video overflow-hidden bg-black/20">
@@ -932,7 +1059,37 @@ export function FastInputView({
                                 </div>
                               )}
                             </button>
-                            <div className="absolute left-2 top-2 rounded-full bg-sky-500/85 px-2 py-0.5 text-[10px] font-medium text-white">图片</div>
+                            <div
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = 'move';
+                                setDraggingReference({ kind: 'image', id: reference.id });
+                              }}
+                              onDragEnd={() => {
+                                setDraggingReference(null);
+                                setDragOverReference(null);
+                              }}
+                              title="拖动调整图片顺序"
+                              className="absolute left-2 top-2 inline-flex cursor-grab items-center gap-1 rounded-full bg-sky-500/90 px-2 py-1 text-[10px] font-medium text-white shadow-sm active:cursor-grabbing"
+                            >
+                              <GripVertical className="h-3 w-3" />
+                              图片
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handlePinReference('image', reference.id);
+                              }}
+                              disabled={index === 0}
+                              className={`absolute right-10 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${index === 0
+                                ? 'cursor-default border-sky-400/30 bg-sky-500/20 text-sky-200'
+                                : 'border-white/15 bg-black/60 text-white hover:bg-sky-500/80'}`}
+                              title={index === 0 ? '已在图片队列最前面' : '置顶到图片队列最前面'}
+                              aria-label={`置顶参考图 ${index + 1}`}
+                            >
+                              <Pin className={`h-3.5 w-3.5 ${index === 0 ? 'fill-current' : ''}`} />
+                            </button>
                             <button
                               type="button"
                               onClick={() => onRemoveReferenceImage(reference.id)}
@@ -967,7 +1124,22 @@ export function FastInputView({
                       return (
                         <div
                           key={`video-${reference.id}`}
-                          className={`w-40 shrink-0 overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] transition-colors sm:w-44 ${isEditing ? 'border-violet-400/60 ring-2 ring-violet-400/10' : 'border-[var(--studio-border)]'
+                          onDragOver={(event) => {
+                            if (draggingReference?.kind !== 'video') return;
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = 'move';
+                            setDragOverReference({ kind: 'video', id: reference.id });
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverReference?.kind === 'video' && dragOverReference.id === reference.id) setDragOverReference(null);
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            handleReferenceDrop('video', reference.id);
+                          }}
+                          className={`w-40 shrink-0 overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] transition-all sm:w-44 ${dragOverReference?.kind === 'video' && dragOverReference.id === reference.id
+                            ? 'border-violet-400 ring-2 ring-violet-400/30'
+                            : isEditing ? 'border-violet-400/60 ring-2 ring-violet-400/10' : 'border-[var(--studio-border)]'
                             }`}
                         >
                           <div className="relative aspect-video overflow-hidden bg-black/25">
@@ -984,7 +1156,37 @@ export function FastInputView({
                                 </div>
                               )}
                             </button>
-                            <div className="absolute left-2 top-2 rounded-full bg-violet-500/85 px-2 py-0.5 text-[10px] font-medium text-white">视频</div>
+                            <div
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = 'move';
+                                setDraggingReference({ kind: 'video', id: reference.id });
+                              }}
+                              onDragEnd={() => {
+                                setDraggingReference(null);
+                                setDragOverReference(null);
+                              }}
+                              title="拖动调整视频顺序"
+                              className="absolute left-2 top-2 inline-flex cursor-grab items-center gap-1 rounded-full bg-violet-500/90 px-2 py-1 text-[10px] font-medium text-white shadow-sm active:cursor-grabbing"
+                            >
+                              <GripVertical className="h-3 w-3" />
+                              视频
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handlePinReference('video', reference.id);
+                              }}
+                              disabled={index === 0}
+                              className={`absolute right-10 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${index === 0
+                                ? 'cursor-default border-violet-400/30 bg-violet-500/20 text-violet-200'
+                                : 'border-white/15 bg-black/60 text-white hover:bg-violet-500/80'}`}
+                              title={index === 0 ? '已在视频队列最前面' : '置顶到视频队列最前面'}
+                              aria-label={`置顶参考视频 ${index + 1}`}
+                            >
+                              <Pin className={`h-3.5 w-3.5 ${index === 0 ? 'fill-current' : ''}`} />
+                            </button>
                             <button
                               type="button"
                               onClick={() => onRemoveReferenceVideo(reference.id)}
@@ -1019,7 +1221,22 @@ export function FastInputView({
                       return (
                         <div
                           key={`audio-${reference.id}`}
-                          className={`w-40 shrink-0 overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] transition-colors sm:w-44 ${isEditing ? 'border-emerald-400/60 ring-2 ring-emerald-400/10' : 'border-[var(--studio-border)]'
+                          onDragOver={(event) => {
+                            if (draggingReference?.kind !== 'audio') return;
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = 'move';
+                            setDragOverReference({ kind: 'audio', id: reference.id });
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverReference?.kind === 'audio' && dragOverReference.id === reference.id) setDragOverReference(null);
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            handleReferenceDrop('audio', reference.id);
+                          }}
+                          className={`w-40 shrink-0 overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] transition-all sm:w-44 ${dragOverReference?.kind === 'audio' && dragOverReference.id === reference.id
+                            ? 'border-emerald-400 ring-2 ring-emerald-400/30'
+                            : isEditing ? 'border-emerald-400/60 ring-2 ring-emerald-400/10' : 'border-[var(--studio-border)]'
                             }`}
                         >
                           <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-black/25 text-emerald-200">
@@ -1030,7 +1247,37 @@ export function FastInputView({
                             >
                               <Volume2 className="h-7 w-7" />
                             </button>
-                            <div className="absolute left-2 top-2 rounded-full bg-emerald-500/85 px-2 py-0.5 text-[10px] font-medium text-white">音频</div>
+                            <div
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = 'move';
+                                setDraggingReference({ kind: 'audio', id: reference.id });
+                              }}
+                              onDragEnd={() => {
+                                setDraggingReference(null);
+                                setDragOverReference(null);
+                              }}
+                              title="拖动调整音频顺序"
+                              className="absolute left-2 top-2 inline-flex cursor-grab items-center gap-1 rounded-full bg-emerald-500/90 px-2 py-1 text-[10px] font-medium text-white shadow-sm active:cursor-grabbing"
+                            >
+                              <GripVertical className="h-3 w-3" />
+                              音频
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handlePinReference('audio', reference.id);
+                              }}
+                              disabled={index === 0}
+                              className={`absolute right-10 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition-colors ${index === 0
+                                ? 'cursor-default border-emerald-400/30 bg-emerald-500/20 text-emerald-200'
+                                : 'border-white/15 bg-black/60 text-white hover:bg-emerald-500/80'}`}
+                              title={index === 0 ? '已在音频队列最前面' : '置顶到音频队列最前面'}
+                              aria-label={`置顶参考音频 ${index + 1}`}
+                            >
+                              <Pin className={`h-3.5 w-3.5 ${index === 0 ? 'fill-current' : ''}`} />
+                            </button>
                             <button
                               type="button"
                               onClick={() => onRemoveReferenceAudio(reference.id)}
@@ -1061,9 +1308,9 @@ export function FastInputView({
 
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--studio-dim)]">
                     <span>
-                      图片 {input.referenceImages.length} · 视频 {referenceVideos.length}/3 · 音频 {referenceAudios.length}/3
+                      图片 {input.referenceImages.length}/{capabilities.maxImages} · 视频 {referenceVideos.length}/{capabilities.maxVideos}（{totalReferenceVideoDurationSec.toFixed(1)}s/{capabilities.maxTotalVideoDurationSec}s） · 音频 {referenceAudios.length}/{capabilities.maxAudios}（{totalReferenceAudioDurationSec.toFixed(1)}s/{capabilities.maxTotalAudioDurationSec}s）
                     </span>
-                    <span>横向滑动查看全部素材。</span>
+                    <span>拖动类型标签排序，点击图钉置顶，横向滑动查看全部素材。</span>
                   </div>
                 </div>
               ) : (
@@ -1599,6 +1846,11 @@ export function FastInputView({
         <div className="flex-1 overflow-y-auto p-2 md:p-6 bg-[var(--studio-surface)]">
           <PortraitLibraryView
             isModal={true}
+            selectedAssetIds={input.referenceImages
+              .filter((reference) => reference.id !== portraitPickerTargetId)
+              .map((reference) => reference.assetId.trim())
+              .filter(Boolean)}
+            maxSelectable={Math.max(0, capabilities.maxImages - input.referenceImages.length + 1)}
             onSelect={(imgUrl, assetId, meta) => {
               if (portraitPickerTargetId) {
                 onUpdateReferenceImage(portraitPickerTargetId, {
@@ -1609,6 +1861,21 @@ export function FastInputView({
                   submitMode: meta?.submitMode || 'auto',
                 });
               }
+              setPortraitPickerTargetId(null);
+            }}
+            onSelectMany={(assets) => {
+              if (!portraitPickerTargetId) return;
+              assets.forEach((asset, index) => {
+                const referenceId = index === 0 ? portraitPickerTargetId : onAddReferenceImage();
+                if (!referenceId) return;
+                onUpdateReferenceImage(referenceId, {
+                  imageUrl: asset.imageUrl,
+                  assetId: asset.assetId,
+                  referenceType: 'person',
+                  description: asset.description || '人像库参考图',
+                  submitMode: asset.submitMode,
+                });
+              });
               setPortraitPickerTargetId(null);
             }}
           />

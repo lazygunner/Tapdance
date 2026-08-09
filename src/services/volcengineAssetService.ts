@@ -96,6 +96,20 @@ export function isArkAssetFailedStatus(value?: string) {
   return normalizeArkAssetStatus(value) === 'Failed';
 }
 
+export function getArkAssetStatusLabel(value?: string) {
+  const status = normalizeArkAssetStatus(value);
+  if (status === 'Active') {
+    return '已就绪';
+  }
+  if (status === 'Processing') {
+    return '处理中';
+  }
+  if (status === 'Failed') {
+    return '处理失败';
+  }
+  return status || '未知状态';
+}
+
 async function requestJson<T>(path: string, init?: RequestInit, explicitBaseUrl?: string): Promise<T> {
   const response = await fetch(buildSeedanceBridgeRequestUrl(path, explicitBaseUrl), {
     ...init,
@@ -209,18 +223,33 @@ export async function listArkAssetGroups(params?: {
   baseUrl?: string;
 }) {
   const groupType = String(params?.groupType || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE).trim() || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE;
-  const result = await callArkAssetApi<any>('ListAssetGroups', {
-    Filter: {
-      GroupType: groupType,
-      ...(params?.name?.trim() ? { Name: params.name.trim() } : {}),
-      ...(params?.groupIds?.length ? { GroupIds: params.groupIds } : {}),
-    },
-    PageNumber: 1,
-    PageSize: 50,
-  }, params?.baseUrl);
+  const groupIds = Array.from(new Set((params?.groupIds || []).map((item) => String(item || '').trim()).filter(Boolean)));
+  const pageSize = 100;
+  const allItems: any[] = [];
+  let pageNumber = 1;
+
+  while (true) {
+    const result = await callArkAssetApi<any>('ListAssetGroups', {
+      Filter: {
+        GroupType: groupType,
+        ...(params?.name?.trim() ? { Name: params.name.trim() } : {}),
+        ...(groupIds.length ? { GroupIds: groupIds } : {}),
+      },
+      PageNumber: pageNumber,
+      PageSize: pageSize,
+    }, params?.baseUrl);
+    const pageItems = Array.isArray(result?.Items) ? result.Items : [];
+    const totalCount = Number(result?.TotalCount);
+    allItems.push(...pageItems);
+
+    if (pageItems.length < pageSize || (Number.isFinite(totalCount) && allItems.length >= totalCount)) {
+      break;
+    }
+    pageNumber += 1;
+  }
   const projectName = params?.projectName ? normalizeProjectName(params.projectName) : '';
 
-  return (Array.isArray(result?.Items) ? result.Items : [])
+  return allItems
     .map((item: any) => normalizeAssetGroup(item))
     .filter((item: ArkAssetGroup | null): item is ArkAssetGroup => Boolean(item))
     .filter((item: ArkAssetGroup) => !projectName || item.projectName === projectName);
@@ -243,21 +272,36 @@ export async function listArkAssets(params?: {
     .map((item) => String(item || '').trim())
     .filter(Boolean);
   const groupType = String(params?.groupType || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE).trim() || ARK_VIRTUAL_PORTRAIT_GROUP_TYPE;
-  const result = await callArkAssetApi<any>('ListAssets', {
-    Filter: {
-      GroupType: groupType,
-      ...(groupIds.length > 0 ? { GroupIds: Array.from(new Set(groupIds)) } : {}),
-      ...(params?.statuses?.length ? { Statuses: params.statuses.map((item) => normalizeArkAssetStatus(item)) } : {}),
-      ...(params?.name?.trim() ? { Name: params.name.trim() } : {}),
-    },
-    PageNumber: 1,
-    PageSize: Math.max(1, Math.min(100, params?.pageSize || 100)),
-    SortBy: 'CreateTime',
-    SortOrder: 'Desc',
-  }, params?.baseUrl);
+  const uniqueGroupIds = Array.from(new Set(groupIds));
+  const pageSize = Math.max(1, Math.min(100, params?.pageSize || 100));
+  const allItems: any[] = [];
+  let pageNumber = 1;
+
+  while (true) {
+    const result = await callArkAssetApi<any>('ListAssets', {
+      Filter: {
+        GroupType: groupType,
+        ...(uniqueGroupIds.length > 0 ? { GroupIds: uniqueGroupIds } : {}),
+        ...(params?.statuses?.length ? { Statuses: params.statuses.map((item) => normalizeArkAssetStatus(item)) } : {}),
+        ...(params?.name?.trim() ? { Name: params.name.trim() } : {}),
+      },
+      PageNumber: pageNumber,
+      PageSize: pageSize,
+      SortBy: 'CreateTime',
+      SortOrder: 'Desc',
+    }, params?.baseUrl);
+    const pageItems = Array.isArray(result?.Items) ? result.Items : [];
+    const totalCount = Number(result?.TotalCount);
+    allItems.push(...pageItems);
+
+    if (pageItems.length < pageSize || (Number.isFinite(totalCount) && allItems.length >= totalCount)) {
+      break;
+    }
+    pageNumber += 1;
+  }
   const projectName = params?.projectName ? normalizeProjectName(params.projectName) : '';
 
-  return (Array.isArray(result?.Items) ? result.Items : [])
+  return allItems
     .map((item: any) => normalizeAsset(item))
     .filter((item: ArkAsset) => item.id)
     .filter((item: ArkAsset) => !projectName || item.projectName === projectName);

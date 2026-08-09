@@ -133,7 +133,10 @@ export function buildSeedanceCliFailure(raw?: unknown, fallback = 'Seedance ä»»å
 
 export function getFastVideoDraftState(project: Project) {
   const seedanceDraft = syncFastFlowSeedanceDraft(project.fastFlow);
-  const draftValidation = validateSeedanceDraft(seedanceDraft);
+  const draftValidation = validateSeedanceDraft(
+    seedanceDraft,
+    project.fastFlow.executionConfig.executor === 'ark' ? project.fastFlow.executionConfig.apiModelKey : 'standard',
+  );
   const cliVisualAssetCount = seedanceDraft.assets.filter((asset) => asset.kind === 'image' || asset.kind === 'video').length;
   const draftIssues = [
     ...draftValidation.errors,

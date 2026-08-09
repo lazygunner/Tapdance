@@ -33,8 +33,9 @@ import { fetchHappyHorseTask, submitHappyHorseTask } from './aliyunHappyHorseSer
 import { createSeedanceTask, deleteSeedanceTask, getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { isTosConfigComplete, uploadFileToTos } from '../../../services/tosUploadService.ts';
 import { validateSeedanceDraft } from '../../seedance/services/seedanceDraft.ts';
-import type { SeedanceBaseTemplateId, SeedanceDraft, SeedanceExecutorId } from '../../seedance/types.ts';
+import type { SeedanceApiModelKey, SeedanceBaseTemplateId, SeedanceDraft, SeedanceExecutorId } from '../../seedance/types.ts';
 import { SEEDANCE_TEMPLATE_REGISTRY } from '../../seedance/config/seedanceTemplateRegistry.ts';
+import { getSeedanceCapabilities } from '../../seedance/capabilities.ts';
 import { FAST_VIDEO_PROMPT_CONFIG } from '../../../config/fastVideoPrompts.ts';
 import {
   buildSeedanceCliFailure,
@@ -109,11 +110,11 @@ type FastVideoFlowActionDeps = {
   getTextModelSourceId: () => ModelSourceId;
   getOperationSourceId: (operationKey: string, category: 'text' | 'image' | 'video') => ModelSourceId;
   getOperationModelName: (operationKey: string, category: 'text' | 'image' | 'video') => string;
-  getSeedanceArkModelMeta: (modelKey?: 'standard' | 'fast') => {
+  getSeedanceArkModelMeta: (modelKey?: SeedanceApiModelKey) => {
     sourceId: ModelInvocationLogEntry['sourceId'];
     modelName: string;
   };
-  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: SeedanceExecutorId, apiModelKey?: 'standard' | 'fast') => Record<string, unknown>;
+  buildSeedanceSubmitLogRequest: (draft: SeedanceDraft, executor: SeedanceExecutorId, apiModelKey?: SeedanceApiModelKey) => Record<string, unknown>;
   appendSeedanceLog: (entry: SeedanceLogEntry) => void;
   onCliConcurrencyLimit?: (input: SeedanceCliQueueEnqueueInput) => void;
 };
@@ -896,6 +897,101 @@ export function createFastVideoFlowActions({
     });
   };
 
+  const handleAddFastReferenceFiles = async (kind: 'image' | 'video' | 'audio', files: File[]) => {
+    const capability = getSeedanceCapabilities(project.fastFlow.executionConfig.apiModelKey);
+    const existingCount = kind === 'image'
+      ? project.fastFlow.input.referenceImages.length
+      : kind === 'video'
+        ? (project.fastFlow.input.referenceVideos || []).length
+        : (project.fastFlow.input.referenceAudios || []).length;
+    const maxCount = kind === 'image' ? capability.maxImages : kind === 'video' ? capability.maxVideos : capability.maxAudios;
+    const filesToAdd = files.slice(0, Math.max(0, maxCount - existingCount));
+    if (filesToAdd.length === 0) return [];
+
+    try {
+      if (kind === 'image') {
+        const references = await Promise.all(filesToAdd.map(async (file, index) => {
+          const id = crypto.randomUUID?.() || `fast-reference-image-${Date.now()}-${index}`;
+          const dataUrl = await readFileAsDataUrl(file);
+          const persisted = await persistGeneratedMediaUrl(dataUrl, {
+            kind: 'image',
+            assetId: `${project.id}:fast-reference:${id}`,
+            title: file.name,
+            fileNameHint: file.name,
+          });
+          return {
+            id,
+            imageUrl: persisted.url,
+            referenceType: 'other' as const,
+            description: file.name,
+            selectedForVideo: true,
+            submitMode: 'auto' as const,
+          };
+        }));
+        setFastFlow((current) => ({
+          ...current,
+          input: { ...current.input, referenceImages: [...current.input.referenceImages, ...references] },
+        }));
+        return references.map((reference) => reference.id);
+      }
+
+      const tosConfig = apiSettings.tos;
+      if (!isTosConfigComplete(tosConfig)) {
+        throw new Error('上传本地视频或音频前，请先在 API 配置中完整填写 TOS 配置。');
+      }
+      const uploaded = await Promise.all(filesToAdd.map(async (file, index) => {
+        const id = crypto.randomUUID?.() || `fast-reference-${kind}-${Date.now()}-${index}`;
+        const result = await uploadFileToTos(file, tosConfig, {
+          mediaLabel: kind === 'video' ? '参考视频' : '参考音频',
+          defaultPrefix: kind === 'video' ? 'reference-videos' : 'reference-audios',
+        });
+        return { id, url: result.url, name: file.name };
+      }));
+
+      setFastFlow((current) => kind === 'video' ? ({
+        ...current,
+        input: {
+          ...current.input,
+          referenceVideos: [
+            ...(current.input.referenceVideos || []),
+            ...uploaded.map((item) => ({
+              id: item.id,
+              videoUrl: item.url,
+              referenceType: 'other' as const,
+              description: item.name,
+              selectedForVideo: true,
+              videoMeta: null,
+            })),
+          ],
+        },
+      }) : ({
+        ...current,
+        input: {
+          ...current.input,
+          referenceAudios: [
+            ...(current.input.referenceAudios || []),
+            ...uploaded.map((item) => ({
+              id: item.id,
+              audioUrl: item.url,
+              referenceType: 'other' as const,
+              description: item.name,
+              selectedForVideo: true,
+              audioMeta: null,
+            })),
+          ],
+        },
+      }));
+      return uploaded.map((item) => item.id);
+    } catch (error) {
+      openSeedanceErrorModal({
+        eyebrow: 'Fast Video',
+        title: '添加本地素材失败',
+        message: error instanceof Error ? error.message : '本地素材上传失败，请重试。',
+      });
+      throw error;
+    }
+  };
+
   const handleUploadFastReferenceImage = async (event: ChangeEvent<HTMLInputElement>, referenceId: string) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -1586,7 +1682,7 @@ export function createFastVideoFlowActions({
     setIsRefreshingFastVideoTask(true);
 
     try {
-      if (useMockMode) {
+      if (useMockMode && taskExecutor === 'aliyun') {
         const nowIso = new Date().toISOString();
         updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
@@ -1594,7 +1690,7 @@ export function createFastVideoFlowActions({
             ...current.task,
             provider: taskExecutor,
             taskId,
-            submitId: taskExecutor === 'cli' ? taskId : '',
+            submitId: '',
             status: 'completed',
             remoteStatus: 'success',
             queueStatus: 'MockDone',
@@ -1688,7 +1784,11 @@ export function createFastVideoFlowActions({
             remoteStatus: result.status || current.task.remoteStatus,
             queueStatus: result.status || current.task.queueStatus,
             raw: result.raw,
-            error: normalizedStatus === 'failed' ? (result.error?.message || 'Seedance 任务失败，请查看日志。') : '',
+            error: normalizedStatus === 'failed'
+              ? result.error?.code === 'InvalidParameter.TaskTypeConstraint'
+                ? '任务类型参数不匹配：视频编辑请使用 adaptive 画幅和自动时长；首尾帧或视频延长请使用 adaptive 画幅。'
+                : (result.error?.message || 'Seedance 任务失败，请查看日志。')
+              : '',
             videoUrl: persistedVideo?.url || current.task.videoUrl,
             lastFrameUrl: persistedLastFrame?.url || current.task.lastFrameUrl,
             videoStorageKey: '',
@@ -1842,7 +1942,10 @@ export function createFastVideoFlowActions({
     const targetProjectId = project.id;
     const draft = syncFastFlowSeedanceDraft(project.fastFlow);
     const submitExecutor = project.fastFlow.executionConfig.executor;
-    const validation = validateSeedanceDraft(draft);
+    const validation = validateSeedanceDraft(
+      draft,
+      submitExecutor === 'ark' ? project.fastFlow.executionConfig.apiModelKey : 'standard',
+    );
     const cliVisualAssetCount = draft.assets.filter((asset) => asset.kind === 'image' || asset.kind === 'video').length;
     const cliOptions: SeedanceCliQueueEnqueueInput['cliOptions'] = {
       modelVersion: project.fastFlow.executionConfig.cliModelVersion,
@@ -1883,7 +1986,7 @@ export function createFastVideoFlowActions({
         await refreshSeedanceHealth();
       }
 
-      if (useMockMode) {
+      if (useMockMode && submitExecutor === 'aliyun') {
         const mockTaskId = `mock-${Date.now()}`;
         const finishedAt = new Date().toISOString();
         updateFastFlowByProjectId(targetProjectId, (current) => ({
@@ -1892,7 +1995,7 @@ export function createFastVideoFlowActions({
             ...current.task,
             provider: submitExecutor,
             taskId: mockTaskId,
-            submitId: submitExecutor === 'cli' ? mockTaskId : '',
+            submitId: '',
             status: 'completed',
             remoteStatus: 'success',
             queueStatus: 'MockDone',
@@ -2144,6 +2247,7 @@ export function createFastVideoFlowActions({
     handleReplaceFastReferenceVideoFromHistory,
     handleAddFastReferenceAudiosFromHistory,
     handleReplaceFastReferenceAudioFromHistory,
+    handleAddFastReferenceFiles,
     handleUploadFastReferenceImage,
     handlePasteFastReferenceImage,
     handleUpdateFastReferenceImage,

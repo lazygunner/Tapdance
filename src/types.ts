@@ -131,6 +131,7 @@ export interface AliyunApiConfig {
 
 export interface SeedanceApiConfig {
   enabled: boolean;
+  seedance25ApiModel: string;
   apiModel: string;
   fastApiModel: string;
   defaultExecutor: SeedanceExecutorId;
@@ -139,7 +140,7 @@ export interface SeedanceApiConfig {
   bridgeUrl: string;
 }
 
-export type MockApiScenario = 'success' | 'slow_success' | 'concurrency_once' | 'concurrency_always' | 'submit_fail';
+export type MockApiScenario = 'success' | 'slow_success' | 'concurrency_once' | 'concurrency_always' | 'submit_fail' | 'task_type_constraint' | 'ark_flow_limit_once';
 
 export interface MockApiPreviousSettings {
   volcengineApiKey: string;
@@ -167,6 +168,7 @@ export type ModelSourceId =
   | 'volcengine.videoModel'
   | 'openai.imageModel'
   | 'aliyun.fastVideoModel'
+  | 'seedance.seedance25ApiModel'
   | 'seedance.apiModel'
   | 'seedance.fastApiModel';
 

@@ -1,6 +1,6 @@
 import seedanceCostDimensions from '../../../config/seedanceCostDimensions.json' with { type: 'json' };
 import type { FastReferenceVideo, FastVideoInput } from '../types/fastTypes.ts';
-import type { SeedanceDraft, SeedanceModelVersion } from '../../seedance/types.ts';
+import type { SeedanceApiModelKey, SeedanceDraft, SeedanceModelVersion } from '../../seedance/types.ts';
 import { getSeedanceApiModelKeyForCliModel } from '../../seedance/modelVersions.ts';
 
 type SeedanceEstimateResolution = SeedanceDraft['options']['resolution'];
@@ -19,7 +19,7 @@ type SeedanceEstimateDimensionConfig = {
 
 type SeedanceCostExecutionConfig = {
   executor: 'ark' | 'cli' | 'aliyun';
-  apiModelKey: 'standard' | 'fast';
+  apiModelKey: SeedanceApiModelKey;
   cliModelVersion: SeedanceModelVersion;
 };
 
@@ -47,6 +47,11 @@ export type SeedanceCostEstimate = {
 const SEEDANCE_COST_DIMENSIONS = seedanceCostDimensions as SeedanceEstimateDimensionConfig;
 
 const SEEDANCE_PRICING = {
+  seedance25: {
+    modelLabel: 'Doubao-Seedance-2.5',
+    withVideoInputUnitPrice: 28,
+    withoutVideoInputUnitPrice: 46,
+  },
   standard: {
     modelLabel: 'Doubao-Seedance-2.0',
     withVideoInputUnitPrice: 28,

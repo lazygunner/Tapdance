@@ -66,7 +66,7 @@ export function useProjectActions({
         ...createEmptyFastVideoProject(),
         executionConfig: {
           executor: apiSettings.seedance.defaultExecutor,
-          apiModelKey: 'standard',
+          apiModelKey: 'seedance25',
           cliModelVersion: apiSettings.seedance.cliModelVersion,
           pollIntervalSec: apiSettings.seedance.pollIntervalSec,
           videoResolution: '720p',

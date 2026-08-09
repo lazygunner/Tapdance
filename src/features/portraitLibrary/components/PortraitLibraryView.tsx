@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, BookOpenText, ExternalLink, FolderOpen, FolderPlus, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, Users, X } from 'lucide-react';
+import { ArrowLeft, BookOpenText, Check, ExternalLink, Eye, FolderOpen, FolderPlus, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, Users, X } from 'lucide-react';
 import {
   cx,
   StudioModal,
@@ -39,6 +39,7 @@ import {
   deleteArkAsset,
   deleteArkAssetGroup,
   getRealPortraitValidationResult,
+  getArkAssetStatusLabel,
   isArkAssetActiveStatus,
   isArkAssetFailedStatus,
   listArkAssetGroups,
@@ -51,6 +52,7 @@ import {
   type ArkAssetGroup,
 } from '../../../services/volcengineAssetService.ts';
 import { generateStoryboardImage } from '../../../services/volcengineService.ts';
+import { getVirtualPortraitDescriptionFromFileName } from '../utils/virtualPortraitUpload.ts';
 
 type PortraitLibraryViewProps = {
   themeMode?: WorkspaceThemeMode;
@@ -61,6 +63,16 @@ type PortraitLibraryViewProps = {
     assetId: string,
     meta?: { description?: string; submitMode?: 'auto' | 'reference_image' },
   ) => void;
+  onSelectMany?: (assets: PortraitLibrarySelection[]) => void;
+  selectedAssetIds?: string[];
+  maxSelectable?: number;
+};
+
+export type PortraitLibrarySelection = {
+  imageUrl: string;
+  assetId: string;
+  description?: string;
+  submitMode: 'auto' | 'reference_image';
 };
 
 export type PortraitItem = {
@@ -117,10 +129,14 @@ type SeedreamPortraitDraftState = {
 };
 
 type VirtualPortraitDraftState = {
-  description: string;
+  items: VirtualPortraitDraftItem[];
+};
+
+type VirtualPortraitDraftItem = {
+  id: string;
   imageDataUrl: string;
   fileNameHint: string;
-  file: File | null;
+  file: File;
 };
 
 type VirtualPortraitGroupDraftState = {
@@ -180,10 +196,7 @@ const EMPTY_SEEDREAM_PORTRAIT_DRAFT: SeedreamPortraitDraftState = {
 };
 const REAL_PORTRAIT_VALIDATION_CALLBACK_URL = 'https://tapdance.local/real-portrait-validation-callback';
 const EMPTY_VIRTUAL_PORTRAIT_DRAFT: VirtualPortraitDraftState = {
-  description: '',
-  imageDataUrl: '',
-  fileNameHint: '',
-  file: null,
+  items: [],
 };
 const EMPTY_VIRTUAL_GROUP_DRAFT: VirtualPortraitGroupDraftState = {
   name: DEFAULT_VIRTUAL_PORTRAIT_ASSET_GROUP_NAME,
@@ -268,6 +281,16 @@ function compareArkAssetsByNewest(left: ArkAsset, right: ArkAsset) {
   const leftTime = left.createTime || left.updateTime || '';
   const rightTime = right.createTime || right.updateTime || '';
   return rightTime.localeCompare(leftTime);
+}
+
+function getArkAssetStatusBadgeClass(status: string) {
+  if (isArkAssetActiveStatus(status)) {
+    return 'border-emerald-700 bg-emerald-600 text-white shadow-sm';
+  }
+  if (isArkAssetFailedStatus(status)) {
+    return 'border-red-700 bg-red-600 text-white shadow-sm';
+  }
+  return 'border-amber-600 bg-amber-400 text-amber-950 shadow-sm';
 }
 
 function mergeVirtualPortraitGroupsWithLocalAssets(
@@ -498,7 +521,15 @@ function removeRealPortraitAssetFromGroupViews(groups: RealPortraitAssetGroupVie
   });
 }
 
-export function PortraitLibraryView({ themeMode, isModal = false, selectionMode = 'seedance', onSelect }: PortraitLibraryViewProps) {
+export function PortraitLibraryView({
+  themeMode,
+  isModal = false,
+  selectionMode = 'seedance',
+  onSelect,
+  onSelectMany,
+  selectedAssetIds = [],
+  maxSelectable,
+}: PortraitLibraryViewProps) {
   const resolvedThemeMode: WorkspaceThemeMode = themeMode
     ?? (typeof document !== 'undefined' && (document.body.classList.contains('theme-light') || document.documentElement.classList.contains('theme-light'))
       ? 'light'
@@ -569,6 +600,8 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   const [virtualGroupDraft, setVirtualGroupDraft] = useState<VirtualPortraitGroupDraftState>(EMPTY_VIRTUAL_GROUP_DRAFT);
   const [virtualPortraitDraftError, setVirtualPortraitDraftError] = useState('');
   const [virtualGroupDraftError, setVirtualGroupDraftError] = useState('');
+  const [virtualPortraitPollingGroupId, setVirtualPortraitPollingGroupId] = useState('');
+  const [selectedVirtualAssetIds, setSelectedVirtualAssetIds] = useState<string[]>([]);
   const [seedreamPortraitAssets, setSeedreamPortraitAssets] = useState<SeedreamGeneratedPortraitAsset[]>([]);
   const [isLoadingSeedreamPortraitAssets, setIsLoadingSeedreamPortraitAssets] = useState(false);
   const [seedreamPortraitError, setSeedreamPortraitError] = useState('');
@@ -614,20 +647,21 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     setRealPortraitError('');
     try {
       const groups = await listArkAssetGroups({ groupType: ARK_REAL_PORTRAIT_GROUP_TYPE });
-      const nextGroups = await Promise.all(groups.map(async (group) => {
-        const assets = await listArkAssets({
-          groupId: group.id,
+      const assets = groups.length > 0
+        ? await listArkAssets({
+          groupIds: groups.map((group) => group.id),
           groupType: ARK_REAL_PORTRAIT_GROUP_TYPE,
-          projectName: group.projectName,
-        });
-
+        })
+        : [];
+      const nextGroups = groups.map((group) => {
+        const groupAssets = assets.filter((asset) => asset.groupId === group.id);
         return {
           group,
-          assets,
-          assetCount: assets.length,
-          coverImageUrl: assets[0]?.url || '',
+          assets: groupAssets,
+          assetCount: groupAssets.length,
+          coverImageUrl: groupAssets[0]?.url || '',
         };
-      }));
+      });
       const latestAssetByAssetId = new Map<string, ArkAsset>();
       nextGroups.forEach((groupView) => {
         groupView.assets.forEach((asset) => {
@@ -703,24 +737,26 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     }
   };
 
-  const refreshVirtualPortraitGroups = async () => {
-    setIsLoadingVirtualPortraitGroups(true);
-    setVirtualPortraitError('');
+  const refreshVirtualPortraitGroups = async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent);
+    if (!silent) {
+      setIsLoadingVirtualPortraitGroups(true);
+      setVirtualPortraitError('');
+    }
     try {
       const groups = await listArkAssetGroups();
-      const nextGroups = await Promise.all(groups.map(async (group) => {
-        const assets = await listArkAssets({
-          groupId: group.id,
-          projectName: group.projectName,
-        });
-
+      const assets = groups.length > 0
+        ? await listArkAssets({ groupIds: groups.map((group) => group.id) })
+        : [];
+      const nextGroups = groups.map((group) => {
+        const groupAssets = assets.filter((asset) => asset.groupId === group.id);
         return {
           group,
-          assets,
-          assetCount: assets.length,
-          coverImageUrl: assets[0]?.url || '',
+          assets: groupAssets,
+          assetCount: groupAssets.length,
+          coverImageUrl: groupAssets[0]?.url || '',
         };
-      }));
+      });
       const latestAssetByAssetId = new Map<string, ArkAsset>();
       nextGroups.forEach((groupView) => {
         groupView.assets.forEach((asset) => {
@@ -773,12 +809,20 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
       if (selectedVirtualPortraitGroupId && !mergedGroups.some((item) => item.group.id === selectedVirtualPortraitGroupId)) {
         setSelectedVirtualPortraitGroupId('');
       }
-      setVirtualPortraitFeedback('已手动刷新虚拟人像列表。');
+      if (!silent) {
+        setVirtualPortraitFeedback('已手动刷新虚拟人像列表。');
+      }
+      return mergedGroups;
     } catch (loadError: any) {
       console.error('Failed to load virtual portrait asset groups:', loadError);
-      setVirtualPortraitError(loadError?.message || '加载虚拟人像资产组合失败');
+      if (!silent) {
+        setVirtualPortraitError(loadError?.message || '加载虚拟人像资产组合失败');
+      }
+      return null;
     } finally {
-      setIsLoadingVirtualPortraitGroups(false);
+      if (!silent) {
+        setIsLoadingVirtualPortraitGroups(false);
+      }
     }
   };
 
@@ -848,6 +892,57 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   useEffect(() => {
     void refreshSeedreamPortraitAssets();
   }, []);
+
+  useEffect(() => {
+    setSelectedVirtualAssetIds([]);
+  }, [selectedVirtualPortraitGroupId]);
+
+  useEffect(() => {
+    if (
+      !virtualPortraitPollingGroupId
+      || activeTab !== 'virtualUpload'
+      || selectedVirtualPortraitGroupId !== virtualPortraitPollingGroupId
+    ) {
+      return undefined;
+    }
+
+    let disposed = false;
+    let isPolling = false;
+    const pollVirtualPortraitGroup = async () => {
+      if (disposed || isPolling) {
+        return;
+      }
+      isPolling = true;
+      try {
+        const nextGroups = await refreshVirtualPortraitGroups({ silent: true });
+        const pollingGroup = nextGroups?.find((item) => item.group.id === virtualPortraitPollingGroupId);
+        if (!disposed && pollingGroup && pollingGroup.assets.length > 0) {
+          const hasProcessingAsset = pollingGroup.assets.some((asset) => (
+            !isArkAssetActiveStatus(asset.status) && !isArkAssetFailedStatus(asset.status)
+          ));
+          if (!hasProcessingAsset) {
+            const failedCount = pollingGroup.assets.filter((asset) => isArkAssetFailedStatus(asset.status)).length;
+            setVirtualPortraitPollingGroupId('');
+            setVirtualPortraitFeedback(
+              failedCount > 0
+                ? `当前组合处理完成，其中 ${failedCount} 张处理失败。`
+                : '当前组合中的素材已全部就绪。',
+            );
+          }
+        }
+      } finally {
+        isPolling = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void pollVirtualPortraitGroup();
+    }, 5000);
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeTab, selectedVirtualPortraitGroupId, virtualPortraitAssets, virtualPortraitPollingGroupId]);
 
   useEffect(() => () => {
     Object.values(browserFolderState.fileUrls).forEach((url: string) => {
@@ -946,6 +1041,11 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   const selectedVirtualPortraitGroup = useMemo(() => (
     virtualPortraitGroups.find((item) => item.group.id === selectedVirtualPortraitGroupId) || null
   ), [selectedVirtualPortraitGroupId, virtualPortraitGroups]);
+  const externallySelectedAssetIdSet = useMemo(() => new Set(selectedAssetIds.filter(Boolean)), [selectedAssetIds]);
+  const virtualPortraitSelectionEnabled = Boolean(onSelect || onSelectMany);
+  const virtualPortraitSelectionLimit = Number.isFinite(maxSelectable)
+    ? Math.max(0, Math.floor(Number(maxSelectable)))
+    : Number.POSITIVE_INFINITY;
   const seedreamExpandedPromptPreview = useMemo(() => (
     seedreamPortraitDraft.prompt.trim()
       ? buildSeedreamGeneratedPortraitPrompt(seedreamPortraitDraft.prompt)
@@ -1188,32 +1288,49 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     setVirtualGroupDraftError('');
   };
 
-  const handleVirtualPortraitFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      throw new Error('仅支持图片文件。');
-    }
-    if (file.size > 30 * 1024 * 1024) {
-      throw new Error('单张图片需小于 30 MB。');
+  const handleVirtualPortraitFiles = async (files: File[]) => {
+    const acceptedFiles = files.filter((file) => file.type.startsWith('image/') && file.size <= 30 * 1024 * 1024);
+    const rejectedTypeCount = files.filter((file) => !file.type.startsWith('image/')).length;
+    const rejectedSizeCount = files.filter((file) => file.type.startsWith('image/') && file.size > 30 * 1024 * 1024).length;
+
+    if (acceptedFiles.length === 0) {
+      throw new Error(rejectedSizeCount > 0 ? '单张图片需小于 30 MB。' : '仅支持图片文件。');
     }
 
-    const imageDataUrl = await readFileAsDataUrl(file);
-    setVirtualPortraitDraft((prev) => ({
-      ...prev,
-      imageDataUrl,
-      fileNameHint: file.name || prev.fileNameHint,
+    const preparedItems = await Promise.all(acceptedFiles.map(async (file) => ({
+      id: crypto.randomUUID?.() || `virtual-portrait-draft-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      imageDataUrl: await readFileAsDataUrl(file),
+      fileNameHint: file.name || '粘贴图片',
       file,
-    }));
-    setVirtualPortraitDraftError('');
+    })));
+    setVirtualPortraitDraft((prev) => {
+      const existingKeys = new Set(prev.items.map((item) => `${item.file.name}:${item.file.size}:${item.file.lastModified}`));
+      const nextItems = preparedItems.filter((item) => {
+        const key = `${item.file.name}:${item.file.size}:${item.file.lastModified}`;
+        if (existingKeys.has(key)) {
+          return false;
+        }
+        existingKeys.add(key);
+        return true;
+      });
+      return { ...prev, items: [...prev.items, ...nextItems] };
+    });
+
+    const rejectedMessages = [
+      rejectedTypeCount > 0 ? `${rejectedTypeCount} 个非图片文件` : '',
+      rejectedSizeCount > 0 ? `${rejectedSizeCount} 张超过 30 MB 的图片` : '',
+    ].filter(Boolean);
+    setVirtualPortraitDraftError(rejectedMessages.length > 0 ? `已忽略${rejectedMessages.join('和')}。` : '');
   };
 
   const handleVirtualPortraitUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
+    const files = Array.from(event.target.files || []) as File[];
+    if (files.length === 0) {
       return;
     }
 
     try {
-      await handleVirtualPortraitFile(file);
+      await handleVirtualPortraitFiles(files);
     } catch (uploadError: any) {
       console.error('Failed to upload virtual portrait image:', uploadError);
       setVirtualPortraitDraftError(uploadError?.message || '上传图片失败，请重试。');
@@ -1224,17 +1341,18 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
 
   const handleVirtualPortraitPaste = async (event: ClipboardEvent<HTMLDivElement>) => {
     const clipboardItems = Array.from(event.clipboardData.items as ArrayLike<DataTransferItem>);
-    const file = clipboardItems
-      .find((item) => item.type.startsWith('image/'))
-      ?.getAsFile();
+    const files = clipboardItems
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
 
-    if (!file) {
+    if (files.length === 0) {
       return;
     }
 
     event.preventDefault();
     try {
-      await handleVirtualPortraitFile(file);
+      await handleVirtualPortraitFiles(files);
     } catch (pasteError: any) {
       console.error('Failed to paste virtual portrait image:', pasteError);
       setVirtualPortraitDraftError(pasteError?.message || '粘贴图片失败，请重试。');
@@ -1302,81 +1420,96 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
   };
 
   const handleUploadVirtualPortraitAsset = async () => {
-    const description = virtualPortraitDraft.description.trim();
     const activeGroup = selectedVirtualPortraitGroup?.group;
     const groupName = activeGroup?.name || activeGroup?.title || '';
     const projectName = activeGroup?.projectName || DEFAULT_VIRTUAL_PORTRAIT_PROJECT_NAME;
-    const imageDataUrl = virtualPortraitDraft.imageDataUrl.trim();
-    const file = virtualPortraitDraft.file;
+    const draftItems = virtualPortraitDraft.items;
 
     if (!activeGroup?.id) {
       setVirtualPortraitDraftError('请先进入一个素材资产组合。');
       return;
     }
-    if (!description) {
-      setVirtualPortraitDraftError('请填写描述。');
-      return;
-    }
-    if (!file || !imageDataUrl) {
-      setVirtualPortraitDraftError('请先粘贴或上传图片。');
+    if (draftItems.length === 0) {
+      setVirtualPortraitDraftError('请先粘贴或选择一张或多张图片。');
       return;
     }
 
     setIsUploadingVirtualPortraitAsset(true);
     setVirtualPortraitDraftError('');
+    setVirtualPortraitError('');
+
+    const uploadedAssets: VirtualPortraitLibraryAsset[] = [];
+    const failedItems: Array<{ item: VirtualPortraitDraftItem; message: string }> = [];
 
     try {
-      setVirtualPortraitUploadStep('上传图片并写入 Ark 素材库...');
-      const uploadResult = await uploadVirtualPortraitAsset({
-        file,
-        description,
-        groupId: activeGroup.id,
-        groupName,
-        projectName,
-        initialStatusWaitMs: 0,
-      });
-      setVirtualPortraitUploadStep('保存本地预览...');
+      for (let index = 0; index < draftItems.length; index += 1) {
+        const item = draftItems[index];
+        const description = getVirtualPortraitDescriptionFromFileName(item.fileNameHint || item.file.name);
+        try {
+          setVirtualPortraitUploadStep(`${index + 1}/${draftItems.length} 正在上传 ${item.fileNameHint}...`);
+          const uploadResult = await uploadVirtualPortraitAsset({
+            file: item.file,
+            description,
+            groupId: activeGroup.id,
+            groupName,
+            projectName,
+            initialStatusWaitMs: 0,
+          });
+          setVirtualPortraitUploadStep(`${index + 1}/${draftItems.length} 正在保存本地预览...`);
 
-      const recordId = crypto.randomUUID?.() || `virtual-portrait-${Date.now()}`;
-      const savedFile = await saveMediaToAssetLibrary({
-        sourceUrl: imageDataUrl,
-        kind: 'image',
-        assetId: `portrait-library:virtual:${recordId}`,
-        title: description,
-        groupName: REAL_PORTRAIT_LIBRARY_GROUP_NAME,
-        projectName: VIRTUAL_PORTRAIT_LIBRARY_PROJECT_NAME,
-        fileNameHint: virtualPortraitDraft.fileNameHint || file.name || '',
-      });
-      const nextAsset: VirtualPortraitLibraryAsset = {
-        id: recordId,
-        description,
-        assetId: uploadResult.asset.id,
-        imageUrl: savedFile.url,
-        groupId: uploadResult.group.id,
-        groupName: uploadResult.group.name || groupName,
-        projectName: uploadResult.asset.projectName || projectName,
-        status: normalizeArkAssetStatus(uploadResult.asset.status),
-        sourceUrl: uploadResult.uploadedUrl,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      const nextAssets = await saveVirtualPortraitLibraryAssets([nextAsset, ...virtualPortraitAssets]);
+          const recordId = crypto.randomUUID?.() || `virtual-portrait-${Date.now()}-${index}`;
+          const savedFile = await saveMediaToAssetLibrary({
+            sourceUrl: item.imageDataUrl,
+            kind: 'image',
+            assetId: `portrait-library:virtual:${recordId}`,
+            title: description,
+            groupName: REAL_PORTRAIT_LIBRARY_GROUP_NAME,
+            projectName: VIRTUAL_PORTRAIT_LIBRARY_PROJECT_NAME,
+            fileNameHint: item.fileNameHint || item.file.name || '',
+          });
+          uploadedAssets.push({
+            id: recordId,
+            description,
+            assetId: uploadResult.asset.id,
+            imageUrl: savedFile.url,
+            groupId: uploadResult.group.id,
+            groupName: uploadResult.group.name || groupName,
+            projectName: uploadResult.asset.projectName || projectName,
+            status: normalizeArkAssetStatus(uploadResult.asset.status),
+            sourceUrl: uploadResult.uploadedUrl,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (uploadError: any) {
+          console.error(`Failed to upload virtual portrait asset ${item.fileNameHint}:`, uploadError);
+          failedItems.push({ item, message: uploadError?.message || '上传失败' });
+        }
+      }
 
-      setVirtualPortraitAssets(nextAssets);
-      setVirtualPortraitGroups((currentGroups) => mergeVirtualPortraitGroupsWithLocalAssets(currentGroups, nextAssets));
-      setVirtualPortraitError('');
-      setVirtualPortraitFeedback(
-        isArkAssetActiveStatus(nextAsset.status)
-          ? `已上传虚拟人像资产「${description}」，assetId：${nextAsset.assetId}`
-          : `已上传虚拟人像资产「${description}」，assetId：${nextAsset.assetId}。后续状态请手动刷新。`,
-      );
+      if (uploadedAssets.length > 0) {
+        const nextAssets = await saveVirtualPortraitLibraryAssets([...uploadedAssets, ...virtualPortraitAssets]);
+        setVirtualPortraitAssets(nextAssets);
+        setVirtualPortraitGroups((currentGroups) => mergeVirtualPortraitGroupsWithLocalAssets(currentGroups, nextAssets));
+        setVirtualPortraitError('');
+        setVirtualPortraitFeedback(
+          failedItems.length > 0
+            ? `已成功上传 ${uploadedAssets.length} 张，${failedItems.length} 张失败。正在每 5 秒获取处理结果。`
+            : `已成功上传 ${uploadedAssets.length} 张虚拟人像资产，正在每 5 秒获取处理结果。`,
+        );
+        setActiveTab('virtualUpload');
+        setSelectedVirtualPortraitGroupId(activeGroup.id);
+        setVirtualPortraitPollingGroupId(activeGroup.id);
+      }
+
+      if (failedItems.length > 0) {
+        setVirtualPortraitError(
+          `以下文件上传失败：\n${failedItems.map(({ item, message }) => `${item.fileNameHint}：${message}`).join('\n')}`,
+        );
+      }
       setActiveTab('virtualUpload');
-      setIsVirtualPortraitModalOpen(false);
       setSelectedVirtualPortraitGroupId(activeGroup.id);
+      setIsVirtualPortraitModalOpen(false);
       resetVirtualPortraitDraft();
-    } catch (uploadError: any) {
-      console.error('Failed to upload virtual portrait asset:', uploadError);
-      setVirtualPortraitDraftError(uploadError?.message || '上传虚拟人像资产失败。');
     } finally {
       setIsUploadingVirtualPortraitAsset(false);
       setVirtualPortraitUploadStep('');
@@ -1879,6 +2012,69 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
     onSelect(imageUrl, assetId, meta);
   };
 
+  const getVirtualAssetSelection = (asset: ArkAsset): PortraitLibrarySelection | null => {
+    const localAsset = virtualPortraitAssetByAssetId.get(asset.id);
+    const imageUrl = localAsset?.imageUrl || asset.url;
+    if (!imageUrl || !isArkAssetActiveStatus(asset.status)) {
+      return null;
+    }
+    return {
+      imageUrl,
+      assetId: selectionMode === 'image' ? '' : asset.id,
+      description: localAsset?.description || asset.name || asset.id,
+      submitMode: selectionMode === 'image' ? 'reference_image' : 'auto',
+    };
+  };
+
+  const toggleVirtualAssetSelection = (asset: ArkAsset) => {
+    if (!getVirtualAssetSelection(asset) || externallySelectedAssetIdSet.has(asset.id)) {
+      return;
+    }
+    setSelectedVirtualAssetIds((current) => {
+      if (current.includes(asset.id)) {
+        return current.filter((assetId) => assetId !== asset.id);
+      }
+      if (current.length >= virtualPortraitSelectionLimit) {
+        setVirtualPortraitError(`本次最多可选择 ${virtualPortraitSelectionLimit} 个素材。`);
+        return current;
+      }
+      setVirtualPortraitError('');
+      return [...current, asset.id];
+    });
+  };
+
+  const selectAllAvailableVirtualAssets = () => {
+    const selectableIds = (selectedVirtualPortraitGroup?.assets || [])
+      .filter((asset) => getVirtualAssetSelection(asset) && !externallySelectedAssetIdSet.has(asset.id))
+      .map((asset) => asset.id)
+      .slice(0, virtualPortraitSelectionLimit);
+    setSelectedVirtualAssetIds(selectableIds);
+    setVirtualPortraitError('');
+  };
+
+  const confirmVirtualAssetSelection = () => {
+    const assetById = new Map((selectedVirtualPortraitGroup?.assets || []).map((asset) => [asset.id, asset]));
+    const selections = selectedVirtualAssetIds
+      .map((assetId) => assetById.get(assetId))
+      .filter((asset): asset is ArkAsset => Boolean(asset))
+      .map((asset) => getVirtualAssetSelection(asset))
+      .filter((selection): selection is PortraitLibrarySelection => Boolean(selection));
+    if (selections.length === 0) {
+      return;
+    }
+    if (onSelectMany) {
+      onSelectMany(selections);
+    } else {
+      selections.forEach((selection) => {
+        onSelect?.(selection.imageUrl, selection.assetId, {
+          description: selection.description,
+          submitMode: selection.submitMode,
+        });
+      });
+    }
+    setSelectedVirtualAssetIds([]);
+  };
+
   const skeletonClass = resolvedThemeMode === 'light' ? 'bg-stone-200 animate-pulse border-stone-300' : 'bg-zinc-800 animate-pulse border-zinc-700';
   const softPanelClass = resolvedThemeMode === 'light'
     ? 'border-stone-200/80 bg-white/95 text-stone-700'
@@ -2215,7 +2411,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                     <Upload className="h-6 w-6 text-[var(--studio-muted)]" />
                   </span>
                   <p className="text-lg font-medium text-[var(--studio-text)]">该真人分组还没有素材</p>
-                  <p className="mt-2 text-sm text-[var(--studio-muted)]">上传通过人脸一致性校验的图片后，状态 Active 即可选择使用。</p>
+                  <p className="mt-2 text-sm text-[var(--studio-muted)]">上传通过人脸一致性校验的图片后，状态变为“已就绪”即可选择使用。</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
@@ -2225,12 +2421,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                     const description = localAsset?.description || asset.name || asset.id;
                     const status = normalizeArkAssetStatus(asset.status);
                     const isActive = isArkAssetActiveStatus(status);
-                    const isFailed = isArkAssetFailedStatus(status);
-                    const statusClass = isActive
-                      ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
-                      : isFailed
-                        ? 'border-red-500/25 bg-red-500/15 text-red-200'
-                        : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+                    const statusClass = getArkAssetStatusBadgeClass(status);
 
                     return (
                       <motion.div
@@ -2260,7 +2451,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                           )}
                           <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col gap-2">
                             <span className={`w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
-                              {status}
+                              {getArkAssetStatusLabel(status)}
                             </span>
                           </div>
                         </div>
@@ -2374,14 +2565,25 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                     : '虚拟人像素材资产组合'}
                 </h2>
                 <p className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
-                  默认只读取本地缓存；只有点击“手动刷新”时才会向 Ark 拉取最新列表和状态。
+                  {selectedVirtualPortraitGroup
+                    ? '在当前组合上传完成后，每 5 秒自动获取状态，直到组合内不再有处理中的素材。'
+                    : '选择一个虚拟人像素材组合，查看和管理组合内素材。'}
                 </p>
+                {virtualPortraitPollingGroupId === selectedVirtualPortraitGroup?.group.id ? (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-cyan-600/30 bg-cyan-500/15 px-3 py-1.5 text-xs font-medium text-[var(--studio-text)]">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    每 5 秒自动刷新处理中
+                  </div>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-3">
                 {selectedVirtualPortraitGroup ? (
                   <button
                     type="button"
-                    onClick={() => setSelectedVirtualPortraitGroupId('')}
+                    onClick={() => {
+                      setSelectedVirtualPortraitGroupId('');
+                      setVirtualPortraitPollingGroupId('');
+                    }}
                     className="studio-button studio-button-secondary px-4"
                   >
                     <ArrowLeft className="h-4 w-4" />
@@ -2431,13 +2633,13 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
             </StudioPanel>
 
             {virtualPortraitFeedback ? (
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+              <div className="rounded-2xl border border-emerald-600/30 bg-emerald-500/15 px-4 py-3 text-sm text-[var(--studio-text)]">
                 {virtualPortraitFeedback}
               </div>
             ) : null}
 
             {virtualPortraitError ? (
-              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <div className="whitespace-pre-line rounded-2xl border border-red-600/30 bg-red-500/15 px-4 py-3 text-sm text-[var(--studio-text)]">
                 {virtualPortraitError}
               </div>
             ) : null}
@@ -2455,6 +2657,45 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                 <div>
                   <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${dimTextClass}`}>Assets</div>
                   <div className="mt-2 text-sm text-[var(--studio-text)]">{selectedVirtualPortraitGroup.assetCount} 个素材</div>
+                </div>
+              </StudioPanel>
+            ) : null}
+
+            {selectedVirtualPortraitGroup && virtualPortraitSelectionEnabled ? (
+              <StudioPanel className="flex flex-wrap items-center justify-between gap-3 p-4" tone="soft">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--studio-text)]">
+                    已选择 {selectedVirtualAssetIds.length} 个素材
+                    {Number.isFinite(virtualPortraitSelectionLimit) ? ` / 最多 ${virtualPortraitSelectionLimit} 个` : ''}
+                  </div>
+                  <div className={`mt-1 text-xs ${dimTextClass}`}>点击卡片按顺序选择；右上角序号即添加顺序。</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllAvailableVirtualAssets}
+                    disabled={virtualPortraitSelectionLimit === 0}
+                    className="studio-button studio-button-secondary px-3 py-2 text-xs"
+                  >
+                    全选可用素材
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVirtualAssetIds([])}
+                    disabled={selectedVirtualAssetIds.length === 0}
+                    className="studio-button studio-button-secondary px-3 py-2 text-xs"
+                  >
+                    清空选择
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmVirtualAssetSelection}
+                    disabled={selectedVirtualAssetIds.length === 0}
+                    className="studio-button studio-button-primary px-4 py-2 text-xs"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {selectedVirtualAssetIds.length > 0 ? `确认添加 ${selectedVirtualAssetIds.length} 个` : '确认添加'}
+                  </button>
                 </div>
               </StudioPanel>
             ) : null}
@@ -2482,7 +2723,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                     <Upload className="h-6 w-6 text-[var(--studio-muted)]" />
                   </span>
                   <p className="text-lg font-medium text-[var(--studio-text)]">该组合还没有素材</p>
-                  <p className="mt-2 text-sm text-[var(--studio-muted)]">上传图片后会生成 Ark assetId，状态 Active 后即可选择使用。</p>
+                  <p className="mt-2 text-sm text-[var(--studio-muted)]">上传图片后会生成 Ark assetId，状态变为“已就绪”后即可选择使用。</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5">
@@ -2492,12 +2733,11 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                     const description = localAsset?.description || asset.name || asset.id;
                     const status = normalizeArkAssetStatus(asset.status);
                     const isActive = isArkAssetActiveStatus(status);
-                    const isFailed = isArkAssetFailedStatus(status);
-                    const statusClass = isActive
-                      ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
-                      : isFailed
-                        ? 'border-red-500/25 bg-red-500/15 text-red-200'
-                        : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+                    const statusClass = getArkAssetStatusBadgeClass(status);
+                    const selectionIndex = selectedVirtualAssetIds.indexOf(asset.id);
+                    const isSelected = selectionIndex >= 0;
+                    const isAlreadySelected = externallySelectedAssetIdSet.has(asset.id);
+                    const canSelect = virtualPortraitSelectionEnabled && Boolean(imageUrl) && isActive && !isAlreadySelected;
                     return (
                       <motion.div
                         layout
@@ -2505,10 +2745,18 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                         animate={{ opacity: 1, y: 0 }}
                         key={asset.id}
                         className={cx(
-                          'group overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] md:rounded-2xl',
-                          'cursor-pointer border-transparent shadow-lg hover:border-sky-500',
+                          'group overflow-hidden rounded-xl border bg-[var(--studio-surface-soft)] shadow-lg transition md:rounded-2xl',
+                          isSelected
+                            ? 'cursor-pointer border-sky-500 ring-2 ring-sky-500/25'
+                            : canSelect || !virtualPortraitSelectionEnabled
+                              ? 'cursor-pointer border-transparent hover:border-sky-500'
+                              : 'cursor-not-allowed border-transparent opacity-65',
                         )}
                         onClick={() => {
+                          if (virtualPortraitSelectionEnabled) {
+                            toggleVirtualAssetSelection(asset);
+                            return;
+                          }
                           setVirtualAssetDetail({ asset, localAsset });
                           setIsConfirmingVirtualAssetDelete(false);
                         }}
@@ -2527,9 +2775,43 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
 
                           <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-col gap-2">
                             <span className={`w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
-                              {status}
+                              {getArkAssetStatusLabel(status)}
                             </span>
                           </div>
+
+                          {virtualPortraitSelectionEnabled ? (
+                            <div className="absolute right-3 top-3">
+                              {isAlreadySelected ? (
+                                <span className="rounded-full border border-white/70 bg-black/65 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur-sm">
+                                  已添加
+                                </span>
+                              ) : canSelect ? (
+                                <span className={cx(
+                                  'flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold shadow-lg backdrop-blur-sm',
+                                  isSelected
+                                    ? 'border-sky-400 bg-sky-500 text-white'
+                                    : 'border-white/80 bg-black/35 text-transparent',
+                                )}>
+                                  {isSelected ? selectionIndex + 1 : <Check className="h-4 w-4" />}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {virtualPortraitSelectionEnabled ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setVirtualAssetDetail({ asset, localAsset });
+                                setIsConfirmingVirtualAssetDelete(false);
+                              }}
+                              className="absolute bottom-3 right-3 inline-flex h-8 items-center gap-1.5 rounded-full border border-white/60 bg-black/55 px-2.5 text-[10px] font-medium text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity group-hover:opacity-100 focus:opacity-100"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              查看详情
+                            </button>
+                          ) : null}
                         </div>
 
                         <div className="space-y-1.5 border-t border-[var(--studio-border)] px-3 py-3">
@@ -3053,26 +3335,13 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                 </div>
               </StudioPanel>
 
-              <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--studio-dim)]">描述</span>
-                <textarea
-                  value={virtualPortraitDraft.description}
-                  onChange={(event) => {
-                    setVirtualPortraitDraft((prev) => ({ ...prev, description: event.target.value }));
-                    setVirtualPortraitDraftError('');
-                  }}
-                  disabled={isUploadingVirtualPortraitAsset}
-                  placeholder="例如：品牌虚拟代言人正脸半身照"
-                  className="studio-textarea mt-2 min-h-28"
-                />
-              </label>
-
               <StudioPanel className="space-y-3 p-4" tone="soft">
                 <div className="text-sm font-semibold text-[var(--studio-text)]">入库流程</div>
                 <ul className={`space-y-2 text-sm leading-6 ${dimTextClass}`}>
+                  <li>每张素材默认使用文件名作为描述，并自动去掉扩展名。</li>
                   <li>使用 API 配置里的 TOS AccessKey 上传图片并生成公网 URL。</li>
                   <li>素材会写入当前组合，建议同一组合只维护同一个虚拟人物。</li>
-                  <li>CreateAsset 返回 assetId 后只保存本地记录；后续状态需要手动刷新。</li>
+                  <li>上传完成后返回当前组合，并每 5 秒自动获取处理状态。</li>
                 </ul>
               </StudioPanel>
             </div>
@@ -3083,23 +3352,49 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                 onPaste={(event) => void handleVirtualPortraitPaste(event)}
                 className={cx(
                   'flex min-h-[22rem] flex-col overflow-hidden rounded-3xl border border-dashed bg-[var(--studio-surface-soft)] outline-none transition-colors',
-                  virtualPortraitDraft.imageDataUrl ? 'border-cyan-400/30' : 'border-[var(--studio-border)]',
+                  virtualPortraitDraft.items.length > 0 ? 'border-cyan-400/30' : 'border-[var(--studio-border)]',
                 )}
               >
-                {virtualPortraitDraft.imageDataUrl ? (
-                  <img
-                    src={virtualPortraitDraft.imageDataUrl}
-                    alt="虚拟人像预览"
-                    className="h-[22rem] w-full object-cover"
-                  />
+                {virtualPortraitDraft.items.length > 0 ? (
+                  <div className="grid max-h-[22rem] grid-cols-2 gap-3 overflow-y-auto p-3 sm:grid-cols-3">
+                    {virtualPortraitDraft.items.map((item, index) => (
+                      <div key={item.id} className="group relative overflow-hidden rounded-2xl border border-[var(--studio-border)] bg-black/10">
+                        <img
+                          src={item.imageDataUrl}
+                          alt={`虚拟人像预览 ${index + 1}`}
+                          className="aspect-square w-full object-cover"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-2 pt-8">
+                          <div className="truncate text-xs text-white" title={item.fileNameHint}>
+                            {index + 1}. {item.fileNameHint}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVirtualPortraitDraft((prev) => ({
+                              ...prev,
+                              items: prev.items.filter((draftItem) => draftItem.id !== item.id),
+                            }));
+                            setVirtualPortraitDraftError('');
+                          }}
+                          disabled={isUploadingVirtualPortraitAsset}
+                          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white opacity-90 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`移除 ${item.fileNameHint}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
                     <div className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/5 text-cyan-300">
                       <Upload className="h-6 w-6" />
                     </div>
-                    <div className="mt-4 text-base font-semibold text-[var(--studio-text)]">粘贴或上传虚拟人像图片</div>
+                    <div className="mt-4 text-base font-semibold text-[var(--studio-text)]">粘贴或选择多张虚拟人像图片</div>
                     <p className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
-                      支持 jpeg、png、webp 等图片；单张小于 30 MB。
+                      支持多选 jpeg、png、webp 等图片；单张小于 30 MB，按选择顺序上传。
                     </p>
                   </div>
                 )}
@@ -3113,27 +3408,29 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                   className="studio-button studio-button-secondary px-4"
                 >
                   <Upload className="h-4 w-4" />
-                  上传图片
+                  {virtualPortraitDraft.items.length > 0 ? '继续添加图片' : '选择多张图片'}
                 </button>
-                {virtualPortraitDraft.imageDataUrl ? (
+                {virtualPortraitDraft.items.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => {
-                      setVirtualPortraitDraft((prev) => ({ ...prev, imageDataUrl: '', fileNameHint: '', file: null }));
+                      setVirtualPortraitDraft((prev) => ({ ...prev, items: [] }));
                       setVirtualPortraitDraftError('');
                     }}
                     disabled={isUploadingVirtualPortraitAsset}
                     className="studio-button studio-button-secondary px-4"
                   >
-                    清除图片
+                    清空全部
                   </button>
                 ) : null}
               </div>
 
               <div className={`rounded-2xl border p-4 ${softPanelClass}`}>
-                <div className="text-sm font-semibold text-[var(--studio-text)]">当前图片</div>
+                <div className="text-sm font-semibold text-[var(--studio-text)]">待上传图片</div>
                 <div className={`mt-2 text-sm leading-6 ${dimTextClass}`}>
-                  {virtualPortraitDraft.fileNameHint || (virtualPortraitDraft.imageDataUrl ? '已从剪贴板载入图片' : '尚未选择图片')}
+                  {virtualPortraitDraft.items.length > 0
+                    ? `已选择 ${virtualPortraitDraft.items.length} 张，将按当前顺序逐张上传。`
+                    : '尚未选择图片'}
                 </div>
               </div>
 
@@ -3147,7 +3444,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
 
           {virtualPortraitDraftError ? (
             <div className="px-6 pb-2">
-              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <div className="whitespace-pre-line rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                 {virtualPortraitDraftError}
               </div>
             </div>
@@ -3174,7 +3471,9 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
               className="studio-button studio-button-primary px-4"
             >
               {isUploadingVirtualPortraitAsset ? <img src="./assets/loading.gif" alt="" className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-              上传并生成 assetId
+              {virtualPortraitDraft.items.length > 1
+                ? `上传 ${virtualPortraitDraft.items.length} 张并生成 assetId`
+                : '上传并生成 assetId'}
             </button>
           </div>
         </div>
@@ -3313,14 +3612,10 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
           const sourceUrl = asset.url || localAsset?.sourceUrl || '';
           const status = normalizeArkAssetStatus(asset.status);
           const isActive = isArkAssetActiveStatus(status);
-          const statusClass = isActive
-            ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
-            : isArkAssetFailedStatus(status)
-              ? 'border-red-500/25 bg-red-500/15 text-red-200'
-              : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+          const statusClass = getArkAssetStatusBadgeClass(status);
           const detailRows = [
             ['assetId', asset.id],
-            ['状态', status],
+            ['状态', getArkAssetStatusLabel(status)],
             ['素材名称', asset.name || '未命名'],
             ['素材类型', asset.assetType || 'Image'],
             ['GroupId', asset.groupId || selectedRealPortraitGroup?.group.id || ''],
@@ -3368,7 +3663,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                         <div className="flex min-h-[18rem] w-full items-center justify-center text-sm text-[var(--studio-muted)]">无预览</div>
                       )}
                       <span className={`absolute left-3 top-3 w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
-                        {status}
+                        {getArkAssetStatusLabel(status)}
                       </span>
                     </div>
                   </div>
@@ -3484,14 +3779,10 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
           const sourceUrl = asset.url || localAsset?.sourceUrl || '';
           const status = normalizeArkAssetStatus(asset.status);
           const isActive = isArkAssetActiveStatus(status);
-          const statusClass = isActive
-            ? 'border-emerald-500/25 bg-emerald-500/15 text-emerald-200'
-            : isArkAssetFailedStatus(status)
-              ? 'border-red-500/25 bg-red-500/15 text-red-200'
-              : 'border-amber-500/25 bg-amber-500/15 text-amber-200';
+          const statusClass = getArkAssetStatusBadgeClass(status);
           const detailRows = [
             ['assetId', asset.id],
-            ['状态', status],
+            ['状态', getArkAssetStatusLabel(status)],
             ['素材名称', asset.name || '未命名'],
             ['素材类型', asset.assetType || 'Image'],
             ['GroupId', asset.groupId || selectedVirtualPortraitGroup?.group.id || ''],
@@ -3539,7 +3830,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                         <div className="flex min-h-[18rem] w-full items-center justify-center text-sm text-[var(--studio-muted)]">无预览</div>
                       )}
                       <span className={`absolute left-3 top-3 w-fit rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}>
-                        {status}
+                        {getArkAssetStatusLabel(status)}
                       </span>
                     </div>
                   </div>
@@ -3929,7 +4220,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
                 </div>
                 <ul className={`space-y-2 text-sm leading-6 ${dimTextClass}`}>
                   <li>单张图片需小于 30 MB，且素材中只能包含同一真人。</li>
-                  <li>创建后状态可能为 Processing，点击“手动刷新”可同步 Active/Failed 状态。</li>
+                  <li>创建后状态可能为“处理中”，点击“手动刷新”可同步“已就绪/处理失败”状态。</li>
                 </ul>
               </StudioPanel>
             </div>
@@ -4059,6 +4350,7 @@ export function PortraitLibraryView({ themeMode, isModal = false, selectionMode 
         accept="image/*"
         onChange={(event) => void handleVirtualPortraitUpload(event)}
         className="hidden"
+        multiple
       />
     </ContentWrapper>
   );

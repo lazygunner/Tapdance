@@ -100,3 +100,75 @@ test('mock API server returns OpenAI-compatible chat JSON for fast video plan pr
     await server.close();
   }
 });
+
+test('mock Ark API preserves Seedance 2.5 request fields and returns task type constraint asynchronously', async () => {
+  const server = await startTestMockApiServer({ port: 0, scenario: 'task_type_constraint' });
+  if (!server) return;
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/api/v3/contents/generations/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer mock' },
+      body: JSON.stringify({
+        model: 'doubao-seedance-2-5-260628',
+        content: [{ type: 'text', text: '编辑参考视频' }],
+        ratio: 'adaptive',
+        duration: -1,
+        resolution: '720p',
+        output_format: 'mov',
+      }),
+    });
+    const created = await createResponse.json();
+    assert.equal(createResponse.ok, true);
+    assert.match(created.id, /^mock-task-/u);
+
+    const taskResponse = await fetch(`${server.baseUrl}/api/v3/contents/generations/tasks/${created.id}`);
+    const task = await taskResponse.json();
+    assert.equal(task.status, 'failed');
+    assert.equal(task.model, 'doubao-seedance-2-5-260628');
+    assert.equal(task.output_format, 'mov');
+    assert.equal(task.error.code, 'InvalidParameter.TaskTypeConstraint');
+  } finally {
+    await server.close();
+  }
+});
+
+test('mock Ark asset API can simulate one account flow-limit response and then recover', async () => {
+  const server = await startTestMockApiServer({ port: 0, scenario: 'ark_flow_limit_once' });
+  if (!server) return;
+
+  const requestBody = {
+    action: 'ListAssets',
+    version: '2024-01-01',
+    body: {
+      Filter: { GroupIds: ['mock-group-aigc-1'], GroupType: 'AIGC' },
+      PageNumber: 1,
+      PageSize: 100,
+    },
+  };
+
+  try {
+    const limitedResponse = await fetch(`${server.baseUrl}/api/seedance/ark/assets/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+    const limited = await limitedResponse.json();
+    assert.equal(limitedResponse.status, 429);
+    assert.equal(limited.code, 'AccountFlowLimitExceeded');
+    assert.equal(limited.action, 'ListAssets');
+    assert.match(limited.requestId, /^mock-ark-request-/u);
+
+    const recoveredResponse = await fetch(`${server.baseUrl}/api/seedance/ark/assets/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+    const recovered = await recoveredResponse.json();
+    assert.equal(recoveredResponse.ok, true);
+    assert.equal(recovered.Result.TotalCount, 1);
+    assert.equal(recovered.Result.Items[0].Id, 'mock-asset-aigc-1');
+  } finally {
+    await server.close();
+  }
+});

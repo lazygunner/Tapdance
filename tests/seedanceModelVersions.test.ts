@@ -30,16 +30,20 @@ test('getSeedanceApiModelKeyForCliModel maps vip variants to the correct pricing
   assert.equal(getSeedanceApiModelKeyForCliModel('seedance2.0fast_vip'), 'fast');
 });
 
-test('Seedance API model source ids map to standard and fast models', () => {
+test('Seedance API model source ids map to 2.5, standard and fast models', () => {
   assert.deepEqual(SEEDANCE_API_MODEL_SOURCE_IDS, [
+    'seedance.seedance25ApiModel',
     'seedance.apiModel',
     'seedance.fastApiModel',
   ]);
+  assert.equal(isSeedanceApiModelSourceId('seedance.seedance25ApiModel'), true);
   assert.equal(isSeedanceApiModelSourceId('seedance.apiModel'), true);
   assert.equal(isSeedanceApiModelSourceId('seedance.fastApiModel'), true);
   assert.equal(isSeedanceApiModelSourceId('volcengine.videoModel'), false);
+  assert.equal(getSeedanceApiModelKeyForModelSourceId('seedance.seedance25ApiModel'), 'seedance25');
   assert.equal(getSeedanceApiModelKeyForModelSourceId('seedance.apiModel'), 'standard');
   assert.equal(getSeedanceApiModelKeyForModelSourceId('seedance.fastApiModel'), 'fast');
+  assert.equal(getSeedanceApiModelLabelForSourceId('seedance.seedance25ApiModel'), 'Seedance 2.5');
   assert.equal(getSeedanceApiModelLabelForSourceId('seedance.apiModel'), 'Seedance 2.0');
   assert.equal(getSeedanceApiModelLabelForSourceId('seedance.fastApiModel'), 'Seedance 2.0 Fast');
 });

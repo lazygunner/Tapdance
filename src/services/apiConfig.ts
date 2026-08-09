@@ -144,6 +144,7 @@ const ROLE_BY_SOURCE_ID: Record<Exclude<ModelSourceId, ''>, ModelRole> = {
   'volcengine.videoModel': 'video',
   'openai.imageModel': 'image',
   'aliyun.fastVideoModel': 'video',
+  'seedance.seedance25ApiModel': 'video',
   'seedance.apiModel': 'video',
   'seedance.fastApiModel': 'video',
 };
@@ -188,6 +189,7 @@ export const defaultApiSettings: ApiSettings = {
   },
   seedance: {
     enabled: true,
+    seedance25ApiModel: 'doubao-seedance-2-5-260628',
     apiModel: 'doubao-seedance-2-0-260128',
     fastApiModel: 'doubao-seedance-2-0-fast-260128',
     defaultExecutor: 'ark',
@@ -228,6 +230,7 @@ const MODEL_SOURCE_META: Record<Exclude<ModelSourceId, ''>, { label: string; pro
   'volcengine.videoModel': { label: '视频模型', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
   'openai.imageModel': { label: '图像模型', providerLabel: MODEL_PROVIDER_CATALOG.openai.label },
   'aliyun.fastVideoModel': { label: '快速视频模型', providerLabel: MODEL_PROVIDER_CATALOG.aliyun?.label || '阿里云' },
+  'seedance.seedance25ApiModel': { label: 'Seedance 2.5', providerLabel: '火山引擎 Ark' },
   'seedance.apiModel': { label: 'Seedance 2.0', providerLabel: '火山引擎 Ark' },
   'seedance.fastApiModel': { label: 'Seedance 2.0 Fast', providerLabel: '火山引擎 Ark' },
 };
@@ -361,6 +364,10 @@ function readModelSource(settings: ApiSettings, sourceId: ModelSourceId): string
 
   if (sourceId === 'seedance.apiModel') {
     return settings.seedance.apiModel.trim();
+  }
+
+  if (sourceId === 'seedance.seedance25ApiModel') {
+    return settings.seedance.seedance25ApiModel.trim();
   }
 
   if (sourceId === 'seedance.fastApiModel') {
@@ -593,6 +600,9 @@ function normalizeApiSettings(settings: ApiSettings): ApiSettings {
     },
     seedance: {
       enabled: settings.seedance?.enabled !== false,
+      seedance25ApiModel: typeof settings.seedance?.seedance25ApiModel === 'string' && settings.seedance.seedance25ApiModel.trim()
+        ? settings.seedance.seedance25ApiModel.trim()
+        : defaultApiSettings.seedance.seedance25ApiModel,
       apiModel: typeof settings.seedance?.apiModel === 'string' ? settings.seedance.apiModel : defaultApiSettings.seedance.apiModel,
       fastApiModel: typeof settings.seedance?.fastApiModel === 'string' ? settings.seedance.fastApiModel : defaultApiSettings.seedance.fastApiModel,
       defaultExecutor: settings.seedance?.defaultExecutor === 'cli' ? 'cli' : 'ark',
@@ -613,6 +623,8 @@ function normalizeApiSettings(settings: ApiSettings): ApiSettings {
         || settings.mockApi?.scenario === 'concurrency_once'
         || settings.mockApi?.scenario === 'concurrency_always'
         || settings.mockApi?.scenario === 'submit_fail'
+        || settings.mockApi?.scenario === 'task_type_constraint'
+        || settings.mockApi?.scenario === 'ark_flow_limit_once'
         ? settings.mockApi.scenario
         : 'success',
       previousSettings: settings.mockApi?.previousSettings && typeof settings.mockApi.previousSettings === 'object'
@@ -703,7 +715,7 @@ export function getModelSourceDisplayValue(settings: ApiSettings, sourceId: Mode
     return '';
   }
 
-  if (sourceId === 'seedance.apiModel' || sourceId === 'seedance.fastApiModel') {
+  if (sourceId === 'seedance.seedance25ApiModel' || sourceId === 'seedance.apiModel' || sourceId === 'seedance.fastApiModel') {
     return `${getSeedanceApiModelLabelForSourceId(sourceId)} (${value})`;
   }
 

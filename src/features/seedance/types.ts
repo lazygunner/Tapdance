@@ -2,7 +2,8 @@ import type { AspectRatio } from '../../types.ts';
 
 export type SeedanceModelVersion = 'seedance2.0' | 'seedance2.0fast' | 'seedance2.0_vip' | 'seedance2.0fast_vip';
 export type SeedanceExecutorId = 'ark' | 'cli' | 'aliyun';
-export type SeedanceApiModelKey = 'standard' | 'fast';
+export type SeedanceApiModelKey = 'seedance25' | 'standard' | 'fast';
+export type SeedanceOutputFormat = 'mp4' | 'mov';
 export type SeedanceAspectRatio = AspectRatio | '3:4' | '21:9' | 'adaptive';
 
 export type SeedanceBaseTemplateId =
@@ -44,6 +45,11 @@ export interface SeedanceInputAsset {
   urlOrData: string;
   role: SeedanceAssetRole;
   label?: string;
+  durationSec?: number;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
 }
 
 export interface SeedancePromptDraft {
@@ -63,6 +69,7 @@ export interface SeedanceRequestOptions {
   ratio: SeedanceAspectRatio;
   duration?: number;
   resolution: '480p' | '720p' | '1080p';
+  outputFormat?: SeedanceOutputFormat;
   generateAudio: boolean;
   returnLastFrame: boolean;
   useWebSearch: boolean;
@@ -96,6 +103,7 @@ export interface SeedanceCompiledRequest {
   ratio: SeedanceAspectRatio;
   duration?: number;
   resolution: '480p' | '720p' | '1080p';
+  outputFormat: SeedanceOutputFormat;
   generateAudio: boolean;
   returnLastFrame: boolean;
   watermark: boolean;

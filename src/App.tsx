@@ -566,6 +566,7 @@ export default function App() {
     handleReplaceFastReferenceVideoFromHistory,
     handleAddFastReferenceAudiosFromHistory,
     handleReplaceFastReferenceAudioFromHistory,
+    handleAddFastReferenceFiles,
     handleUploadFastReferenceImage,
     handlePasteFastReferenceImage,
     handleUpdateFastReferenceImage,
@@ -1332,6 +1333,7 @@ export default function App() {
           onReplaceReferenceVideoFromHistory={handleReplaceFastReferenceVideoFromHistory}
           onAddReferenceAudiosFromHistory={handleAddFastReferenceAudiosFromHistory}
           onReplaceReferenceAudioFromHistory={handleReplaceFastReferenceAudioFromHistory}
+          onAddReferenceFiles={handleAddFastReferenceFiles}
           onUploadReferenceImage={handleUploadFastReferenceImage}
           onPasteReferenceImage={handlePasteFastReferenceImage}
           onUpdateReferenceImage={handleUpdateFastReferenceImage}

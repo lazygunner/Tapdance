@@ -77,7 +77,7 @@ test('normalizeFastVideoProject preserves parsed reference audio metadata', () =
   });
 });
 
-test('normalizeFastVideoProject maps legacy audio-guided fast-flow template back to multi-image mode', () => {
+test('normalizeFastVideoProject preserves Seedance 2.5 audio-guided template', () => {
   const normalized = normalizeFastVideoProject({
     input: {
       ...createEmptyFastVideoProject().input,
@@ -96,7 +96,7 @@ test('normalizeFastVideoProject maps legacy audio-guided fast-flow template back
     },
   });
 
-  assert.equal(normalized.seedanceDraft?.baseTemplateId, 'multi_image_reference');
+  assert.equal(normalized.seedanceDraft?.baseTemplateId, 'audio_guided');
 });
 
 test('fast video defaults to Ark executor and auto-audio overlay', () => {
@@ -105,11 +105,13 @@ test('fast video defaults to Ark executor and auto-audio overlay', () => {
 
   assert.equal(project.input.quickCutEnabled, false);
   assert.equal(project.executionConfig.executor, 'ark');
+  assert.equal(project.executionConfig.apiModelKey, 'seedance25');
   assert.equal(project.task.provider, 'ark');
   assert.equal(draft.baseTemplateId, 'free_text');
   assert.deepEqual(draft.overlayTemplateIds, ['auto_audio']);
   assert.equal(draft.options.generateAudio, true);
   assert.equal(draft.options.watermark, false);
+  assert.equal(draft.options.outputFormat, 'mp4');
 });
 
 test('createDefaultFastSeedanceDraft uses multi-image mode when reference media exists', () => {

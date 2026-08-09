@@ -4,15 +4,15 @@ import { Play, Pause, Volume2, VolumeX, AlertCircle, CheckCircle2 } from 'lucide
 /** Validation constraints from Seedance API spec */
 export const VIDEO_REFERENCE_CONSTRAINTS = {
   minDurationSec: 2,
-  maxDurationSec: 15,
-  maxTotalDurationSec: 15,
+  maxDurationSec: 30,
+  maxTotalDurationSec: 30,
   minAspectRatio: 0.4,
   maxAspectRatio: 2.5,
   minPixelSide: 300,
   maxPixelSide: 6000,
   minTotalPixels: 409_600,  // 640×640
-  maxTotalPixels: 927_408,  // 834×1112
-  maxFileSizeMb: 50,
+  maxTotalPixels: 8_295_044,
+  maxFileSizeMb: 200,
   minFps: 24,
   maxFps: 60,
   allowedExtensions: ['mp4', 'mov'],

@@ -176,6 +176,23 @@
           }
         ]
       }
+    },
+    "minimax": {
+      "label": "MiniMax",
+      "promptLanguage": {
+        "default": "zh",
+        "supported": ["zh", "en"]
+      },
+      "models": {
+        "text": [],
+        "image": [],
+        "video": [
+          {
+            "name": "MiniMax H3",
+            "modelId": "MiniMax-H3"
+          }
+        ]
+      }
     }
   }
 }

@@ -1098,7 +1098,7 @@ type Props = {
   draftIssues: string[];
   task: SeedanceTask;
   executionConfig: {
-    executor: 'ark' | 'cli' | 'aliyun';
+    executor: 'ark' | 'cli' | 'aliyun' | 'minimax';
     apiModelKey: SeedanceApiModelKey;
     cliModelVersion: SeedanceModelVersion;
     pollIntervalSec: number;
@@ -1782,7 +1782,7 @@ export function FastVideoView({
             <p className="text-sm uppercase tracking-[0.28em] text-rose-400/80">Seedance Execution</p>
             <h2 className="text-2xl xl:text-3xl font-bold text-white mt-2">视频生成</h2>
             <p className="text-sm text-zinc-400 mt-2 max-w-3xl">
-              使用已确认的素材与视频提示词提交 Seedance。支持 Ark API 与本地 `dreamina text2video / multimodal2video` 两种执行器。
+              使用已确认的素材与视频提示词提交视频生成任务，支持 Ark API、本地 CLI、HappyHorse 与 MiniMax H3。
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -2083,9 +2083,9 @@ export function FastVideoView({
             <div className="flex items-center justify-between gap-3">
               <div className="text-white font-semibold">执行参数</div>
               <div className="text-right text-xs text-zinc-500">
-                {(executionConfig.executor === 'ark' ? 'Ark API' : executionConfig.executor === 'aliyun' ? '阿里云' : '本地 CLI')}
+                {(executionConfig.executor === 'ark' ? 'Ark API' : executionConfig.executor === 'aliyun' ? '阿里云' : executionConfig.executor === 'minimax' ? 'MiniMax H3' : '本地 CLI')}
                 {' · '}
-                {`${seedanceDraft.options.ratio} · ${seedanceDraft.options.duration === -1 ? '自动时长' : `${seedanceDraft.options.duration || 10}s`} · ${seedanceDraft.options.resolution}/${(seedanceDraft.options.outputFormat || 'mp4').toUpperCase()}`}
+                {`${seedanceDraft.options.ratio} · ${seedanceDraft.options.duration === -1 ? '自动时长' : `${seedanceDraft.options.duration || 10}s`} · ${executionConfig.executor === 'minimax' ? (seedanceDraft.options.resolution === '1080p' ? '2K' : '768P') : seedanceDraft.options.resolution}/${(seedanceDraft.options.outputFormat || 'mp4').toUpperCase()}`}
               </div>
             </div>
             <div className="mt-4 grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
@@ -2093,12 +2093,21 @@ export function FastVideoView({
                 <span className={fieldLabelClassName}>执行器</span>
                 <StudioSelect
                   value={executionConfig.executor}
-                  onChange={(event) => onUpdateExecutionConfig({ executor: event.target.value as Props['executionConfig']['executor'] })}
+                  onChange={(event) => {
+                    const executor = event.target.value as Props['executionConfig']['executor'];
+                    onUpdateExecutionConfig({ executor });
+                    if (executor === 'minimax' && seedanceDraft.options.resolution === '480p') {
+                      onUpdateDraft({ options: { resolution: '720p', outputFormat: 'mp4' } });
+                    }
+                  }}
                   className={controlClassName}
+                  panelMinWidth={280}
+                  optionLabelClassName="whitespace-nowrap pr-2"
                 >
                   <option value="ark">Ark API</option>
                   <option value="cli">本地 CLI</option>
                   <option value="aliyun">HappyHorse API</option>
+                  <option value="minimax">MiniMax H3 API</option>
                 </StudioSelect>
               </label>
               {executionConfig.executor === 'ark' ? (
@@ -2135,6 +2144,19 @@ export function FastVideoView({
                         ? '1.0-i2v'
                         : '1.0-t2v'}
                   </div>
+                </label>
+              ) : executionConfig.executor === 'minimax' ? (
+                <label className="block">
+                  <span className={fieldLabelClassName}>模型</span>
+                  <StudioSelect
+                    value="MiniMax-H3"
+                    onChange={() => undefined}
+                    className={controlClassName}
+                    panelMinWidth={180}
+                    optionLabelClassName="whitespace-nowrap pr-2"
+                  >
+                    <option value="MiniMax-H3">MiniMax H3</option>
+                  </StudioSelect>
                 </label>
               ) : (
                 <label className="block">
@@ -2212,10 +2234,10 @@ export function FastVideoView({
                   panelMinWidth={180}
                   optionLabelClassName="whitespace-nowrap pr-2"
                 >
-                  {modelCapabilities.resolutions.flatMap((resolution) => (
-                    modelCapabilities.outputFormats.map((format) => (
+                  {(executionConfig.executor === 'minimax' ? ['720p', '1080p'] as const : modelCapabilities.resolutions).flatMap((resolution) => (
+                    (executionConfig.executor === 'minimax' ? ['mp4'] as const : modelCapabilities.outputFormats).map((format) => (
                       <option key={`${resolution}-${format}`} value={`${resolution}|${format}`}>
-                        {resolution} · {format.toUpperCase()}
+                        {executionConfig.executor === 'minimax' ? (resolution === '1080p' ? '2K' : '768P') : resolution} · {format.toUpperCase()}
                       </option>
                     ))
                   ))}

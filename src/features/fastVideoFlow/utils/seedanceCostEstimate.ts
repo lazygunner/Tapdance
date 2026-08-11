@@ -18,7 +18,7 @@ type SeedanceEstimateDimensionConfig = {
 };
 
 type SeedanceCostExecutionConfig = {
-  executor: 'ark' | 'cli' | 'aliyun';
+  executor: 'ark' | 'cli' | 'aliyun' | 'minimax';
   apiModelKey: SeedanceApiModelKey;
   cliModelVersion: SeedanceModelVersion;
 };
@@ -67,6 +67,11 @@ const SEEDANCE_PRICING = {
     withVideoInputUnitPrice: 0,
     withoutVideoInputUnitPrice: 0,
   },
+  minimax: {
+    modelLabel: 'MiniMax H3',
+    withVideoInputUnitPrice: 0,
+    withoutVideoInputUnitPrice: 0,
+  },
 } as const;
 
 export function resolveEstimateRatio(
@@ -85,6 +90,9 @@ export function hasSelectedReferenceVideoInput(referenceVideos: FastReferenceVid
 export function getSeedancePricingKey(executionConfig: SeedanceCostExecutionConfig) {
   if (executionConfig.executor === 'aliyun') {
     return 'aliyun';
+  }
+  if (executionConfig.executor === 'minimax') {
+    return 'minimax';
   }
   if (executionConfig.executor === 'ark') {
     return executionConfig.apiModelKey;
@@ -206,6 +214,16 @@ export function getSeedanceCostEstimate(
     finalUnitPrice = is1080p ? 1.6 : 0.9;
     estimatedCost = outputDurationSec * finalUnitPrice;
     billingLabel = `按时长计费，生成 ${outputDurationSec}s 视频，单价 ${finalUnitPrice}元/秒`;
+    pricingUnit = 'second';
+  }
+
+  if (pricingKey === 'minimax') {
+    const is2K = seedanceDraft.options.resolution === '1080p';
+    const selectedImageCount = seedanceDraft.assets.filter((asset) => asset.kind === 'image').length;
+    const extraImageCost = Math.max(0, selectedImageCount - 5) * 0.2;
+    finalUnitPrice = is2K ? 0.8 : 0.5;
+    estimatedCost = billableDurationSec * finalUnitPrice + extraImageCost;
+    billingLabel = `按时长计费：${is2K ? '2K' : '768P'} ¥${finalUnitPrice}/秒；输入视频与输出共 ${billableDurationSec.toFixed(1).replace(/\.0$/u, '')} 秒${extraImageCost > 0 ? `，另含超出 5 张的参考图费用 ¥${extraImageCost.toFixed(2)}` : ''}。`;
     pricingUnit = 'second';
   }
 

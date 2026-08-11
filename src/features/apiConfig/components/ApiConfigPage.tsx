@@ -9,6 +9,7 @@ import {
   DEFAULT_GEMINI_BASE_URL,
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_ALIYUN_BASE_URL,
+  DEFAULT_MINIMAX_BASE_URL,
   DEFAULT_VOLCENGINE_BASE_URL,
   DEFAULT_MODEL_ROLE_META,
   getDefaultModelSource,
@@ -42,10 +43,13 @@ import {
   ALIYUN_PROVIDER_MODEL_FIELDS,
   ALIYUN_ROLE_FIELDS,
   ALIYUN_ROLE_SOURCE_IDS,
+  MINIMAX_PROVIDER_MODEL_FIELDS,
+  MINIMAX_ROLE_SOURCE_IDS,
   type GeminiModelField,
   type OpenAIModelField,
   type VolcengineModelField,
   type AliyunModelField,
+  type MinimaxModelField,
 } from '../utils/apiConfigUi.ts';
 
 type ApiConfigPageProps = {
@@ -82,7 +86,7 @@ type CustomModelDraft = {
 function createCustomModelDraft(providerId: ModelProviderId): CustomModelDraft {
   return {
     providerId,
-    role: providerId === 'openai' ? 'image' : 'text',
+    role: providerId === 'openai' ? 'image' : providerId === 'aliyun' || providerId === 'minimax' ? 'video' : 'text',
     name: '',
     modelId: '',
   };
@@ -97,6 +101,9 @@ function getProviderCustomModels(settings: ApiSettings, providerId: ModelProvide
   }
   if (providerId === 'aliyun') {
     return settings.aliyun.customModels;
+  }
+  if (providerId === 'minimax') {
+    return settings.minimax.customModels;
   }
   return settings.gemini.customModels;
 }
@@ -118,6 +125,9 @@ function getProviderRoleConfiguredModel(settings: ApiSettings, providerId: Model
 
   if (providerId === 'aliyun') {
     return role === 'video' ? settings.aliyun.fastVideoModel : '';
+  }
+  if (providerId === 'minimax') {
+    return role === 'video' ? settings.minimax.videoModel : '';
   }
 
   if (role === 'image') {
@@ -167,6 +177,10 @@ function applyProviderRoleModelToSettings(settings: ApiSettings, providerId: Mod
         fastVideoModel: modelId,
       },
     };
+  }
+  if (providerId === 'minimax') {
+    if (role !== 'video') return settings;
+    return { ...settings, minimax: { ...settings.minimax, videoModel: modelId } };
   }
 
   const field = VOLCENGINE_ROLE_FIELDS[role];
@@ -274,6 +288,14 @@ export function ApiConfigPage({
                 customModels: nextCustomModels,
               },
             }
+            : providerId === 'minimax'
+              ? {
+                ...prev,
+                minimax: {
+                  ...prev.minimax,
+                  customModels: nextCustomModels,
+                },
+              }
             : {
               ...prev,
               gemini: {
@@ -316,6 +338,14 @@ export function ApiConfigPage({
                 customModels: nextCustomModels,
               },
             }
+            : providerId === 'minimax'
+              ? {
+                ...prev,
+                minimax: {
+                  ...prev.minimax,
+                  customModels: nextCustomModels,
+                },
+              }
             : {
               ...prev,
               gemini: {
@@ -360,11 +390,16 @@ export function ApiConfigPage({
             const openaiOptions = getOpenAIRoleModelOptions(role);
             const aliyunSourceId = ALIYUN_ROLE_SOURCE_IDS[role];
             const aliyunOptions = getAliyunRoleModelOptions(role);
+            const minimaxSourceId = MINIMAX_ROLE_SOURCE_IDS[role];
+            const minimaxOptions = minimaxSourceId
+              ? getProviderModelCatalog('minimax', role, apiSettings).map((model) => ({ value: model.modelId, label: model.name }))
+              : [];
             const providerOptions = [
               ...(geminiOptions.length > 0 ? [{ value: 'gemini' as ModelProviderId, label: 'Google AI Studio' }] : []),
               ...(volcengineOptions.length > 0 ? [{ value: 'volcengine' as ModelProviderId, label: '火山引擎 Ark' }] : []),
               ...(openaiSourceId && openaiOptions.length > 0 ? [{ value: 'openai' as ModelProviderId, label: 'OpenAI' }] : []),
               ...(aliyunSourceId && aliyunOptions.length > 0 ? [{ value: 'aliyun' as ModelProviderId, label: '阿里云' }] : []),
+              ...(minimaxSourceId && minimaxOptions.length > 0 ? [{ value: 'minimax' as ModelProviderId, label: 'MiniMax' }] : []),
             ];
             const geminiSourceId = value.startsWith('gemini.')
               ? value
@@ -375,6 +410,8 @@ export function ApiConfigPage({
                 ? (resolveModelSource(apiSettings, openaiSourceId) || openaiOptions[0]?.value || '')
                 : selectedProvider === 'aliyun' && aliyunSourceId
                   ? (resolveModelSource(apiSettings, aliyunSourceId) || aliyunOptions[0]?.value || '')
+                  : selectedProvider === 'minimax' && minimaxSourceId
+                    ? (resolveModelSource(apiSettings, minimaxSourceId) || minimaxOptions[0]?.value || '')
                   : (resolveModelSource(apiSettings, geminiSourceId) || geminiOptions[0]?.modelName || '');
 
             return (
@@ -442,6 +479,17 @@ export function ApiConfigPage({
                             ...prev.defaultModels,
                             [role]: nextAliyunSourceId,
                           },
+                        }));
+                        return;
+                      }
+
+                      if (provider === 'minimax') {
+                        const nextOption = minimaxOptions[0];
+                        if (!nextOption || !minimaxSourceId) return;
+                        setApiSettings((prev) => ({
+                          ...prev,
+                          minimax: { ...prev.minimax, videoModel: nextOption.value },
+                          defaultModels: { ...prev.defaultModels, [role]: minimaxSourceId },
                         }));
                         return;
                       }
@@ -522,6 +570,15 @@ export function ApiConfigPage({
                       return;
                     }
 
+                    if (selectedProvider === 'minimax' && minimaxSourceId) {
+                      setApiSettings((prev) => ({
+                        ...prev,
+                        minimax: { ...prev.minimax, videoModel: nextValue },
+                        defaultModels: { ...prev.defaultModels, [role]: minimaxSourceId },
+                      }));
+                      return;
+                    }
+
                     const nextGeminiOption = geminiOptions.find((option) => option.modelName === nextValue);
                     setApiSettings((prev) => ({
                       ...prev,
@@ -565,6 +622,14 @@ export function ApiConfigPage({
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
+                      ))
+                    )
+                  ) : selectedProvider === 'minimax' ? (
+                    minimaxOptions.length === 0 ? (
+                      <option value="">请先填写可用模型</option>
+                    ) : (
+                      minimaxOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
                       ))
                     )
                   ) : (
@@ -714,10 +779,11 @@ export function ApiConfigPage({
       ) : null}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {(['gemini', 'volcengine', 'openai', 'aliyun'] as ModelProviderId[]).map((providerId) => {
+            {(['gemini', 'volcengine', 'openai', 'aliyun', 'minimax'] as ModelProviderId[]).map((providerId) => {
           const isVolcengine = providerId === 'volcengine';
           const isOpenAI = providerId === 'openai';
           const isAliyun = providerId === 'aliyun';
+          const isMinimax = providerId === 'minimax';
           const meta = PROVIDER_CARD_META[providerId];
           const modelFieldGroups = providerId === 'gemini'
             ? GEMINI_PROVIDER_MODEL_FIELDS
@@ -725,6 +791,8 @@ export function ApiConfigPage({
               ? OPENAI_PROVIDER_MODEL_FIELDS
               : providerId === 'aliyun'
                 ? ALIYUN_PROVIDER_MODEL_FIELDS
+                : providerId === 'minimax'
+                  ? MINIMAX_PROVIDER_MODEL_FIELDS
                 : VOLCENGINE_PROVIDER_MODEL_FIELDS;
           const promptLanguageCatalog = getProviderPromptLanguageCatalog(providerId);
           const currentPromptLanguage = isVolcengine
@@ -733,6 +801,8 @@ export function ApiConfigPage({
               ? apiSettings.openai.promptLanguage
               : isAliyun
                 ? apiSettings.aliyun.promptLanguage
+                : isMinimax
+                  ? apiSettings.minimax.promptLanguage
                 : apiSettings.gemini.promptLanguage;
           const customModels = getProviderCustomModels(apiSettings, providerId);
           const visibleRoles = MODEL_ROLE_ORDER.filter((role) => modelFieldGroups[role].length > 0);
@@ -770,6 +840,10 @@ export function ApiConfigPage({
                             setApiSettings((prev) => ({ ...prev, aliyun: { ...prev.aliyun, promptLanguage: language } }));
                             return;
                           }
+                          if (isMinimax) {
+                            setApiSettings((prev) => ({ ...prev, minimax: { ...prev.minimax, promptLanguage: language } }));
+                            return;
+                          }
                           setApiSettings((prev) => ({ ...prev, gemini: { ...prev.gemini, promptLanguage: language } }));
                         }}
                         className={`h-8 w-10 rounded-md text-base leading-none transition-colors ${currentPromptLanguage === language
@@ -789,7 +863,7 @@ export function ApiConfigPage({
                   <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">API Key</span>
                   <input
                     type="password"
-                    value={isVolcengine ? apiSettings.volcengine.apiKey : isOpenAI ? apiSettings.openai.apiKey : isAliyun ? apiSettings.aliyun.apiKey : apiSettings.gemini.apiKey}
+                    value={isVolcengine ? apiSettings.volcengine.apiKey : isOpenAI ? apiSettings.openai.apiKey : isAliyun ? apiSettings.aliyun.apiKey : isMinimax ? apiSettings.minimax.apiKey : apiSettings.gemini.apiKey}
                     onChange={(event) => {
                       const value = event.target.value;
                       if (isVolcengine) {
@@ -804,14 +878,18 @@ export function ApiConfigPage({
                         setApiSettings((prev) => ({ ...prev, aliyun: { ...prev.aliyun, apiKey: value } }));
                         return;
                       }
+                      if (isMinimax) {
+                        setApiSettings((prev) => ({ ...prev, minimax: { ...prev.minimax, apiKey: value } }));
+                        return;
+                      }
                       setApiSettings((prev) => ({ ...prev, gemini: { ...prev.gemini, apiKey: value } }));
                     }}
-                    placeholder={isVolcengine ? '按方舟 API Key 填写' : isOpenAI ? '填写 OpenAI API Key' : isAliyun ? '填写阿里云百炼 API Key' : '留空则继续使用 AI Studio Key 或 GEMINI_API_KEY'}
+                    placeholder={isVolcengine ? '按方舟 API Key 填写' : isOpenAI ? '填写 OpenAI API Key' : isAliyun ? '填写阿里云百炼 API Key' : isMinimax ? '填写 MiniMax API Key' : '留空则继续使用 AI Studio Key 或 GEMINI_API_KEY'}
                     className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
                   />
                 </label>
 
-                {!isVolcengine && !isOpenAI && !isAliyun && (
+                {!isVolcengine && !isOpenAI && !isAliyun && !isMinimax && (
                   <label className="block">
                     <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">API Base URL / 第三方 Endpoint</span>
                     <input
@@ -874,6 +952,19 @@ export function ApiConfigPage({
                   </label>
                 )}
 
+                {isMinimax && (
+                  <label className="block">
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">API Base URL / 第三方 Endpoint</span>
+                    <input
+                      value={apiSettings.minimax.baseUrl}
+                      onChange={(event) => setApiSettings((prev) => ({ ...prev, minimax: { ...prev.minimax, baseUrl: event.target.value } }))}
+                      placeholder={DEFAULT_MINIMAX_BASE_URL}
+                      className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                    />
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">默认走官方地址 {DEFAULT_MINIMAX_BASE_URL}，使用视频生成 V2 接口。</p>
+                  </label>
+                )}
+
                 {isVolcengine && (
                   <label className="block">
                     <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">API Base URL / 第三方 Endpoint</span>
@@ -909,6 +1000,8 @@ export function ApiConfigPage({
                               ? apiSettings.openai[fieldConfig.field as OpenAIModelField]
                               : providerId === 'aliyun'
                                 ? apiSettings.aliyun[fieldConfig.field as AliyunModelField]
+                                : providerId === 'minimax'
+                                  ? apiSettings.minimax[fieldConfig.field as MinimaxModelField]
                                 : apiSettings.volcengine[fieldConfig.field as VolcengineModelField];
                           const options = getProviderRoleCatalogOptions(apiSettings, providerId, role, configuredValue);
                           const selectedValue = configuredValue || options[0]?.value || '';
@@ -946,6 +1039,12 @@ export function ApiConfigPage({
                                         [field]: nextValue,
                                       },
                                     }));
+                                    return;
+                                  }
+
+                                  if (providerId === 'minimax') {
+                                    const field = fieldConfig.field as MinimaxModelField;
+                                    setApiSettings((prev) => ({ ...prev, minimax: { ...prev.minimax, [field]: nextValue } }));
                                     return;
                                   }
 
@@ -1464,7 +1563,7 @@ export function ApiConfigPage({
                 }}
                 className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
               >
-                {MODEL_ROLE_ORDER.filter((role) => customModelDraft.providerId !== 'openai' || role === 'image').map((role) => (
+                {MODEL_ROLE_ORDER.filter((role) => customModelDraft.providerId === 'openai' ? role === 'image' : customModelDraft.providerId === 'aliyun' || customModelDraft.providerId === 'minimax' ? role === 'video' : true).map((role) => (
                   <option key={`custom-model-role-${role}`} value={role}>
                     {DEFAULT_MODEL_ROLE_META[role].title}
                   </option>

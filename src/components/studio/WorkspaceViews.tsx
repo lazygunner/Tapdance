@@ -3,6 +3,8 @@ import {
   Activity,
   Archive,
   ArrowLeft,
+  ArrowUpRight,
+  BookOpen,
   CircleDollarSign,
   Clapperboard,
   Database,
@@ -316,6 +318,18 @@ export function StudioSidebar({
   onThemeModeChange,
   onOpenApiConfig,
 }: StudioSidebarProps) {
+  const handleOpenTutorial = async () => {
+    const tutorialUrl = 'https://tapdance.cc/docs';
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (window.electronAPI?.isElectron) {
+      await window.electronAPI.openExternal(tutorialUrl);
+      return;
+    }
+    window.open(tutorialUrl, '_blank', 'noopener,noreferrer');
+  };
+
   const activePrimaryView: 'home' | 'imageCreation' | 'assetLibrary' | 'portraitLibrary' | 'cliQueue' =
     view === 'imageCreation'
       ? 'imageCreation'
@@ -483,6 +497,14 @@ export function StudioSidebar({
               ) : null}
             </span>
             <Settings2 className="h-4 w-4 text-[var(--studio-dim)]" />
+          </button>
+
+          <button type="button" onClick={handleOpenTutorial} className="studio-button studio-button-secondary w-full justify-between">
+            <span className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-[var(--studio-dim)]" />
+              使用教程
+            </span>
+            <ArrowUpRight className="h-4 w-4 text-[var(--studio-dim)]" />
           </button>
         </StudioPanel>
       </div>

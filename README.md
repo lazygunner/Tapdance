@@ -4,7 +4,7 @@ English | [中文](README_zh.md)
 
 An AI director's workbench that turns a single creative idea into a structured brief, character and scene assets, storyboards, first- and last-frame prompts, video prompts, and pollable video-generation tasks.
 
-Tapdance is primarily an `Electron + React + Vite + TypeScript` desktop application. It supports `Google Gemini / Veo`, `Volcengine Ark`, and `Alibaba Cloud Model Studio HappyHorse`, and also provides a local Seedance / Dreamina bridge and a mock demo workflow.
+Tapdance is primarily an `Electron + React + Vite + TypeScript` desktop application. It supports `Google Gemini / Veo`, `Volcengine Ark`, `MiniMax H3`, and `Alibaba Cloud Model Studio HappyHorse`, and also provides a local Seedance / Dreamina bridge and a mock demo workflow.
 
 ## Features
 
@@ -12,7 +12,7 @@ Tapdance is primarily an `Electron + React + Vite + TypeScript` desktop applicat
 - Generate and maintain consistent assets for characters, scenes, products, and more
 - Generate storyboard lists, first- and last-frame prompts, image prompts, and video prompts
 - Support single-shot video, transition video, and fast video workflows
-- Support Gemini / Veo, Volcengine Ark, Alibaba Cloud Model Studio, and the Seedance bridge
+- Support Gemini / Veo, Volcengine Ark, MiniMax H3, Alibaba Cloud Model Studio, and the Seedance bridge
 - Override models by workflow stage or individual operation
 - Run the main workflow without API credentials using Mock mode
 - Store projects, API settings, request logs, assets, and UI preferences locally
@@ -47,7 +47,7 @@ This will:
 
 ### 4. Recommended first-time setup
 
-1. Open **API Settings** and configure Gemini, Volcengine Ark, Alibaba Cloud Model Studio, TOS, and any other services you need.
+1. Open **API Settings** and configure Gemini, Volcengine Ark, MiniMax, Alibaba Cloud Model Studio, TOS, and any other services you need.
 2. Select the default text, image, and video models.
 3. If you do not have model credentials yet, enable `Mock` mode to try the main workflow.
 4. If you use the local Dreamina runner, confirm that the Seedance health check passes on the settings page.
@@ -99,6 +99,10 @@ Enter your API key and default model on the application's **API Settings** page.
 ### Volcengine Ark
 
 The Ark API key, model ID / endpoint ID, and prompt language are managed on the **API Settings** page.
+
+### MiniMax H3
+
+Enter your MiniMax API key and optional base URL on the **API Settings** page. MiniMax H3 is available in the video-generation and Fast Video workflows, including task submission, status polling, result retrieval, and task cancellation.
 
 ### Alibaba Cloud Model Studio (HappyHorse)
 

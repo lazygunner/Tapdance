@@ -3,6 +3,7 @@ import type { FastSceneDraft, FastVideoInput, FastVideoPlan, FastVideoPromptDraf
 import * as geminiService from './geminiService.ts';
 import * as openaiImageService from './openaiImageService.ts';
 import * as volcengineService from './volcengineService.ts';
+import * as minimaxVideoService from './minimaxVideoService.ts';
 import { appendModelInvocationLog } from './modelInvocationLog.ts';
 import { buildTransitionVideoGenerationRequest, buildVideoGenerationRequest, normalizeVideoAspectRatio } from './requestBuilders.ts';
 
@@ -16,7 +17,14 @@ function isOpenAISource(sourceId?: ModelSourceId) {
   return Boolean(sourceId && sourceId.startsWith('openai.'));
 }
 
-function getProvider(sourceId?: ModelSourceId): 'gemini' | 'volcengine' | 'openai' {
+function isMinimaxSource(sourceId?: ModelSourceId) {
+  return Boolean(sourceId && sourceId.startsWith('minimax.'));
+}
+
+function getProvider(sourceId?: ModelSourceId): 'gemini' | 'volcengine' | 'openai' | 'minimax' {
+  if (isMinimaxSource(sourceId)) {
+    return 'minimax';
+  }
   if (isOpenAISource(sourceId)) {
     return 'openai';
   }
@@ -289,7 +297,9 @@ export async function startVideoGeneration(shot: Shot, defaultAspectRatio: Aspec
     sourceId,
     finalModelName,
     { shot, defaultAspectRatio, referenceAssets, useMockMode, requestPreview },
-    () => isVolcengineSource(sourceId)
+    () => isMinimaxSource(sourceId)
+      ? minimaxVideoService.startVideoGeneration(shot, defaultAspectRatio, referenceAssets, useMockMode, finalModelName)
+      : isVolcengineSource(sourceId)
       ? volcengineService.startVideoGeneration(shot, defaultAspectRatio, referenceAssets, useMockMode, finalModelName)
       : geminiService.startVideoGeneration(shot, defaultAspectRatio, referenceAssets, useMockMode, finalModelName),
   );
@@ -305,7 +315,9 @@ export async function startTransitionVideoGeneration(firstFrameUrl: string, last
     sourceId,
     finalModelName,
     { firstFrameUrl, lastFrameUrl, aspectRatio, prompt, durationSeconds, useMockMode, requestPreview },
-    () => isVolcengineSource(sourceId)
+    () => isMinimaxSource(sourceId)
+      ? minimaxVideoService.startTransitionVideoGeneration(firstFrameUrl, lastFrameUrl, aspectRatio, prompt, durationSeconds, useMockMode, finalModelName)
+      : isVolcengineSource(sourceId)
       ? volcengineService.startTransitionVideoGeneration(firstFrameUrl, lastFrameUrl, aspectRatio, prompt, durationSeconds, useMockMode, finalModelName)
       : geminiService.startTransitionVideoGeneration(firstFrameUrl, lastFrameUrl, aspectRatio, prompt, durationSeconds, useMockMode, finalModelName),
   );
@@ -325,46 +337,57 @@ export async function generateTransitionPrompt(currentShot: Shot, nextShot: Shot
 }
 
 export async function checkVideoStatus(operation: any, useMockMode: boolean = false): Promise<any> {
-  const provider = operation?.provider === 'volcengine' ? 'volcengine' : 'gemini';
-  const sourceId: ModelSourceId = provider === 'volcengine' ? 'volcengine.videoModel' : 'gemini.fastVideoModel';
+  const provider = operation?.provider === 'volcengine' ? 'volcengine' : operation?.provider === 'minimax' ? 'minimax' : 'gemini';
+  const sourceId: ModelSourceId = provider === 'volcengine' ? 'volcengine.videoModel' : provider === 'minimax' ? 'minimax.videoModel' : 'gemini.fastVideoModel';
 
   return withModelLog(
     'checkVideoStatus',
     sourceId,
     provider,
     { operation, useMockMode },
-    () => provider === 'volcengine'
+    () => provider === 'minimax'
+      ? minimaxVideoService.checkVideoStatus(operation, useMockMode)
+      : provider === 'volcengine'
       ? volcengineService.checkVideoStatus(operation, useMockMode)
       : geminiService.checkVideoStatus(operation, useMockMode),
   );
 }
 
 export async function cancelVideoOperation(operation: any, useMockMode: boolean = false): Promise<void> {
-  const provider = operation?.provider === 'volcengine' ? 'volcengine' : 'gemini';
-  const sourceId: ModelSourceId = provider === 'volcengine' ? 'volcengine.videoModel' : 'gemini.fastVideoModel';
+  const provider = operation?.provider === 'volcengine' ? 'volcengine' : operation?.provider === 'minimax' ? 'minimax' : 'gemini';
+  const sourceId: ModelSourceId = provider === 'volcengine' ? 'volcengine.videoModel' : provider === 'minimax' ? 'minimax.videoModel' : 'gemini.fastVideoModel';
 
   return withModelLog(
     'cancelVideoOperation',
     sourceId,
     provider,
     { operation, useMockMode },
-    () => provider === 'volcengine'
+    () => provider === 'minimax'
+      ? minimaxVideoService.cancelVideoOperation(operation, useMockMode)
+      : provider === 'volcengine'
       ? volcengineService.cancelVideoOperation(operation, useMockMode)
       : geminiService.cancelVideoOperation(operation, useMockMode),
   );
 }
 
-export async function fetchVideoBlobUrl(uri: string, useMockMode: boolean = false): Promise<string> {
+export async function fetchVideoBlobUrl(uri: string, useMockMode: boolean = false, providerHint?: 'gemini' | 'volcengine' | 'minimax'): Promise<string> {
   const isDirectRemoteUrl = uri.startsWith('http') && !uri.includes('googleapis.com') && !uri.includes('generativelanguage.googleapis.com');
-  const sourceId: ModelSourceId = isDirectRemoteUrl ? 'volcengine.videoModel' : 'gemini.fastVideoModel';
+  const provider = providerHint || (isDirectRemoteUrl ? 'volcengine' : 'gemini');
+  const sourceId: ModelSourceId = provider === 'minimax'
+    ? 'minimax.videoModel'
+    : provider === 'volcengine'
+      ? 'volcengine.videoModel'
+      : 'gemini.fastVideoModel';
 
   return withModelLog(
     'fetchVideoBlobUrl',
     sourceId,
     uri,
     { uri, useMockMode },
-    () => isDirectRemoteUrl
-      ? volcengineService.fetchVideoBlobUrl(uri, useMockMode)
-      : geminiService.fetchVideoBlobUrl(uri, useMockMode),
+    () => provider === 'minimax'
+      ? minimaxVideoService.fetchVideoBlobUrl(uri, useMockMode)
+      : provider === 'volcengine'
+        ? volcengineService.fetchVideoBlobUrl(uri, useMockMode)
+        : geminiService.fetchVideoBlobUrl(uri, useMockMode),
   );
 }

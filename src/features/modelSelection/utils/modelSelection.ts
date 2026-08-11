@@ -17,7 +17,7 @@ import {
   getSeedanceApiModelLabelForSourceId,
   isSeedanceApiModelSourceId,
 } from '../../seedance/modelVersions.ts';
-import { GEMINI_ROLE_SOURCE_OPTIONS, OPENAI_ROLE_SOURCE_IDS, VOLCENGINE_ROLE_SOURCE_IDS } from '../../apiConfig/utils/apiConfigUi.ts';
+import { ALIYUN_ROLE_SOURCE_IDS, GEMINI_ROLE_SOURCE_OPTIONS, MINIMAX_ROLE_SOURCE_IDS, OPENAI_ROLE_SOURCE_IDS, VOLCENGINE_ROLE_SOURCE_IDS } from '../../apiConfig/utils/apiConfigUi.ts';
 
 export type ModelCategory = 'text' | 'image' | 'video';
 
@@ -51,6 +51,12 @@ type FlowModelOverrideMap = Record<ModelCategory, string>;
 type OperationModelOverrideMap = Record<string, string>;
 
 export function getSourceProviderKey(sourceId: ModelSourceId): ModelProviderId {
+  if (sourceId.startsWith('minimax.')) {
+    return 'minimax';
+  }
+  if (sourceId.startsWith('aliyun.')) {
+    return 'aliyun';
+  }
   if (sourceId.startsWith('openai.')) {
     return 'openai';
   }
@@ -108,11 +114,15 @@ export function getPromptLanguageBySourceId(apiSettings: ApiSettings, sourceId: 
     ? apiSettings.volcengine.promptLanguage
     : providerId === 'openai'
       ? apiSettings.openai.promptLanguage
+      : providerId === 'aliyun'
+        ? apiSettings.aliyun.promptLanguage
+        : providerId === 'minimax'
+          ? apiSettings.minimax.promptLanguage
     : apiSettings.gemini.promptLanguage;
 }
 
 export function encodeSelectionValue(sourceId: ModelSourceId, modelName?: string) {
-  if ((sourceId.startsWith('gemini.') || sourceId.startsWith('volcengine.') || sourceId.startsWith('openai.')) && modelName) {
+  if ((sourceId.startsWith('gemini.') || sourceId.startsWith('volcengine.') || sourceId.startsWith('openai.') || sourceId.startsWith('aliyun.') || sourceId.startsWith('minimax.')) && modelName) {
     return `${sourceId}::${modelName}`;
   }
   return sourceId;
@@ -252,6 +262,26 @@ export function getRoleModelSelectionOptions(apiSettings: ApiSettings, role: Mod
     }))
     : [];
 
+  const aliyunSourceId = ALIYUN_ROLE_SOURCE_IDS[role];
+  const aliyunOptions = aliyunSourceId && apiSettings.aliyun.enabled
+    ? getProviderModelCatalog('aliyun', role, apiSettings).map((model) => ({
+      value: encodeSelectionValue(aliyunSourceId, model.modelId),
+      sourceId: aliyunSourceId,
+      modelName: model.modelId,
+      label: `${formatConfiguredModelDisplay('aliyun', role, model.modelId)} · 阿里云`,
+    }))
+    : [];
+
+  const minimaxSourceId = MINIMAX_ROLE_SOURCE_IDS[role];
+  const minimaxOptions = minimaxSourceId && apiSettings.minimax.enabled
+    ? getProviderModelCatalog('minimax', role, apiSettings).map((model) => ({
+      value: encodeSelectionValue(minimaxSourceId, model.modelId),
+      sourceId: minimaxSourceId,
+      modelName: model.modelId,
+      label: `${formatConfiguredModelDisplay('minimax', role, model.modelId)} · MiniMax`,
+    }))
+    : [];
+
   const seedanceOptions = role === 'video' && apiSettings.seedance.enabled
     ? SEEDANCE_API_MODEL_SOURCE_IDS
       .map((sourceId) => ({
@@ -263,7 +293,7 @@ export function getRoleModelSelectionOptions(apiSettings: ApiSettings, role: Mod
       .filter((option) => option.label !== '未配置' && option.modelName.trim().length > 0)
     : [];
 
-  return [...geminiOptions, ...volcengineOptions, ...openaiOptions, ...seedanceOptions];
+  return [...geminiOptions, ...volcengineOptions, ...openaiOptions, ...aliyunOptions, ...minimaxOptions, ...seedanceOptions];
 }
 
 export function resolveSelectionValue(apiSettings: ApiSettings, role: ModelRole, selection: string): ResolvedModelSelection | null {

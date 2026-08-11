@@ -140,7 +140,7 @@ async function pollModelServiceOperation(operation: any, apiSettings: ApiSetting
     if (uri) {
       return {
         done: true,
-        videoUrl: await fetchVideoBlobUrl(uri, useMockMode),
+        videoUrl: await fetchVideoBlobUrl(uri, useMockMode, operation?.provider),
       };
     }
 
@@ -159,7 +159,7 @@ async function pollModelServiceOperation(operation: any, apiSettings: ApiSetting
 
 async function pollCreativeVideoOperation(operation: any, apiSettings: ApiSettings, useMockMode: boolean, seedanceBridgeUrl: string) {
   const provider = operation?.provider || 'ark';
-  if (provider === 'gemini' || provider === 'volcengine') {
+  if (provider === 'gemini' || provider === 'volcengine' || provider === 'minimax') {
     return pollModelServiceOperation(operation, apiSettings, useMockMode);
   }
 

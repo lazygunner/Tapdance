@@ -5,6 +5,7 @@ export type GeminiModelField = 'textModel' | 'imageModel' | 'proImageModel' | 'f
 export type VolcengineModelField = 'textModel' | 'imageModel' | 'videoModel';
 export type OpenAIModelField = 'imageModel';
 export type AliyunModelField = 'fastVideoModel';
+export type MinimaxModelField = 'videoModel';
 
 export const MODEL_ROLE_ORDER: ModelRole[] = ['text', 'image', 'video'];
 
@@ -26,6 +27,10 @@ export const OPENAI_ROLE_SOURCE_IDS: Partial<Record<ModelRole, ModelSourceId>> =
 
 export const ALIYUN_ROLE_SOURCE_IDS: Partial<Record<ModelRole, ModelSourceId>> = {
   video: 'aliyun.fastVideoModel',
+};
+
+export const MINIMAX_ROLE_SOURCE_IDS: Partial<Record<ModelRole, ModelSourceId>> = {
+  video: 'minimax.videoModel',
 };
 
 export const GEMINI_ROLE_FIELDS: Record<ModelRole, GeminiModelField> = {
@@ -84,6 +89,14 @@ export const ALIYUN_PROVIDER_MODEL_FIELDS: Record<ModelRole, Array<{ field: Aliy
   ],
 };
 
+export const MINIMAX_PROVIDER_MODEL_FIELDS: Record<ModelRole, Array<{ field: MinimaxModelField; sourceId: ModelSourceId; label: string }>> = {
+  text: [],
+  image: [],
+  video: [
+    { field: 'videoModel', sourceId: 'minimax.videoModel', label: '视频模型' },
+  ],
+};
+
 export const PROVIDER_CARD_META: Record<ModelProviderId, { title: string }> = {
   gemini: {
     title: 'Google Gemini API',
@@ -96,6 +109,9 @@ export const PROVIDER_CARD_META: Record<ModelProviderId, { title: string }> = {
   },
   aliyun: {
     title: '阿里云百炼 API',
+  },
+  minimax: {
+    title: 'MiniMax API',
   },
 };
 

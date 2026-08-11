@@ -173,6 +173,24 @@ test('normalizeFastVideoProject preserves CLI executor for persisted free-text d
   assert.equal(normalized.executionConfig.executor, 'cli');
 });
 
+test('normalizeFastVideoProject preserves MiniMax H3 executor and task provider', () => {
+  const normalized = normalizeFastVideoProject({
+    executionConfig: {
+      ...createEmptyFastVideoProject().executionConfig,
+      executor: 'minimax',
+    },
+    task: {
+      ...createEmptyFastVideoProject().task,
+      provider: 'minimax',
+      taskId: 'h3-task',
+    },
+  });
+
+  assert.equal(normalized.executionConfig.executor, 'minimax');
+  assert.equal(normalized.task.provider, 'minimax');
+  assert.equal(resolveFastVideoTaskProvider(normalized.task, 'ark'), 'minimax');
+});
+
 test('normalizeFastVideoProject infers human face mosaic state from prompt suffix', () => {
   const normalized = normalizeFastVideoProject({
     input: createEmptyFastVideoProject().input,

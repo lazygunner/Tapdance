@@ -119,6 +119,39 @@ test('getSeedanceCostEstimate switches unit price when a reference video is sele
   );
 });
 
+test('getSeedanceCostEstimate applies MiniMax H3 per-second and excess-image pricing', () => {
+  const input = createInput({
+    durationSec: 8,
+    referenceVideos: [{
+      id: 'video-1',
+      videoUrl: 'https://example.com/reference.mp4',
+      selectedForVideo: true,
+      videoMeta: { durationSec: 4, width: 1280, height: 720 },
+    }],
+  });
+  const draft = createDraft({
+    assets: Array.from({ length: 7 }, (_, index) => ({
+      id: `image-${index}`,
+      kind: 'image' as const,
+      source: 'upload' as const,
+      role: 'reference_image' as const,
+      urlOrData: `data:image/png;base64,${index}`,
+    })),
+    options: { ...createDraft().options, duration: 8, resolution: '1080p' },
+  });
+  const estimate = getSeedanceCostEstimate(input, draft, {
+    executor: 'minimax',
+    apiModelKey: 'standard',
+    cliModelVersion: 'seedance2.0',
+  });
+
+  assert.equal(estimate.modelLabel, 'MiniMax H3');
+  assert.equal(estimate.pricingUnit, 'second');
+  assert.equal(estimate.unitPrice, 0.8);
+  assert.equal(estimate.billableDurationSec, 12);
+  assert.ok(Math.abs(estimate.estimatedCost - 10) < 1e-9);
+});
+
 test('getSeedanceCostEstimate uses the Seedance 2.5 video-input prices', () => {
   const noVideoEstimate = getSeedanceCostEstimate(createInput(), createDraft(), {
     executor: 'ark',

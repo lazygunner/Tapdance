@@ -10,7 +10,7 @@ function buildOperationFromLogResponse(response: unknown): any | undefined {
   const operation = response as Record<string, any>;
   if (typeof operation.taskId === 'string' && operation.taskId.trim()) {
     return {
-      provider: operation.provider === 'gemini' ? 'gemini' : 'volcengine',
+      provider: operation.provider === 'gemini' || operation.provider === 'minimax' ? operation.provider : 'volcengine',
       taskId: operation.taskId,
     };
   }

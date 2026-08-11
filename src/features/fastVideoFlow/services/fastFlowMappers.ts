@@ -542,7 +542,7 @@ export function resolveFastVideoTaskProvider(
   task?: Partial<SeedanceTask> | null,
   fallback: SeedanceExecutorId = 'cli',
 ): SeedanceExecutorId {
-  if (task?.provider === 'ark' || task?.provider === 'cli' || task?.provider === 'aliyun') {
+  if (task?.provider === 'ark' || task?.provider === 'cli' || task?.provider === 'aliyun' || task?.provider === 'minimax') {
     return task.provider;
   }
 
@@ -586,7 +586,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
   const input = (value?.input || {}) as Partial<FastVideoInput>;
   const task = (value?.task || {}) as Partial<SeedanceTask>;
   const legacyInput = (value?.input || {}) as Record<string, unknown>;
-  const executionExecutor = value?.executionConfig?.executor === 'cli' || value?.executionConfig?.executor === 'ark' || value?.executionConfig?.executor === 'aliyun'
+  const executionExecutor = value?.executionConfig?.executor === 'cli' || value?.executionConfig?.executor === 'ark' || value?.executionConfig?.executor === 'aliyun' || value?.executionConfig?.executor === 'minimax'
     ? value.executionConfig.executor
     : base.executionConfig.executor;
   const executionApiModelKey = value?.executionConfig?.apiModelKey === 'seedance25'

@@ -130,6 +130,15 @@ export interface AliyunApiConfig {
   customModels: CustomProviderModelConfig[];
 }
 
+export interface MinimaxApiConfig {
+  enabled: boolean;
+  apiKey: string;
+  baseUrl: string;
+  promptLanguage: PromptLanguage;
+  videoModel: string;
+  customModels: CustomProviderModelConfig[];
+}
+
 export interface SeedanceApiConfig {
   enabled: boolean;
   seedance25ApiModel: string;
@@ -169,6 +178,7 @@ export type ModelSourceId =
   | 'volcengine.videoModel'
   | 'openai.imageModel'
   | 'aliyun.fastVideoModel'
+  | 'minimax.videoModel'
   | 'seedance.seedance25ApiModel'
   | 'seedance.apiModel'
   | 'seedance.fastApiModel';
@@ -194,6 +204,7 @@ export interface ApiSettings {
   volcengine: VolcengineApiConfig;
   openai: OpenAIApiConfig;
   aliyun: AliyunApiConfig;
+  minimax: MinimaxApiConfig;
   seedance: SeedanceApiConfig;
   mockApi: MockApiConfig;
   tos?: TosConfig;

@@ -1,7 +1,7 @@
 import type { AspectRatio } from '../../types.ts';
 
 export type SeedanceModelVersion = 'seedance2.0' | 'seedance2.0fast' | 'seedance2.0_vip' | 'seedance2.0fast_vip';
-export type SeedanceExecutorId = 'ark' | 'cli' | 'aliyun';
+export type SeedanceExecutorId = 'ark' | 'cli' | 'aliyun' | 'minimax';
 export type SeedanceApiModelKey = 'seedance25' | 'standard' | 'fast';
 export type SeedanceOutputFormat = 'mp4' | 'mov';
 export type SeedanceAspectRatio = AspectRatio | '3:4' | '21:9' | 'adaptive';

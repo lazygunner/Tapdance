@@ -51,7 +51,7 @@ type SeedanceLogEntry = {
   request: unknown;
   response?: unknown;
   error?: string;
-  executor?: 'ark' | 'cli' | 'aliyun';
+  executor?: 'ark' | 'cli' | 'aliyun' | 'minimax';
   sourceId?: ModelInvocationLogEntry['sourceId'];
   modelName?: string;
 };

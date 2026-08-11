@@ -30,6 +30,7 @@ import { syncHumanFaceMosaicPrompt } from './fastScenePrompt.ts';
 import { createPromptBasedDirectorPlacements, inferPromptCharacterLayout, normalizeFastDirectorState } from './fastDirectorState.ts';
 import { fetchSeedanceTask, submitSeedanceTask } from './seedanceBridgeClient.ts';
 import { fetchHappyHorseTask, submitHappyHorseTask } from './aliyunHappyHorseService.ts';
+import { deleteOrCancelVideoTask, queryVideoTask, startFastVideoGeneration } from '../../../services/minimaxVideoService.ts';
 import { createSeedanceTask, deleteSeedanceTask, getSeedanceTask } from '../../seedance/services/seedanceApiService.ts';
 import { isTosConfigComplete, uploadFileToTos } from '../../../services/tosUploadService.ts';
 import { validateSeedanceDraft } from '../../seedance/services/seedanceDraft.ts';
@@ -71,7 +72,7 @@ type SeedanceLogEntry = {
   request: unknown;
   response?: unknown;
   error?: string;
-  executor?: 'ark' | 'cli' | 'aliyun';
+  executor?: 'ark' | 'cli' | 'aliyun' | 'minimax';
   sourceId?: ModelInvocationLogEntry['sourceId'];
   modelName?: string;
 };
@@ -1606,7 +1607,7 @@ export function createFastVideoFlowActions({
       ...prev,
       seedance: {
         ...prev.seedance,
-        ...(patch.executor ? { defaultExecutor: patch.executor } : {}),
+        ...(patch.executor === 'ark' || patch.executor === 'cli' ? { defaultExecutor: patch.executor } : {}),
         ...(patch.cliModelVersion ? { cliModelVersion: patch.cliModelVersion } : {}),
         ...(typeof patch.pollIntervalSec === 'number' ? { pollIntervalSec: patch.pollIntervalSec } : {}),
       },
@@ -1682,7 +1683,7 @@ export function createFastVideoFlowActions({
     setIsRefreshingFastVideoTask(true);
 
     try {
-      if (useMockMode && taskExecutor === 'aliyun') {
+      if (useMockMode && (taskExecutor === 'aliyun' || taskExecutor === 'minimax')) {
         const nowIso = new Date().toISOString();
         updateFastFlowByProjectId(targetProjectId, (current) => ({
           ...current,
@@ -1739,6 +1740,47 @@ export function createFastVideoFlowActions({
             videoUrl: persistedVideo?.url || current.task.videoUrl,
             lastCheckedAt: nowIso,
             finishedAt: resolveSeedanceFinishedAt(result.genStatus as any, current.task.finishedAt, nowIso),
+          },
+        }));
+        return;
+      }
+
+      if (taskExecutor === 'minimax') {
+        const result = await queryVideoTask(taskId);
+        appendSeedanceLog({
+          operation: 'minimaxVideoQuery',
+          status: 'success',
+          executor: 'minimax',
+          sourceId: 'minimax.videoModel',
+          modelName: result.model || apiSettings.minimax.videoModel,
+          request: { taskId, executor: 'minimax' },
+          response: result,
+        });
+        const normalizedStatus = mapRemoteSeedanceStatus(result.status);
+        const persistedVideo = normalizedStatus === 'completed' && result.content?.url
+          ? await persistGeneratedMediaUrl(result.content.url, {
+            kind: 'video',
+            assetId: `${targetProjectId}:fast-task:video`,
+            title: '极速视频成片',
+          })
+          : undefined;
+        const nowIso = new Date().toISOString();
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
+          ...current,
+          task: {
+            ...current.task,
+            provider: 'minimax',
+            taskId,
+            submitId: '',
+            status: normalizedStatus,
+            remoteStatus: result.status,
+            queueStatus: result.status,
+            raw: result,
+            error: normalizedStatus === 'failed' ? (result.error?.message || 'MiniMax H3 任务失败。') : '',
+            videoUrl: persistedVideo?.url || current.task.videoUrl,
+            videoStorageKey: '',
+            lastCheckedAt: nowIso,
+            finishedAt: resolveSeedanceFinishedAt(normalizedStatus, current.task.finishedAt, nowIso),
           },
         }));
         return;
@@ -1889,16 +1931,20 @@ export function createFastVideoFlowActions({
         return;
       }
 
-      if (task.provider !== 'ark') {
+      if (task.provider !== 'ark' && task.provider !== 'minimax') {
         throw new Error('当前本地 CLI 执行器暂不支持取消已提交任务。');
       }
 
-      await deleteSeedanceTask(taskId);
+      if (task.provider === 'minimax') {
+        await deleteOrCancelVideoTask(taskId);
+      } else {
+        await deleteSeedanceTask(taskId);
+      }
       appendSeedanceLog({
-        operation: 'seedanceCancel',
+        operation: task.provider === 'minimax' ? 'minimaxVideoCancel' : 'seedanceCancel',
         status: 'success',
-        executor: 'ark',
-        request: { taskId, executor: 'ark' },
+        executor: task.provider,
+        request: { taskId, executor: task.provider },
       });
 
       const nowIso = new Date().toISOString();
@@ -1917,7 +1963,7 @@ export function createFastVideoFlowActions({
     } catch (error: any) {
       const errorMessage = error?.message || '取消生成任务失败。';
       console.error('Failed to cancel fast video task:', error);
-      const taskExecutor = task.provider === 'ark' ? 'ark' : 'cli';
+      const taskExecutor = task.provider === 'ark' || task.provider === 'minimax' ? task.provider : 'cli';
       appendSeedanceLog({
         operation: 'seedanceCancel',
         status: 'error',
@@ -1928,8 +1974,8 @@ export function createFastVideoFlowActions({
       openSeedanceErrorModal({
         eyebrow: 'Seedance',
         title: '取消生成任务失败',
-        message: task.provider === 'ark' && String(task.remoteStatus || '').trim().toLowerCase() === 'running'
-          ? 'Ark 当前只支持取消排队中的任务，running 状态暂不能取消。'
+        message: (task.provider === 'ark' || task.provider === 'minimax') && String(task.remoteStatus || '').trim().toLowerCase() === 'running'
+          ? `${task.provider === 'minimax' ? 'MiniMax H3' : 'Ark'} 当前只支持取消排队中的任务，running 状态暂不能取消。`
           : '取消生成任务失败，请稍后重试。',
         detail: errorMessage,
       });
@@ -1982,11 +2028,11 @@ export function createFastVideoFlowActions({
       },
     }));
     try {
-      if (!useMockMode) {
+      if (!useMockMode && (submitExecutor === 'ark' || submitExecutor === 'cli')) {
         await refreshSeedanceHealth();
       }
 
-      if (useMockMode && submitExecutor === 'aliyun') {
+      if (useMockMode && (submitExecutor === 'aliyun' || submitExecutor === 'minimax')) {
         const mockTaskId = `mock-${Date.now()}`;
         const finishedAt = new Date().toISOString();
         updateFastFlowByProjectId(targetProjectId, (current) => ({
@@ -2010,7 +2056,42 @@ export function createFastVideoFlowActions({
         return;
       }
 
-      if (submitExecutor === 'aliyun') {
+      if (submitExecutor === 'minimax') {
+        const result = await startFastVideoGeneration(
+          draft,
+          project.fastFlow.input.aspectRatio,
+          false,
+          apiSettings.minimax.videoModel,
+        );
+        appendSeedanceLog({
+          operation: 'minimaxVideoSubmit',
+          status: 'success',
+          executor: 'minimax',
+          sourceId: 'minimax.videoModel',
+          modelName: apiSettings.minimax.videoModel,
+          request: buildSeedanceSubmitLogRequest(draft, 'minimax'),
+          response: result,
+        });
+        updateFastFlowByProjectId(targetProjectId, (current) => ({
+          ...current,
+          task: {
+            ...current.task,
+            provider: 'minimax',
+            taskId: result.taskId,
+            submitId: '',
+            status: 'queued',
+            remoteStatus: 'queued',
+            queueStatus: 'queued',
+            raw: result,
+            error: '',
+            lastCheckedAt: new Date().toISOString(),
+            startedAt: current.task.startedAt || submitStartedAt,
+            finishedAt: '',
+          },
+        }));
+        setView('fastVideo');
+        await handleRefreshFastVideoTask(result.taskId, 'minimax');
+      } else if (submitExecutor === 'aliyun') {
         const imageSources = draft.assets
           .filter((asset) => asset.kind === 'image')
           .map((asset) => asset.urlOrData)

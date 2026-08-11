@@ -18,6 +18,14 @@ test('video model selection includes Seedance 2.0 standard and fast API sources'
   assert.match(seedanceFast?.label || '', /Seedance 2\.0 Fast/u);
 });
 
+test('video model selection includes MiniMax H3 V2 source', () => {
+  const options = getRoleModelSelectionOptions(defaultApiSettings, 'video');
+  const minimax = options.find((option) => option.sourceId === 'minimax.videoModel');
+
+  assert.equal(minimax?.modelName, 'MiniMax-H3');
+  assert.match(minimax?.label || '', /MiniMax H3/);
+});
+
 test('Seedance API selection resolves to the configured model endpoint', () => {
   const resolved = resolveSelectionValue(defaultApiSettings, 'video', 'seedance.fastApiModel');
 

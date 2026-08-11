@@ -14,7 +14,7 @@ type SeedanceLogEntry = {
   request: unknown;
   response?: unknown;
   error?: string;
-  executor?: 'ark' | 'cli' | 'aliyun';
+  executor?: 'ark' | 'cli' | 'aliyun' | 'minimax';
   sourceId?: ModelInvocationLogEntry['sourceId'];
   modelName?: string;
 };
@@ -82,7 +82,7 @@ export function useSeedanceRuntime({
     }
   };
 
-  const buildSeedanceSubmitLogRequest = (draft: SeedanceDraft, executor: 'ark' | 'cli', apiModelKey = project.fastFlow.executionConfig.apiModelKey) => {
+  const buildSeedanceSubmitLogRequest = (draft: SeedanceDraft, executor: 'ark' | 'cli' | 'aliyun' | 'minimax', apiModelKey = project.fastFlow.executionConfig.apiModelKey) => {
     const draftSnapshot = buildSeedanceDraftLogSnapshot(draft);
     if (executor === 'ark') {
       const arkModelMeta = getSeedanceArkModelMeta(apiModelKey);
@@ -95,6 +95,16 @@ export function useSeedanceRuntime({
         overlayTemplateIds: draft.overlayTemplateIds,
         draft: draftSnapshot,
         compiledRequest: buildCompiledSeedanceRequestLogSnapshot(draft),
+      };
+    }
+
+    if (executor === 'minimax') {
+      return {
+        projectId: project.id,
+        executor,
+        model: apiSettings.minimax.videoModel,
+        templateId: draft.baseTemplateId,
+        draft: draftSnapshot,
       };
     }
 
@@ -122,6 +132,12 @@ export function useSeedanceRuntime({
           sourceId: 'aliyun.fastVideoModel' as const,
           modelName: apiSettings.aliyun.fastVideoModel,
         }
+        : executor === 'minimax'
+          ? {
+            provider: 'minimax' as const,
+            sourceId: 'minimax.videoModel' as const,
+            modelName: apiSettings.minimax.videoModel,
+          }
         : {
           provider: 'seedance-cli' as const,
           sourceId: 'seedance.cliModelVersion' as const,

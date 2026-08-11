@@ -59,6 +59,14 @@ test('applyMockApiSettings switches API settings to local mock endpoints and kee
       fastVideoModel: 'happyhorse-1.0',
       customModels: [],
     },
+    minimax: {
+      enabled: true,
+      apiKey: '',
+      baseUrl: 'https://api.minimaxi.com',
+      promptLanguage: 'zh',
+      videoModel: 'MiniMax-H3',
+      customModels: [],
+    },
     defaultModels: {
       text: 'gemini.textModel' as const,
       image: 'gemini.imageModel' as const,

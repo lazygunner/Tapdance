@@ -4,7 +4,7 @@
 
 AI 导演工作台。把一句创意想法逐步整理成 Brief、角色 / 场景资产、分镜、首尾帧提示词、视频提示词和可轮询的视频生成任务。
 
-当前项目以 `Electron + React + Vite + TypeScript` 桌面应用为主，支持 `Google Gemini / Veo`、`火山引擎 Ark`、`阿里云百炼 HappyHorse`，并提供本地 Seedance / Dreamina bridge 和 Mock 演示流程。
+当前项目以 `Electron + React + Vite + TypeScript` 桌面应用为主，支持 `Google Gemini / Veo`、`火山引擎 Ark`、`MiniMax H3`、`阿里云百炼 HappyHorse`，并提供本地 Seedance / Dreamina bridge 和 Mock 演示流程。
 
 ## 功能
 
@@ -12,7 +12,7 @@ AI 导演工作台。把一句创意想法逐步整理成 Brief、角色 / 场�
 - 生成并维护角色、场景、商品等一致性资产
 - 生成分镜列表、首帧 / 尾帧提示词、图像提示词、视频提示词
 - 支持单镜头视频、转场视频、极速成片工作流
-- 支持 Gemini / Veo、火山引擎 Ark、阿里云百炼、Seedance bridge
+- 支持 Gemini / Veo、火山引擎 Ark、MiniMax H3、阿里云百炼、Seedance bridge
 - 支持按流程阶段或单次操作覆盖模型
 - 支持 Mock 模式，无密钥时也能演示主流程
 - 本地保存项目、API 配置、调用日志、素材库和界面偏好
@@ -47,7 +47,7 @@ npm run dev:electron
 
 ### 4. 首次进入应用建议先做这几件事
 
-1. 进入“API 配置”，按需填写 Gemini、火山引擎 Ark、阿里云百炼、TOS 等配置
+1. 进入“API 配置”，按需填写 Gemini、火山引擎 Ark、MiniMax、阿里云百炼、TOS 等配置
 2. 选择默认文本 / 生图 / 视频模型
 3. 如果暂时没有模型密钥，先开启 `Mock` 模式跑通主流程
 4. 如需本地 Dreamina 执行器，确认配置页里的 Seedance 健康检查通过
@@ -99,6 +99,10 @@ npm run preview
 ### 火山引擎 Ark
 
 Ark API Key、模型 ID / Endpoint ID、提示词语言都在“API 配置”页里维护。
+
+### MiniMax H3
+
+在“API 配置”页填写 MiniMax API Key 和 Base URL（可选）。MiniMax H3 可用于视频生成和极速成片工作流，支持提交任务、查询状态、获取结果和取消任务。
 
 ### 阿里云百炼 (HappyHorse)
 

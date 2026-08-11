@@ -1,64 +1,66 @@
 # Tapdance
 
-AI 导演工作台。把一句创意想法逐步整理成 Brief、角色 / 场景资产、分镜、首尾帧提示词、视频提示词和可轮询的视频生成任务。
+English | [中文](README_zh.md)
 
-当前项目以 `Electron + React + Vite + TypeScript` 桌面应用为主，支持 `Google Gemini / Veo`、`火山引擎 Ark`、`阿里云百炼 HappyHorse`，并提供本地 Seedance / Dreamina bridge 和 Mock 演示流程。
+An AI director's workbench that turns a single creative idea into a structured brief, character and scene assets, storyboards, first- and last-frame prompts, video prompts, and pollable video-generation tasks.
 
-## 功能
+Tapdance is primarily an `Electron + React + Vite + TypeScript` desktop application. It supports `Google Gemini / Veo`, `Volcengine Ark`, and `Alibaba Cloud Model Studio HappyHorse`, and also provides a local Seedance / Dreamina bridge and a mock demo workflow.
 
-- 创意输入后生成结构化 `Brief`
-- 生成并维护角色、场景、商品等一致性资产
-- 生成分镜列表、首帧 / 尾帧提示词、图像提示词、视频提示词
-- 支持单镜头视频、转场视频、极速成片工作流
-- 支持 Gemini / Veo、火山引擎 Ark、阿里云百炼、Seedance bridge
-- 支持按流程阶段或单次操作覆盖模型
-- 支持 Mock 模式，无密钥时也能演示主流程
-- 本地保存项目、API 配置、调用日志、素材库和界面偏好
+## Features
 
-## 用户使用
+- Generate a structured `Brief` from a creative idea
+- Generate and maintain consistent assets for characters, scenes, products, and more
+- Generate storyboard lists, first- and last-frame prompts, image prompts, and video prompts
+- Support single-shot video, transition video, and fast video workflows
+- Support Gemini / Veo, Volcengine Ark, Alibaba Cloud Model Studio, and the Seedance bridge
+- Override models by workflow stage or individual operation
+- Run the main workflow without API credentials using Mock mode
+- Store projects, API settings, request logs, assets, and UI preferences locally
 
-推荐直接使用桌面版。桌面版会自动启动内置 bridge，并把项目、配置、调用日志和素材数据持久化到本地应用目录；相比之下，Web 版更适合界面调试。
+## Getting Started
 
-### 1. 环境准备
+We recommend using the desktop application. It automatically starts the bundled bridge and persists projects, settings, request logs, and asset data in the local application directory. The web version is better suited to UI development and debugging.
 
-- Node.js 22+ 推荐
+### 1. Prerequisites
+
+- Node.js 22+ recommended
 - npm
-- 如需本地 Seedance / Dreamina 流程，确保机器上可直接执行 `dreamina`
+- For local Seedance / Dreamina workflows, make sure the `dreamina` command is available on your system
 
-### 2. 安装依赖
+### 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 3. 启动桌面版
+### 3. Start the desktop application
 
 ```bash
 npm run dev:electron
 ```
 
-启动后会：
+This will:
 
-- 打开 Electron 桌面应用
-- 自动启动内置 Seedance bridge
-- 自动接入本地持久化存储
+- Open the Electron desktop application
+- Start the bundled Seedance bridge automatically
+- Connect to local persistent storage automatically
 
-### 4. 首次进入应用建议先做这几件事
+### 4. Recommended first-time setup
 
-1. 进入“API 配置”，按需填写 Gemini、火山引擎 Ark、阿里云百炼、TOS 等配置
-2. 选择默认文本 / 生图 / 视频模型
-3. 如果暂时没有模型密钥，先开启 `Mock` 模式跑通主流程
-4. 如需本地 Dreamina 执行器，确认配置页里的 Seedance 健康检查通过
+1. Open **API Settings** and configure Gemini, Volcengine Ark, Alibaba Cloud Model Studio, TOS, and any other services you need.
+2. Select the default text, image, and video models.
+3. If you do not have model credentials yet, enable `Mock` mode to try the main workflow.
+4. If you use the local Dreamina runner, confirm that the Seedance health check passes on the settings page.
 
-### 5. 推荐使用路径
+### 5. Recommended workflow
 
-1. 新建项目，输入一句创意想法
-2. 生成结构化 `Brief`
-3. 补充角色、场景、商品等一致性资产
-4. 继续生成分镜、首尾帧提示词、视频提示词
-5. 在“视频”或“极速成片”中提交任务并轮询结果
+1. Create a project and enter a creative idea.
+2. Generate a structured `Brief`.
+3. Add consistent character, scene, product, and other assets.
+4. Generate storyboards, first- and last-frame prompts, and video prompts.
+5. Submit tasks from **Video** or **Fast Video**, then poll for the results.
 
-### 6. 基础检查
+### 6. Basic checks
 
 ```bash
 npm test
@@ -66,59 +68,59 @@ npm run lint
 npm run build:electron
 ```
 
-## 常用命令
+## Common Commands
 
 ```bash
-npm run dev:electron # 推荐：启动桌面版开发环境
+npm run dev:electron # Recommended: start the desktop development environment
 npm run build:electron
 npm run pack:mac
 npm run pack:win
-npm run dev:web      # 仅用于前端页面调试
-npm run dev:bridge   # 仅用于单独调试本地 bridge
-npm run dev          # 同时启动 Vite 和独立 bridge（偏 Web 调试场景）
+npm run dev:web      # Frontend UI debugging only
+npm run dev:bridge   # Run the local bridge separately for debugging
+npm run dev          # Start Vite and the standalone bridge together (mainly for web debugging)
 npm test
 npm run lint
 npm run build
 npm run preview
 ```
 
-## 人像库
+## Portrait Library
 
-仓库保留了清理后的 `public/portrait_lib_raw.json` 索引，但不内置完整人像图片包。
+The repository includes the cleaned `public/portrait_lib_raw.json` index, but does not include the complete portrait image package.
 
-如需在“人像库”页面显示本地预览图，请按 [虚拟人像库集成指南](docs/PORTRAIT_LIBRARY.md) 准备 `public/portraits/`。
+To display local preview images on the **Portrait Library** page, follow the [Portrait Library Integration Guide](docs/PORTRAIT_LIBRARY.md) to prepare `public/portraits/`.
 
-## 配置说明
+## Configuration
 
 ### Gemini
 
-在应用内的“API 配置”页填写 API Key 和默认模型即可。
+Enter your API key and default model on the application's **API Settings** page.
 
-### 火山引擎 Ark
+### Volcengine Ark
 
-Ark API Key、模型 ID / Endpoint ID、提示词语言都在“API 配置”页里维护。
+The Ark API key, model ID / endpoint ID, and prompt language are managed on the **API Settings** page.
 
-### 阿里云百炼 (HappyHorse)
+### Alibaba Cloud Model Studio (HappyHorse)
 
-在“API 配置”页中填写百炼 API Key 及 Base URL（可选）。提交带参考图的生成任务时，应用会自动通过百炼的临时 OSS 接口完成资源直传。
+Enter the Model Studio API key and optional base URL on the **API Settings** page. When a generation task includes reference images, the application uploads those resources directly through Model Studio's temporary OSS interface.
 
 ### Seedance / Dreamina bridge
 
-桌面版会自动启动内置 bridge。若使用本地 Dreamina 执行器，只需保证 `dreamina` 命令在系统环境中可用；是否连通可直接在“API 配置”页查看。
+The desktop application starts the bundled bridge automatically. To use the local Dreamina runner, make sure the `dreamina` command is available in your system environment. You can check its connection status directly on the **API Settings** page.
 
-如需调试 Web 版，默认把 `/api/seedance` 代理到 `http://127.0.0.1:3210`，这时再单独启动 `npm run dev:bridge` 即可。
+For web development, `/api/seedance` is proxied to `http://127.0.0.1:3210` by default. Start the bridge separately with `npm run dev:bridge`.
 
-## 文档
+## Documentation
 
-- [维护者架构文档](docs/CORE.md)
-- [发布流程](docs/RELEASE.md)
-- [虚拟人像库集成](docs/PORTRAIT_LIBRARY.md)
-- [Seedance 极速成片设计](docs/seedance-fast-video-design.md)
-- [视频参考素材设计](docs/video-reference-design.md)
-- [HappyHorse API 接入文档](docs/happyhorse/api-docs.md)
+- [Maintainer Architecture Guide](docs/CORE.md)
+- [Release Process](docs/RELEASE.md)
+- [Portrait Library Integration](docs/PORTRAIT_LIBRARY.md)
+- [Seedance Fast Video Design](docs/seedance-fast-video-design.md)
+- [Video Reference Asset Design](docs/video-reference-design.md)
+- [HappyHorse API Integration](docs/happyhorse/api-docs.md)
 
-## 交流
+## Community
 
-如有问题可以进群讨论：
+Join the community chat if you have any questions:
 
-![Tapdance 交流群二维码](public/QRCode.JPG)
+![Tapdance community chat QR code](public/QRCode.JPG)

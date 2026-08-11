@@ -17,7 +17,7 @@ export type ProjectGroupImageAsset = {
   groupId: string;
   projectId: string;
   projectName: string;
-  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-reference' | 'fast-director-capture' | 'fast-scene' | 'fast-task-last-frame' | 'image-creation' | 'portrait-public' | 'portrait-real' | 'portrait-virtual' | 'portrait-seedream';
+  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-reference' | 'fast-director-capture' | 'fast-scene' | 'fast-task-last-frame' | 'video-edit-reference' | 'video-edit-last-frame' | 'image-creation' | 'portrait-public' | 'portrait-real' | 'portrait-virtual' | 'portrait-seedream';
   title: string;
   sourceLabel: string;
   imageUrl: string;
@@ -29,7 +29,7 @@ export type ProjectGroupMediaAsset = {
   groupId: string;
   projectId: string;
   projectName: string;
-  sourceType: ProjectGroupImageAsset['sourceType'] | 'shot-video' | 'shot-transition-video' | 'fast-reference-video' | 'fast-reference-audio' | 'fast-task-video' | 'asset-library-video';
+  sourceType: ProjectGroupImageAsset['sourceType'] | 'shot-video' | 'shot-transition-video' | 'fast-reference-video' | 'fast-reference-audio' | 'fast-task-video' | 'video-edit-source' | 'video-edit-result' | 'asset-library-video';
   title: string;
   sourceLabel: string;
   kind: 'image' | 'video' | 'audio';
@@ -135,6 +135,8 @@ export function collectProjectPreviewImages(project: Project) {
     ...project.shots.flatMap((shot) => [shot.imageUrl, shot.lastFrameImageUrl]),
     ...project.assets.map((asset) => asset.imageUrl),
     ...project.fastFlow.scenes.map((scene) => scene.imageUrl),
+    ...project.videoEditFlow.referenceImages.map((image) => image.url),
+    project.videoEditFlow.task.lastFrameUrl,
   ].filter((value): value is string => Boolean((value || '').trim()));
 
   const seen = new Set<string>();
@@ -261,6 +263,34 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
     });
   }
 
+  project.videoEditFlow.referenceImages.forEach((reference, index) => {
+    images.push({
+      id: `${project.id}:video-edit-reference:${reference.id || index}`,
+      groupId,
+      projectId: project.id,
+      projectName,
+      sourceType: 'video-edit-reference',
+      title: reference.fileName || `编辑参考图 ${index + 1}`,
+      sourceLabel: '视频编辑参考图',
+      imageUrl: reference.url,
+      createdAt: projectCreatedAt,
+    });
+  });
+
+  if (project.videoEditFlow.task.lastFrameUrl) {
+    images.push({
+      id: `${project.id}:video-edit:last-frame`,
+      groupId,
+      projectId: project.id,
+      projectName,
+      sourceType: 'video-edit-last-frame',
+      title: '视频编辑结果尾帧',
+      sourceLabel: '视频编辑结果',
+      imageUrl: project.videoEditFlow.task.lastFrameUrl,
+      createdAt: project.videoEditFlow.task.finishedAt || projectCreatedAt,
+    });
+  }
+
   return images;
 }
 
@@ -343,6 +373,24 @@ export function collectProjectGeneratedMediaAssets(project: Project): ProjectGro
     kind: 'video',
     url: project.fastFlow.task.videoUrl || '',
     createdAt: fastTaskCreatedAt,
+  });
+
+  pushMedia({
+    id: `${project.id}:video-edit:source`,
+    sourceType: 'video-edit-source',
+    title: project.videoEditFlow.sourceVideo?.fileName || '待编辑视频',
+    sourceLabel: '视频编辑源片',
+    kind: 'video',
+    url: project.videoEditFlow.sourceVideo?.url || '',
+  });
+  pushMedia({
+    id: `${project.id}:video-edit:result`,
+    sourceType: 'video-edit-result',
+    title: '视频编辑结果',
+    sourceLabel: 'Seedance 2.5 视频编辑',
+    kind: 'video',
+    url: project.videoEditFlow.task.videoUrl || '',
+    createdAt: project.videoEditFlow.task.finishedAt || projectCreatedAt,
   });
 
   return media;

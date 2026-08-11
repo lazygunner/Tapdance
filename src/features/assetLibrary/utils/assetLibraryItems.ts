@@ -145,6 +145,39 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
     createdAt: fastTaskCreatedAt,
   });
 
+  project.videoEditFlow.referenceImages.forEach((reference, index) => {
+    pushItem({
+      id: `${project.id}:video-edit-reference:${reference.id || index}`,
+      kind: 'image',
+      url: reference.url,
+      title: reference.fileName || `编辑参考图 ${index + 1}`,
+      sourceLabel: '视频编辑参考图',
+    });
+  });
+  pushItem({
+    id: `${project.id}:video-edit:source`,
+    kind: 'video',
+    url: project.videoEditFlow.sourceVideo?.url || '',
+    title: project.videoEditFlow.sourceVideo?.fileName || '待编辑视频',
+    sourceLabel: '视频编辑源片',
+  });
+  pushItem({
+    id: `${project.id}:video-edit:last-frame`,
+    kind: 'image',
+    url: project.videoEditFlow.task.lastFrameUrl,
+    title: '视频编辑结果尾帧',
+    sourceLabel: '视频编辑结果',
+    createdAt: project.videoEditFlow.task.finishedAt,
+  });
+  pushItem({
+    id: `${project.id}:video-edit:result`,
+    kind: 'video',
+    url: project.videoEditFlow.task.videoUrl,
+    title: '视频编辑结果',
+    sourceLabel: 'Seedance 2.5 视频编辑',
+    createdAt: project.videoEditFlow.task.finishedAt,
+  });
+
   return items;
 }
 
@@ -193,6 +226,10 @@ export function countProjectMediaItems(projects: Project[], imageCreationRecords
     project.fastFlow.scenes.forEach((scene) => countImage(scene.imageUrl));
     countImage(project.fastFlow.task.lastFrameUrl);
     countVideo(project.fastFlow.task.videoUrl);
+    project.videoEditFlow.referenceImages.forEach((reference) => countImage(reference.url));
+    countVideo(project.videoEditFlow.sourceVideo?.url);
+    countImage(project.videoEditFlow.task.lastFrameUrl);
+    countVideo(project.videoEditFlow.task.videoUrl);
   }
 
   for (const record of imageCreationRecords) {
@@ -221,6 +258,55 @@ export function buildAssetLibraryStatusItems(projects: Project[], imageCreationR
 }
 
 export function applyLibraryItemUrlToProject(project: Project, itemId: string, nextUrl: string): Project {
+  if (itemId === `${project.id}:video-edit:source`) {
+    return {
+      ...project,
+      videoEditFlow: {
+        ...project.videoEditFlow,
+        sourceVideo: project.videoEditFlow.sourceVideo ? {
+          ...project.videoEditFlow.sourceVideo,
+          url: nextUrl,
+          storageKey: '',
+        } : null,
+      },
+    };
+  }
+
+  if (itemId === `${project.id}:video-edit:result`) {
+    return {
+      ...project,
+      videoEditFlow: {
+        ...project.videoEditFlow,
+        task: { ...project.videoEditFlow.task, videoUrl: nextUrl },
+      },
+    };
+  }
+
+  if (itemId === `${project.id}:video-edit:last-frame`) {
+    return {
+      ...project,
+      videoEditFlow: {
+        ...project.videoEditFlow,
+        task: { ...project.videoEditFlow.task, lastFrameUrl: nextUrl },
+      },
+    };
+  }
+
+  if (itemId.startsWith(`${project.id}:video-edit-reference:`)) {
+    const referenceId = itemId.slice(`${project.id}:video-edit-reference:`.length);
+    return {
+      ...project,
+      videoEditFlow: {
+        ...project.videoEditFlow,
+        referenceImages: project.videoEditFlow.referenceImages.map((reference, index) => (
+          reference.id === referenceId || String(index) === referenceId
+            ? { ...reference, url: nextUrl, storageKey: '' }
+            : reference
+        )),
+      },
+    };
+  }
+
   if (itemId === `${project.id}:fast-task:last-frame`) {
     return {
       ...project,

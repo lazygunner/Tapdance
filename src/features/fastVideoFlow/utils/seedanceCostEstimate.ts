@@ -49,8 +49,8 @@ const SEEDANCE_COST_DIMENSIONS = seedanceCostDimensions as SeedanceEstimateDimen
 const SEEDANCE_PRICING = {
   seedance25: {
     modelLabel: 'Doubao-Seedance-2.5',
-    withVideoInputUnitPrice: 28,
-    withoutVideoInputUnitPrice: 46,
+    withVideoInputUnitPrice: 42,
+    withoutVideoInputUnitPrice: 70,
   },
   standard: {
     modelLabel: 'Doubao-Seedance-2.0',

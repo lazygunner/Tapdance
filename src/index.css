@@ -56,6 +56,7 @@
   --studio-accent-indigo-text: #c7d2fe;
   --studio-accent-indigo-bg: rgba(99, 102, 241, 0.1);
   --studio-accent-indigo-border: rgba(99, 102, 241, 0.2);
+  --studio-accent-indigo-line: rgba(99, 102, 241, 0.42);
   --studio-accent-emerald-text: #a7f3d0;
   --studio-accent-emerald-bg: rgba(16, 185, 129, 0.1);
   --studio-accent-emerald-border: rgba(16, 185, 129, 0.2);
@@ -114,6 +115,7 @@
   --studio-accent-indigo-text: #4f46b8;
   --studio-accent-indigo-bg: rgba(99, 102, 241, 0.11);
   --studio-accent-indigo-border: rgba(99, 102, 241, 0.22);
+  --studio-accent-indigo-line: rgba(79, 70, 184, 0.34);
   --studio-accent-emerald-text: #0d765c;
   --studio-accent-emerald-bg: rgba(16, 185, 129, 0.11);
   --studio-accent-emerald-border: rgba(16, 185, 129, 0.22);
@@ -640,6 +642,7 @@ body {
 .studio-accent-line-cyan { background: var(--studio-accent-cyan-line); }
 .studio-accent-line-sky { background: var(--studio-accent-sky-line); }
 .studio-accent-line-amber { background: var(--studio-accent-amber-line); }
+.studio-accent-line-indigo { background: var(--studio-accent-indigo-line); }
 
 .studio-button {
   display: inline-flex;

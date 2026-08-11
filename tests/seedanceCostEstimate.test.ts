@@ -118,3 +118,27 @@ test('getSeedanceCostEstimate switches unit price when a reference video is sele
     (withVideoEstimate.width * withVideoEstimate.height * withVideoEstimate.frameRate / 1024) * 16,
   );
 });
+
+test('getSeedanceCostEstimate uses the Seedance 2.5 video-input prices', () => {
+  const noVideoEstimate = getSeedanceCostEstimate(createInput(), createDraft(), {
+    executor: 'ark',
+    apiModelKey: 'seedance25',
+    cliModelVersion: 'seedance2.0',
+  });
+
+  const withVideoEstimate = getSeedanceCostEstimate(createInput({
+    referenceVideos: [{
+      id: 'video-25-1',
+      videoUrl: 'https://example.com/seedance-25.mp4',
+      selectedForVideo: true,
+      videoMeta: { durationSec: 5, width: 1280, height: 720 },
+    }],
+  }), createDraft(), {
+    executor: 'ark',
+    apiModelKey: 'seedance25',
+    cliModelVersion: 'seedance2.0',
+  });
+
+  assert.equal(noVideoEstimate.unitPrice, 70);
+  assert.equal(withVideoEstimate.unitPrice, 42);
+});

@@ -1,9 +1,10 @@
 import type { FastVideoProject } from './features/fastVideoFlow/types/fastTypes.ts';
 import type { SeedanceExecutorId, SeedanceModelVersion } from './features/seedance/types.ts';
+import type { VideoEditProject } from './features/videoEditing/types.ts';
 
 export type AspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
 export type VisualAspectRatio = AspectRatio;
-export type ProjectType = 'creative-video' | 'fast-video';
+export type ProjectType = 'creative-video' | 'fast-video' | 'video-edit';
 
 export interface Brief {
   theme: string;
@@ -268,4 +269,5 @@ export interface Project {
   assets: Asset[];
   shots: Shot[];
   fastFlow: FastVideoProject;
+  videoEditFlow: VideoEditProject;
 }

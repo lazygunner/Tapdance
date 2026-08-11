@@ -77,7 +77,11 @@ export function useProjectActions({
     setProject(newProject);
     setIdea('');
     setCreateProjectDraft(null);
-    setView(createProjectDraft.projectType === 'fast-video' ? 'fastInput' : 'input');
+    setView(createProjectDraft.projectType === 'fast-video'
+      ? 'fastInput'
+      : createProjectDraft.projectType === 'video-edit'
+        ? 'videoEdit'
+        : 'input');
   };
 
   const openProject = (target: Project) => {

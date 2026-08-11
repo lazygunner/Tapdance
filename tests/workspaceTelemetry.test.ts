@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { Project, Shot } from '../src/types.ts';
 import { createEmptyFastVideoProject } from '../src/features/fastVideoFlow/services/fastFlowMappers.ts';
+import { createEmptyVideoEditProject } from '../src/features/videoEditing/services/videoEditProject.ts';
 import { buildWorkspaceTelemetry } from '../src/features/app/utils/workspaceTelemetry.ts';
 
 function createBaseProject(projectType: Project['projectType'], id: string): Project {
@@ -16,6 +17,7 @@ function createBaseProject(projectType: Project['projectType'], id: string): Pro
     assets: [],
     shots: [],
     fastFlow: createEmptyFastVideoProject(),
+    videoEditFlow: createEmptyVideoEditProject(),
   };
 }
 
@@ -82,7 +84,7 @@ test('buildWorkspaceTelemetry aggregates video cost, token, duration, and output
   assert.equal(stats.averageGenerationMs, 120_000);
   assert.equal(stats.completionRate, 1);
   assert.equal(Math.round(stats.usedEstimatedTokens), 216_000);
-  assert.equal(Number(stats.usedEstimatedCostCny.toFixed(3)), 9.936);
+  assert.equal(Number(stats.usedEstimatedCostCny.toFixed(3)), 15.12);
 });
 
 test('buildWorkspaceTelemetry does not invent a Seedance budget for empty fast projects', () => {

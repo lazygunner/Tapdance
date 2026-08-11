@@ -18,6 +18,7 @@ import {
   Plus,
   Settings2,
   ScanLine,
+  Scissors,
   Sun,
   Table2,
   TimerReset,
@@ -48,7 +49,8 @@ export type WorkspaceView =
   | 'fastInput'
   | 'fastStoryboard'
   | 'fastDirector'
-  | 'fastVideo';
+  | 'fastVideo'
+  | 'videoEdit';
 
 export type WorkspaceThemeMode = 'light' | 'dark';
 export type WorkspaceHomeViewMode = 'projects' | 'groups';
@@ -67,11 +69,12 @@ type NavItem = {
   icon: LucideIcon;
 };
 
-type SupportedWorkspaceProjectType = 'creative-video' | 'fast-video';
+type SupportedWorkspaceProjectType = 'creative-video' | 'fast-video' | 'video-edit';
 
 const PROJECT_UI_TYPE_BY_PROJECT_TYPE: Record<ProjectType, SupportedWorkspaceProjectType> = {
   'creative-video': 'creative-video',
   'fast-video': 'fast-video',
+  'video-edit': 'video-edit',
 };
 
 function getWorkspaceProjectType(projectType: ProjectType): SupportedWorkspaceProjectType {
@@ -130,6 +133,17 @@ const PROJECT_META: Record<SupportedWorkspaceProjectType, {
     inactiveNavClassName: 'border-transparent text-[var(--studio-muted)] hover:border-white/8 hover:bg-white/5 hover:text-[var(--studio-text)]',
     completedLineClassName: 'studio-accent-line-sky',
   },
+  'video-edit': {
+    label: '编辑视频',
+    subtitle: '局部新增、移除与替换',
+    eyebrow: 'Edit Workflow',
+    icon: Scissors,
+    chipClassName: 'studio-accent-chip-indigo',
+    accentTextClassName: 'studio-accent-text-indigo',
+    activeNavClassName: 'studio-accent-chip-indigo shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
+    inactiveNavClassName: 'border-transparent text-[var(--studio-muted)] hover:border-white/8 hover:bg-white/5 hover:text-[var(--studio-text)]',
+    completedLineClassName: 'studio-accent-line-indigo',
+  },
 };
 
 const NAV_ITEMS_BY_PROJECT: Record<SupportedWorkspaceProjectType, NavItem[]> = {
@@ -146,6 +160,9 @@ const NAV_ITEMS_BY_PROJECT: Record<SupportedWorkspaceProjectType, NavItem[]> = {
     { view: 'fastDirector', label: '3D 预演', icon: ScanLine },
     { view: 'fastVideo', label: '视频生成', icon: Video },
   ],
+  'video-edit': [
+    { view: 'videoEdit', label: '编辑视频', icon: Scissors },
+  ],
 };
 
 const HOME_ENTRY_COPY: Record<SupportedWorkspaceProjectType, { title: string; description: string; cornerBadge?: string }> = {
@@ -158,6 +175,11 @@ const HOME_ENTRY_COPY: Record<SupportedWorkspaceProjectType, { title: string; de
     title: '一句提示词全能参考视频生成',
     description: '全新 Seedance 2.0 API 和 CLI支持, 真人素材库, 视频参考等功能均已支持。',
     cornerBadge: 'New',
+  },
+  'video-edit': {
+    title: '对现有视频新增、移除或替换',
+    description: '上传一段视频，精确描述编辑对象与目标，使用 Seedance 2.5 保持原有镜头、主体与背景的一致性。',
+    cornerBadge: '2.5',
   },
 };
 
@@ -176,7 +198,7 @@ export function getWorkspaceSurfaceMeta(view: WorkspaceView, project: Project): 
       return {
         eyebrow: 'Workspace',
         title: '视频制作',
-        description: '项目、分组与双工作流调度',
+        description: '项目、分组与多工作流调度',
         icon: Clapperboard,
         chipClassName: 'studio-accent-chip-sky',
         badgeLabel: 'Workspace',
@@ -514,7 +536,7 @@ export function ProjectDetailHeader({
   const navItems = NAV_ITEMS_BY_PROJECT[workspaceProjectType];
   const activeIndex = navItems.findIndex((item) => item.view === activeView);
 
-  if (workspaceProjectType === 'fast-video') {
+  if (workspaceProjectType === 'fast-video' || workspaceProjectType === 'video-edit') {
     return (
       <StudioPanel className="p-3" tone="soft">
         <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
@@ -705,7 +727,7 @@ type HomeWorkspaceProps = {
   renderProjectCard: (project: Project) => ReactNode;
 };
 
-const HOME_ENTRY_TYPES: SupportedWorkspaceProjectType[] = ['fast-video', 'creative-video'];
+const HOME_ENTRY_TYPES: SupportedWorkspaceProjectType[] = ['fast-video', 'video-edit', 'creative-video'];
 
 type HomeTelemetryTone = 'sky' | 'violet' | 'emerald' | 'amber';
 
@@ -891,7 +913,7 @@ export function HomeWorkspace({
         actions={<HomeTelemetryDashboard stats={telemetryStats} />}
       />
 
-      <div className="mt-8 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.7fr)]">
+      <div className="mt-8">
         <StudioPanel className="space-y-5 p-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
@@ -919,7 +941,7 @@ export function HomeWorkspace({
             </div>
           </div>
 
-          <div className="grid max-w-5xl grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {HOME_ENTRY_TYPES.map((projectType) => {
               const meta = PROJECT_META[projectType];
               const Icon = meta.icon;
@@ -938,6 +960,8 @@ export function HomeWorkspace({
                       'absolute right-[-2.35rem] top-4 z-20 w-32 rotate-45 border py-1 text-center text-[11px] font-bold shadow-[0_10px_24px_rgba(2,6,23,0.28)]',
                       projectType === 'fast-video'
                         ? 'border-sky-100/40 bg-sky-300 text-slate-950'
+                        : projectType === 'video-edit'
+                          ? 'border-violet-100/40 bg-violet-300 text-slate-950'
                         : 'border-white/30 bg-zinc-100 text-zinc-950',
                     )}>
                       {copy.cornerBadge}

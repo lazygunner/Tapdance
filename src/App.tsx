@@ -15,6 +15,7 @@ import {
 import { collectProjectGeneratedImageAssets, collectProjectGeneratedMediaAssets, getProjectGroupImageAssets, getProjectGroupSummary, normalizeProjectGroupName, type ProjectGroupImageAsset, type ProjectGroupMediaAsset, type ProjectGroupSummary } from './services/projectGroups.ts';
 import { applyStyleGuideToPrompt, buildStyleGuideText, findStylePresetById, getStylePresets, matchStylePreset } from './services/styleCatalog';
 import { FastFlowWorkspace } from './features/fastVideoFlow/components/FastFlowWorkspace.tsx';
+import { VideoEditWorkspace } from './features/videoEditing/components/VideoEditWorkspace.tsx';
 import { SeedanceCliQueueWorkspace } from './features/fastVideoFlow/components/SeedanceCliQueueWorkspace.tsx';
 import { createFastVideoFlowActions } from './features/fastVideoFlow/services/createFastVideoFlowActions.ts';
 import { useSeedanceRuntime } from './features/fastVideoFlow/hooks/useSeedanceRuntime.ts';
@@ -126,6 +127,7 @@ const PROMPT_LANGUAGE_LABELS: Record<PromptLanguage, string> = {
 const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   'creative-video': '创意视频',
   'fast-video': '极速视频',
+  'video-edit': '编辑视频',
 };
 
 const isNonEmptyText = (value?: string | null) => Boolean(value && value.trim());
@@ -249,7 +251,7 @@ export default function App() {
   const projectGroups = shouldComputeProjectGroups ? getProjectGroupSummary(projects) : EMPTY_PROJECT_GROUPS;
   const imageCreationImageAssets = collectImageCreationGeneratedImageAssets(imageCreationRecords);
   const projectMediaCounts = countProjectMediaItems(projects, imageCreationRecords);
-  const shouldComputeAssetLibraryItems = view === 'assetLibrary';
+  const shouldComputeAssetLibraryItems = view === 'assetLibrary' || view === 'videoEdit';
   const assetLibrarySourceProjects = shouldComputeAssetLibraryItems
     ? Array.from(new Map([...projects, project].map((candidate) => [candidate.id, candidate])).values())
     : projects;
@@ -1299,6 +1301,19 @@ export default function App() {
           onRemoveItem={removeSeedanceCliQueueItem}
           onClearTerminalItems={clearTerminalSeedanceCliQueueItems}
           onClearWaitingItems={clearWaitingSeedanceCliQueueItems}
+        />
+      )
+    : view === 'videoEdit'
+      ? (
+        <VideoEditWorkspace
+          project={project}
+          setProject={setProject}
+          tosConfig={apiSettings.tos}
+          pollIntervalSec={apiSettings.seedance.pollIntervalSec}
+          bridgeUrl={apiSettings.seedance.bridgeUrl}
+          availableVideoAssets={libraryVideoItems}
+          onOpenApiConfig={() => setView('apiConfig')}
+          onOpenAssetLibrary={() => setView('assetLibrary')}
         />
       )
     : view === 'fastInput' || view === 'fastStoryboard' || view === 'fastDirector' || view === 'fastVideo'

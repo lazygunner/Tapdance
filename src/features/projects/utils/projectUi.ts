@@ -15,6 +15,9 @@ export function formatProjectCreatedAt(value?: string) {
 }
 
 export function getProjectSummary(project: Project): string {
+  if (project.projectType === 'video-edit') {
+    return project.videoEditFlow.targetDescription || '尚未添加待编辑视频';
+  }
   if (project.projectType === 'fast-video') {
     return project.fastFlow.input.prompt || '暂无极速视频提示词';
   }

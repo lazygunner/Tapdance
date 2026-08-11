@@ -1,4 +1,5 @@
 import { createEmptyFastVideoProject } from '../../fastVideoFlow/services/fastFlowMappers.ts';
+import { createEmptyVideoEditProject } from '../../videoEditing/services/videoEditProject.ts';
 import type { WorkspaceView } from '../../../components/studio/WorkspaceViews.tsx';
 import type { Project, ProjectType } from '../../../types.ts';
 
@@ -7,9 +8,7 @@ function isNonEmptyText(value?: string | null) {
 }
 
 export function inferProjectType(value: Partial<Project>): ProjectType {
-  if (value.projectType === 'fast-video') {
-    return 'fast-video';
-  }
+  if (value.projectType === 'fast-video' || value.projectType === 'video-edit') return value.projectType;
 
   return 'creative-video';
 }
@@ -41,6 +40,7 @@ export function createEmptyProject(projectType: ProjectType = 'creative-video'):
     assets: [],
     shots: [],
     fastFlow: createEmptyFastVideoProject(),
+    videoEditFlow: createEmptyVideoEditProject(),
   };
 }
 
@@ -68,6 +68,12 @@ export function isProjectEmpty(project: Project): boolean {
     && !project.fastFlow.task.taskId
     && !project.fastFlow.task.submitId
     && !project.fastFlow.task.videoUrl;
+  const editEmpty = !project.videoEditFlow.sourceVideo
+    && project.videoEditFlow.referenceImages.length === 0
+    && !project.videoEditFlow.targetDescription.trim()
+    && !project.videoEditFlow.resultDescription.trim()
+    && !project.videoEditFlow.task.taskId
+    && !project.videoEditFlow.task.videoUrl;
 
   const setupEmpty = !project.nameCustomized
     && !isNonEmptyText(project.groupName)
@@ -75,10 +81,11 @@ export function isProjectEmpty(project: Project): boolean {
     && !isNonEmptyText(project.customStyleDescription)
     && (project.inputAspectRatio || '16:9') === '16:9';
 
-  return creativeEmpty && fastEmpty && setupEmpty;
+  return creativeEmpty && fastEmpty && editEmpty && setupEmpty;
 }
 
 export function getProjectResumeView(project: Project): WorkspaceView {
+  if (project.projectType === 'video-edit') return 'videoEdit';
   if (project.projectType === 'fast-video') {
     const hasGeneratedVideo = Boolean(project.fastFlow.task.videoUrl)
       || Boolean(project.fastFlow.task.taskId)

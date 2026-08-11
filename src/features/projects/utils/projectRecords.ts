@@ -1,6 +1,7 @@
 import { getNormalizedProjectGroupFields } from '../../../services/projectGroups.ts';
 import { resequenceShots } from '../../creativeFlow/utils/creativeFlowHelpers.ts';
 import { normalizeFastVideoProject } from '../../fastVideoFlow/services/fastFlowMappers.ts';
+import { normalizeVideoEditProject } from '../../videoEditing/services/videoEditProject.ts';
 import type { Project, Shot } from '../../../types.ts';
 import { inferProjectType, normalizeProjectCreatedAt } from './projectLifecycle.ts';
 
@@ -29,6 +30,7 @@ export function normalizeProjectRecord(value: Partial<Project>): Project {
     assets: Array.isArray(value.assets) ? value.assets : [],
     shots: Array.isArray(value.shots) ? resequenceShots(value.shots as Shot[]) : [],
     fastFlow: normalizeFastVideoProject(value.fastFlow),
+    videoEditFlow: normalizeVideoEditProject(value.videoEditFlow),
   };
 }
 
@@ -45,6 +47,13 @@ export function toProjectListEntry(value: Partial<Project>): Project {
       ...normalized.fastFlow,
       task: {
         ...normalized.fastFlow.task,
+        raw: undefined,
+      },
+    },
+    videoEditFlow: {
+      ...normalized.videoEditFlow,
+      task: {
+        ...normalized.videoEditFlow.task,
         raw: undefined,
       },
     },

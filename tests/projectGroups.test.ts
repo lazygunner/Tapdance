@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createEmptyFastVideoProject } from '../src/features/fastVideoFlow/services/fastFlowMappers.ts';
+import { createEmptyVideoEditProject } from '../src/features/videoEditing/services/videoEditProject.ts';
 import { buildDefaultGroupName, collectProjectGeneratedImageAssets, collectProjectGeneratedMediaAssets, getNormalizedProjectGroupFields, getProjectGroupImageAssets, getProjectGroupSummary } from '../src/services/projectGroups.ts';
 import type { Project } from '../src/types.ts';
 
@@ -23,6 +24,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     assets: [],
     shots: [],
     fastFlow: createEmptyFastVideoProject(),
+    videoEditFlow: createEmptyVideoEditProject(),
     ...overrides,
   };
 }

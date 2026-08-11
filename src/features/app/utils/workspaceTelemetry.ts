@@ -31,6 +31,7 @@ const GENERATED_VIDEO_SOURCE_TYPES = new Set([
   'shot-video',
   'shot-transition-video',
   'fast-task-video',
+  'video-edit-result',
 ]);
 
 const GENERATED_IMAGE_SOURCE_TYPES = new Set([
@@ -171,6 +172,10 @@ export function buildWorkspaceTelemetry(
   for (const project of projects) {
     if (project.projectType === 'creative-video') {
       stats.creativeProjectCount += 1;
+      continue;
+    }
+
+    if (project.projectType !== 'fast-video') {
       continue;
     }
 

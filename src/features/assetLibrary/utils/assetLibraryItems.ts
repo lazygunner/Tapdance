@@ -154,6 +154,16 @@ function collectProjectLibraryItems(project: Project): LibraryAssetItem[] {
       sourceLabel: '视频编辑参考图',
     });
   });
+  project.canvasFlow?.nodes.forEach((node) => {
+    if (!node.mediaUrl || (node.type !== 'image' && node.type !== 'video')) return;
+    pushItem({
+      id: `${project.id}:canvas:${node.id}`,
+      kind: node.type === 'image' ? 'image' : 'video',
+      url: node.mediaUrl,
+      title: node.title || `画布${node.type}`,
+      sourceLabel: `无限画布 / ${node.type}`,
+    });
+  });
   pushItem({
     id: `${project.id}:video-edit:source`,
     kind: 'video',
@@ -230,6 +240,10 @@ export function countProjectMediaItems(projects: Project[], imageCreationRecords
     countVideo(project.videoEditFlow.sourceVideo?.url);
     countImage(project.videoEditFlow.task.lastFrameUrl);
     countVideo(project.videoEditFlow.task.videoUrl);
+    project.canvasFlow?.nodes.forEach((node) => {
+      if (node.type === 'image') countImage(node.mediaUrl);
+      if (node.type === 'video') countVideo(node.mediaUrl);
+    });
   }
 
   for (const record of imageCreationRecords) {
@@ -258,6 +272,10 @@ export function buildAssetLibraryStatusItems(projects: Project[], imageCreationR
 }
 
 export function applyLibraryItemUrlToProject(project: Project, itemId: string, nextUrl: string): Project {
+  if (itemId.startsWith(`${project.id}:canvas:`) && project.canvasFlow) {
+    const nodeId = itemId.slice(`${project.id}:canvas:`.length);
+    return { ...project, canvasFlow: { ...project.canvasFlow, nodes: project.canvasFlow.nodes.map((node) => node.id === nodeId ? { ...node, mediaUrl: nextUrl } : node) } };
+  }
   if (itemId === `${project.id}:video-edit:source`) {
     return {
       ...project,

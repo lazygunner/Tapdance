@@ -17,7 +17,7 @@ export type ProjectGroupImageAsset = {
   groupId: string;
   projectId: string;
   projectName: string;
-  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-reference' | 'fast-director-capture' | 'fast-scene' | 'fast-task-last-frame' | 'video-edit-reference' | 'video-edit-last-frame' | 'image-creation' | 'portrait-public' | 'portrait-real' | 'portrait-virtual' | 'portrait-seedream';
+  sourceType: 'asset' | 'shot-first' | 'shot-last' | 'ad-storyboard' | 'ad-packaging' | 'ad-logo' | 'fast-reference' | 'fast-director-capture' | 'fast-scene' | 'fast-task-last-frame' | 'video-edit-reference' | 'video-edit-last-frame' | 'image-creation' | 'canvas-image' | 'portrait-public' | 'portrait-real' | 'portrait-virtual' | 'portrait-seedream';
   title: string;
   sourceLabel: string;
   imageUrl: string;
@@ -29,7 +29,7 @@ export type ProjectGroupMediaAsset = {
   groupId: string;
   projectId: string;
   projectName: string;
-  sourceType: ProjectGroupImageAsset['sourceType'] | 'shot-video' | 'shot-transition-video' | 'fast-reference-video' | 'fast-reference-audio' | 'fast-task-video' | 'video-edit-source' | 'video-edit-result' | 'asset-library-video';
+  sourceType: ProjectGroupImageAsset['sourceType'] | 'canvas-video' | 'canvas-audio' | 'shot-video' | 'shot-transition-video' | 'fast-reference-video' | 'fast-reference-audio' | 'fast-task-video' | 'video-edit-source' | 'video-edit-result' | 'asset-library-video';
   title: string;
   sourceLabel: string;
   kind: 'image' | 'video' | 'audio';
@@ -137,6 +137,7 @@ export function collectProjectPreviewImages(project: Project) {
     ...project.fastFlow.scenes.map((scene) => scene.imageUrl),
     ...project.videoEditFlow.referenceImages.map((image) => image.url),
     project.videoEditFlow.task.lastFrameUrl,
+    ...(project.canvasFlow?.nodes || []).filter((node) => node.type === 'image').map((node) => node.mediaUrl),
   ].filter((value): value is string => Boolean((value || '').trim()));
 
   const seen = new Set<string>();
@@ -261,6 +262,11 @@ export function collectProjectGeneratedImageAssets(project: Project): ProjectGro
       imageUrl: project.fastFlow.task.lastFrameUrl,
       createdAt: fastTaskCreatedAt,
     });
+  }
+
+  for (const node of project.canvasFlow?.nodes || []) {
+    if (node.type !== 'image' || !node.mediaUrl) continue;
+    images.push({ id: `${project.id}:canvas:${node.id}`, groupId, projectId: project.id, projectName, sourceType: 'canvas-image', title: node.title || '画布图片', sourceLabel: '无限画布图片', imageUrl: node.mediaUrl, createdAt: projectCreatedAt });
   }
 
   project.videoEditFlow.referenceImages.forEach((reference, index) => {
@@ -392,6 +398,11 @@ export function collectProjectGeneratedMediaAssets(project: Project): ProjectGro
     url: project.videoEditFlow.task.videoUrl || '',
     createdAt: project.videoEditFlow.task.finishedAt || projectCreatedAt,
   });
+
+  for (const node of project.canvasFlow?.nodes || []) {
+    if (node.type === 'audio' && node.mediaUrl) pushMedia({ id: `${project.id}:canvas:${node.id}`, sourceType: 'canvas-audio', title: node.title || '画布音频', sourceLabel: '无限画布音频', kind: 'audio', url: node.mediaUrl });
+    if (node.type === 'video' && node.mediaUrl) pushMedia({ id: `${project.id}:canvas:${node.id}`, sourceType: 'canvas-video', title: node.title || '画布视频', sourceLabel: '无限画布视频', kind: 'video', url: node.mediaUrl });
+  }
 
   return media;
 }

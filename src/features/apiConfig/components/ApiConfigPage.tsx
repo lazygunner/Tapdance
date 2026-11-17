@@ -1125,12 +1125,21 @@ export function ApiConfigPage({
                 {providerId === 'volcengine' && (
                   <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
                     <div className="mb-4">
-                      <p className="text-xs font-semibold text-zinc-300">Seedance 2.5 / 2.0 任务 API</p>
+                      <p className="text-xs font-semibold text-zinc-300">Seedance 任务 API 与 Seedream 5.5</p>
                       <p className="mt-1 text-xs leading-5 text-zinc-500">
                         复用上方火山引擎 API Key。用于创意视频和极速视频中的 Ark Seedance 提交、查询和取消。
                       </p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="block">
+                        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Seedream 5.5 模型</span>
+                        <input aria-label="Seedream 5.5 模型" value={apiSettings.volcengine.seedream55ImageModel || ''} onChange={(event) => setApiSettings((prev) => ({ ...prev, volcengine: { ...prev.volcengine, seedream55ImageModel: event.target.value } }))} placeholder="doubao-seedream-5-5-261028" className="mt-2 w-full bg-black/30 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" />
+                      </label>
+                      {([{ field: 'miniApiModel', label: 'Seedance 2.0 Mini', model: 'doubao-seedance-2-0-mini-260615' }, { field: 'flashApiModel', label: 'Seedance 2.5 Flash', model: 'doubao-seedance-2-5-flash-261115' }] as const).map((item) => <label className="block" key={item.field}>
+                        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{item.label} 模型</span>
+                        <input aria-label={`${item.label} 模型`} value={apiSettings.seedance[item.field] || ''} onChange={(event) => setApiSettings((prev) => ({ ...prev, seedance: { ...prev.seedance, [item.field]: event.target.value } }))} placeholder={item.model} className="mt-2 w-full bg-black/30 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" />
+                      </label>)}
+
                       <label className="block">
                         <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Seedance 2.5 模型</span>
                         <input

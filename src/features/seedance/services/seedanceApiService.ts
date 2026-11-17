@@ -1,3 +1,5 @@
+import { isSeedance25 } from '../capabilities.ts';
+import { getSeedanceApiModelDefinition } from '../modelVersions.ts';
 import { loadApiSettings, resolveVolcengineBaseUrl } from '../../../services/apiConfig.ts';
 import { ensureInlineImageDataUrl } from '../../../services/requestBuilders.ts';
 import { compileSeedanceRequest } from './seedanceDraft.ts';
@@ -57,10 +59,9 @@ async function requestJson(path: string, init: RequestInit) {
 
 function resolveModelId(modelKey: SeedanceApiModelKey) {
   const config = getSeedanceConfig();
-  const modelId = (modelKey === 'seedance25' ? config.seedance25ApiModel : modelKey === 'fast' ? config.fastApiModel : config.apiModel).trim();
-  if (!modelId) {
-    throw new Error(modelKey === 'seedance25' ? '未配置 Seedance 2.5 API 模型 / 接入点。' : modelKey === 'fast' ? '未配置 Seedance 2.0 Fast API 模型 / 接入点。' : '未配置 Seedance 2.0 API 模型 / 接入点。');
-  }
+  const definition = getSeedanceApiModelDefinition(modelKey);
+  const modelId = (config[definition.settingKey] ?? definition.modelId).trim();
+  if (!modelId) throw new Error(`未配置 ${definition.label} API 模型 / 接入点。`);
   return modelId;
 }
 
@@ -139,7 +140,7 @@ export async function createSeedanceTask(draft: SeedanceDraft, modelKey: Seedanc
       resolution: compiled.resolution,
       ratio: compiled.ratio,
       duration: compiled.duration,
-      ...(modelKey === 'seedance25' ? { output_format: compiled.outputFormat } : {}),
+      ...(isSeedance25(modelKey) ? { output_format: compiled.outputFormat } : {}),
       generate_audio: compiled.generateAudio,
       return_last_frame: compiled.returnLastFrame,
       watermark: compiled.watermark,

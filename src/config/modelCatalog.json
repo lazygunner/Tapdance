@@ -110,6 +110,11 @@
           {
             "name": "Seededit 3.0",
             "modelId": "Seededit-3.0"
+          },
+          {
+            "name": "Seedream 5.5",
+            "modelId": "doubao-seedream-5-5-261028",
+            "aliases": ["Seedream-5.5"]
           }
         ],
         "video": [

@@ -81,6 +81,8 @@ export function useProjectActions({
       ? 'fastInput'
       : createProjectDraft.projectType === 'video-edit'
         ? 'videoEdit'
+        : createProjectDraft.projectType === 'infinite-canvas'
+          ? 'infiniteCanvas'
         : 'input');
   };
 

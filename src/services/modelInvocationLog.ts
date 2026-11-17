@@ -1,3 +1,4 @@
+import { getSeedanceApiModelDefinition, isSeedanceApiModelKey } from '../features/seedance/modelVersions.ts';
 import type { ModelSourceId } from '../types.ts';
 import { loadPersistedAppState, savePersistedAppState } from '../features/app/services/appStateStore.ts';
 
@@ -63,9 +64,7 @@ function inferSeedanceSourceId(entry: Pick<ModelInvocationLogEntry, 'provider' |
     return 'seedance.bridgeUrl';
   }
 
-  if (isRecord(entry.request) && entry.request.modelKey === 'fast') {
-    return 'seedance.fastApiModel';
-  }
+  if (isRecord(entry.request) && isSeedanceApiModelKey(entry.request.modelKey)) return getSeedanceApiModelDefinition(entry.request.modelKey).sourceId;
 
   if (entry.provider === 'seedance-ark') {
     return 'seedance.apiModel';

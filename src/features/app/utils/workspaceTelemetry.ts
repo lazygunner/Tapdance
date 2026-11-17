@@ -32,6 +32,7 @@ const GENERATED_VIDEO_SOURCE_TYPES = new Set([
   'shot-transition-video',
   'fast-task-video',
   'video-edit-result',
+  'canvas-video',
 ]);
 
 const GENERATED_IMAGE_SOURCE_TYPES = new Set([
@@ -44,6 +45,7 @@ const GENERATED_IMAGE_SOURCE_TYPES = new Set([
   'fast-scene',
   'fast-task-last-frame',
   'image-creation',
+  'canvas-image',
 ]);
 
 function normalizeStatus(value?: string | null) {
@@ -188,7 +190,7 @@ export function buildWorkspaceTelemetry(
     const seedanceDraft = syncFastFlowSeedanceDraft(project.fastFlow);
     const estimate = getSeedanceCostEstimate(project.fastFlow.input, seedanceDraft, project.fastFlow.executionConfig);
     stats.totalEstimatedTokens += estimate.totalTokens;
-    stats.totalEstimatedCostCny += estimate.estimatedCost;
+    if (estimate.pricingAvailable) stats.totalEstimatedCostCny += estimate.estimatedCost;
 
     if (isFastTaskSubmitted(project)) {
       stats.submittedFastTaskCount += 1;
@@ -197,7 +199,7 @@ export function buildWorkspaceTelemetry(
     if (isPotentiallyBillableFastTask(project)) {
       stats.billableFastTaskCount += 1;
       stats.usedEstimatedTokens += estimate.totalTokens;
-      stats.usedEstimatedCostCny += estimate.estimatedCost;
+      if (estimate.pricingAvailable) stats.usedEstimatedCostCny += estimate.estimatedCost;
     }
 
     if (isFastTaskCompleted(project)) {

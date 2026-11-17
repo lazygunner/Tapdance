@@ -2,13 +2,14 @@ import { createEmptyFastVideoProject } from '../../fastVideoFlow/services/fastFl
 import { createEmptyVideoEditProject } from '../../videoEditing/services/videoEditProject.ts';
 import type { WorkspaceView } from '../../../components/studio/WorkspaceViews.tsx';
 import type { Project, ProjectType } from '../../../types.ts';
+import { createEmptyCanvasFlow } from '../../infiniteCanvas/types.ts';
 
 function isNonEmptyText(value?: string | null) {
   return Boolean(value && value.trim());
 }
 
 export function inferProjectType(value: Partial<Project>): ProjectType {
-  if (value.projectType === 'fast-video' || value.projectType === 'video-edit') return value.projectType;
+  if (value.projectType === 'fast-video' || value.projectType === 'video-edit' || value.projectType === 'infinite-canvas') return value.projectType;
 
   return 'creative-video';
 }
@@ -41,6 +42,7 @@ export function createEmptyProject(projectType: ProjectType = 'creative-video'):
     shots: [],
     fastFlow: createEmptyFastVideoProject(),
     videoEditFlow: createEmptyVideoEditProject(),
+    canvasFlow: createEmptyCanvasFlow(),
   };
 }
 
@@ -74,6 +76,7 @@ export function isProjectEmpty(project: Project): boolean {
     && !project.videoEditFlow.resultDescription.trim()
     && !project.videoEditFlow.task.taskId
     && !project.videoEditFlow.task.videoUrl;
+  const canvasEmpty = !project.canvasFlow || (project.canvasFlow.nodes.length === 0 && project.canvasFlow.edges.length === 0 && !project.canvasFlow.recycleBin?.length);
 
   const setupEmpty = !project.nameCustomized
     && !isNonEmptyText(project.groupName)
@@ -81,10 +84,11 @@ export function isProjectEmpty(project: Project): boolean {
     && !isNonEmptyText(project.customStyleDescription)
     && (project.inputAspectRatio || '16:9') === '16:9';
 
-  return creativeEmpty && fastEmpty && editEmpty && setupEmpty;
+  return creativeEmpty && fastEmpty && editEmpty && canvasEmpty && setupEmpty;
 }
 
 export function getProjectResumeView(project: Project): WorkspaceView {
+  if (project.projectType === 'infinite-canvas') return 'infiniteCanvas';
   if (project.projectType === 'video-edit') return 'videoEdit';
   if (project.projectType === 'fast-video') {
     const hasGeneratedVideo = Boolean(project.fastFlow.task.videoUrl)

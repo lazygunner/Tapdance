@@ -58,6 +58,7 @@ import { useCreativeStyleContext } from './features/creativeFlow/hooks/useCreati
 import { useCreativeFlowUiState } from './features/creativeFlow/hooks/useCreativeFlowUiState.ts';
 import { useCreativeVideoPolling } from './features/creativeFlow/hooks/useCreativeVideoPolling.ts';
 import { ApiConfigWorkspace } from './features/apiConfig/components/ApiConfigWorkspace.tsx';
+import { InfiniteCanvasWorkspace } from './features/infiniteCanvas/components/InfiniteCanvasWorkspace.tsx';
 import { useApiSettingsStorage } from './features/apiConfig/hooks/useApiSettingsStorage.ts';
 import { ImagePreviewModal } from './components/modals/ImagePreviewModal.tsx';
 import { SeedanceErrorModal, type SeedanceErrorModalAction, type SeedanceErrorModalPayload, type SeedanceErrorModalState } from './components/modals/SeedanceErrorModal.tsx';
@@ -128,6 +129,7 @@ const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   'creative-video': '创意视频',
   'fast-video': '极速视频',
   'video-edit': '编辑视频',
+  'infinite-canvas': '无限画布',
 };
 
 const isNonEmptyText = (value?: string | null) => Boolean(value && value.trim());
@@ -251,7 +253,7 @@ export default function App() {
   const projectGroups = shouldComputeProjectGroups ? getProjectGroupSummary(projects) : EMPTY_PROJECT_GROUPS;
   const imageCreationImageAssets = collectImageCreationGeneratedImageAssets(imageCreationRecords);
   const projectMediaCounts = countProjectMediaItems(projects, imageCreationRecords);
-  const shouldComputeAssetLibraryItems = view === 'assetLibrary' || view === 'videoEdit';
+  const shouldComputeAssetLibraryItems = view === 'assetLibrary' || view === 'videoEdit' || view === 'infiniteCanvas';
   const assetLibrarySourceProjects = shouldComputeAssetLibraryItems
     ? Array.from(new Map([...projects, project].map((candidate) => [candidate.id, candidate])).values())
     : projects;
@@ -1278,6 +1280,22 @@ export default function App() {
         updateGeminiRoleModel={updateGeminiRoleModel}
       />
     )
+    : view === 'infiniteCanvas'
+      ? (
+        <InfiniteCanvasWorkspace
+          key={project.id}
+          persistMedia={persistGeneratedMediaUrl}
+          onBack={handleBackToHome}
+          onOpenSettings={() => setView('apiConfig')}
+          onThemeChange={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')}
+          project={project}
+          setProject={setProject}
+          apiSettings={apiSettings}
+          assetLibraryItems={assetLibraryItems}
+          themeMode={themeMode}
+          useMockMode={useMockMode || apiSettings.mockApi.enabled}
+        />
+      )
     : view === 'imageCreation'
       ? (
         <ImageCreationWorkspace
@@ -1519,7 +1537,7 @@ export default function App() {
         );
 
   return (
-    <div className={`theme-${themeMode} app-shell flex h-screen flex-col text-zinc-100 font-sans overflow-hidden`}>
+    <div className={`theme-${themeMode} app-shell ${view === 'infiniteCanvas' ? 'app-canvas-mode' : ''} flex h-screen flex-col text-zinc-100 font-sans overflow-hidden`}>
       <div className="studio-backdrop">
         <div className="studio-orb studio-orb-1" />
         <div className="studio-orb studio-orb-2" />
@@ -1540,7 +1558,7 @@ export default function App() {
         />
         <main className="app-main flex-1 overflow-y-auto">
           <div className="px-4 sm:px-6 xl:px-8">
-            {isProjectDetailView(view) ? (
+            {isProjectDetailView(view) && view !== 'infiniteCanvas' ? (
               <div className="w-full pt-6">
                 <ProjectDetailHeader
                   project={project}

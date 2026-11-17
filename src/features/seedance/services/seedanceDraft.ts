@@ -109,7 +109,7 @@ export function validateSeedanceDraft(draft: SeedanceDraft, modelKey: SeedanceAp
       errors.push(`${template.title}缺少 ${requirement.role} 素材。`);
     }
 
-    const modelMaxCount = modelKey === 'seedance25'
+    const modelMaxCount = capability.supportsAudioOnly
       ? requirement.role === 'reference_image' ? capability.maxImages
         : requirement.role === 'reference_video' ? capability.maxVideos
           : requirement.role === 'reference_audio' ? capability.maxAudios
@@ -122,7 +122,7 @@ export function validateSeedanceDraft(draft: SeedanceDraft, modelKey: SeedanceAp
 
   const hasVisualAsset = draft.assets.some((asset) => asset.kind === 'image' || asset.kind === 'video');
   const hasAudioAsset = draft.assets.some((asset) => asset.kind === 'audio');
-  if (hasAudioAsset && !hasVisualAsset) {
+  if (hasAudioAsset && !hasVisualAsset && !capability.supportsAudioOnly) {
     errors.push('仅输入音频无效，至少还需要 1 个图片或视频素材。');
   }
 

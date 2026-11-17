@@ -5,6 +5,7 @@ export function isSeedreamFiveImageModel(modelName: string) {
 }
 
 export function mapVolcengineImageSize(aspectRatio: VisualAspectRatio, modelName: string) {
+  if (/seedream[-.]5[-.]5/i.test(modelName)) return '2K';
   if (isSeedreamFiveImageModel(modelName)) {
     return '2k';
   }

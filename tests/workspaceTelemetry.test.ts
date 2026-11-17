@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { Project, Shot } from '../src/types.ts';
 import { createEmptyFastVideoProject } from '../src/features/fastVideoFlow/services/fastFlowMappers.ts';
 import { createEmptyVideoEditProject } from '../src/features/videoEditing/services/videoEditProject.ts';
+import { createEmptyCanvasFlow } from '../src/features/infiniteCanvas/types.ts';
 import { buildWorkspaceTelemetry } from '../src/features/app/utils/workspaceTelemetry.ts';
 
 function createBaseProject(projectType: Project['projectType'], id: string): Project {
@@ -18,6 +19,7 @@ function createBaseProject(projectType: Project['projectType'], id: string): Pro
     shots: [],
     fastFlow: createEmptyFastVideoProject(),
     videoEditFlow: createEmptyVideoEditProject(),
+    canvasFlow: createEmptyCanvasFlow(),
   };
 }
 

@@ -1518,6 +1518,12 @@ body {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .infinite-canvas-edge-particle {
+    display: none;
+  }
+}
+
 @media (max-width: 960px) {
   .app-shell {
     display: block;

@@ -1,10 +1,11 @@
 import type { FastVideoProject } from './features/fastVideoFlow/types/fastTypes.ts';
 import type { SeedanceExecutorId, SeedanceModelVersion } from './features/seedance/types.ts';
 import type { VideoEditProject } from './features/videoEditing/types.ts';
+import type { CanvasFlow } from './features/infiniteCanvas/types.ts';
 
 export type AspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
 export type VisualAspectRatio = AspectRatio;
-export type ProjectType = 'creative-video' | 'fast-video' | 'video-edit';
+export type ProjectType = 'creative-video' | 'fast-video' | 'video-edit' | 'infinite-canvas';
 
 export interface Brief {
   theme: string;
@@ -102,6 +103,7 @@ export interface GeminiApiConfig {
 }
 
 export interface VolcengineApiConfig {
+  seedream55ImageModel?: string;
   enabled: boolean;
   apiKey: string;
   baseUrl: string;
@@ -140,6 +142,8 @@ export interface MinimaxApiConfig {
 }
 
 export interface SeedanceApiConfig {
+  miniApiModel?: string;
+  flashApiModel?: string;
   enabled: boolean;
   seedance25ApiModel: string;
   apiModel: string;
@@ -175,13 +179,16 @@ export type ModelSourceId =
   | 'gemini.proVideoModel'
   | 'volcengine.textModel'
   | 'volcengine.imageModel'
+  | 'volcengine.seedream55ImageModel'
   | 'volcengine.videoModel'
   | 'openai.imageModel'
   | 'aliyun.fastVideoModel'
   | 'minimax.videoModel'
   | 'seedance.seedance25ApiModel'
   | 'seedance.apiModel'
-  | 'seedance.fastApiModel';
+  | 'seedance.fastApiModel'
+  | 'seedance.miniApiModel'
+  | 'seedance.flashApiModel';
 
 export interface DefaultModelSettings {
   text: ModelSourceId;
@@ -281,4 +288,5 @@ export interface Project {
   shots: Shot[];
   fastFlow: FastVideoProject;
   videoEditFlow: VideoEditProject;
+  canvasFlow: CanvasFlow;
 }

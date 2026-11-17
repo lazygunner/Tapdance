@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { Brief, Asset, Shot, AspectRatio, VisualAspectRatio } from '../types';
+import type { Brief, Asset, Shot, AspectRatio, VisualAspectRatio } from '../types.ts';
 import type { FastVideoInput, FastVideoPlan } from '../features/fastVideoFlow/types/fastTypes.ts';
 import { createFallbackFastVideoPlan } from '../features/fastVideoFlow/services/fastFlowMappers.ts';
 import { buildFastVideoPlanPrompt, buildFastVideoPromptRegenerationPrompt, normalizeFastVideoExecutionPrompt } from '../features/fastVideoFlow/services/fastPromptBuilders.ts';
@@ -184,6 +184,20 @@ export async function generateBriefWithModel(idea: string, modelName: string, us
   });
 
   return JSON.parse(response.text || '{}') as Brief;
+}
+
+/** Generate plain text for composable workflows such as the infinite canvas. */
+export async function generateTextWithModel(prompt: string, modelName: string, useMockMode: boolean = false): Promise<string> {
+  if (useMockMode) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return `Mock response: ${prompt.slice(0, 180)}`;
+  }
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: modelName || getGeminiConfig().textModel,
+    contents: prompt,
+  });
+  return response.text?.trim() || '';
 }
 
 export async function generateFastVideoPlanWithModel(input: FastVideoInput, modelName: string, useMockMode: boolean = false): Promise<FastVideoPlan> {

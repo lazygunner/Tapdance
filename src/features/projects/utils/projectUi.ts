@@ -15,6 +15,10 @@ export function formatProjectCreatedAt(value?: string) {
 }
 
 export function getProjectSummary(project: Project): string {
+  if (project.projectType === 'infinite-canvas') {
+    const nodeCount = project.canvasFlow?.nodes.length || 0;
+    return nodeCount > 0 ? `${nodeCount} 个画布节点，${project.canvasFlow?.edges.length || 0} 条连接` : '尚未添加画布节点';
+  }
   if (project.projectType === 'video-edit') {
     return project.videoEditFlow.targetDescription || '尚未添加待编辑视频';
   }

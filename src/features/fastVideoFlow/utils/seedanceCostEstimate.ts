@@ -25,6 +25,7 @@ type SeedanceCostExecutionConfig = {
 
 export type SeedanceCostEstimate = {
   modelLabel: string;
+  pricingAvailable: boolean;
   billingLabel: string;
   unitPrice: number;
   pricingUnit: 'tokens' | 'second';
@@ -47,6 +48,8 @@ export type SeedanceCostEstimate = {
 const SEEDANCE_COST_DIMENSIONS = seedanceCostDimensions as SeedanceEstimateDimensionConfig;
 
 const SEEDANCE_PRICING = {
+  mini: { modelLabel: 'Doubao-Seedance-2.0-Mini', withVideoInputUnitPrice: 0, withoutVideoInputUnitPrice: 0 },
+  flash: { modelLabel: 'Doubao-Seedance-2.5-Flash', withVideoInputUnitPrice: 0, withoutVideoInputUnitPrice: 0 },
   seedance25: {
     modelLabel: 'Doubao-Seedance-2.5',
     withVideoInputUnitPrice: 42,
@@ -183,6 +186,7 @@ export function getSeedanceCostEstimate(
 ): SeedanceCostEstimate {
   const pricingKey = getSeedancePricingKey(executionConfig);
   const pricing = SEEDANCE_PRICING[pricingKey];
+  const pricingAvailable = pricingKey !== 'mini' && pricingKey !== 'flash';
   const selectedReferenceVideos = (input.referenceVideos || []).filter((reference) => (
     reference.videoUrl.trim() && reference.selectedForVideo !== false
   ));
@@ -227,7 +231,9 @@ export function getSeedanceCostEstimate(
     pricingUnit = 'second';
   }
 
+  if (!pricingAvailable) billingLabel = '当前型号尚未配置单价，费用以服务商账单为准。';
   return {
+    pricingAvailable,
     modelLabel: pricing.modelLabel,
     billingLabel,
     unitPrice: finalUnitPrice,

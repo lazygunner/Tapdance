@@ -30,11 +30,13 @@ test('getSeedanceApiModelKeyForCliModel maps vip variants to the correct pricing
   assert.equal(getSeedanceApiModelKeyForCliModel('seedance2.0fast_vip'), 'fast');
 });
 
-test('Seedance API model source ids map to 2.5, standard and fast models', () => {
+test('Seedance API model source ids map all five official Ark models', () => {
   assert.deepEqual(SEEDANCE_API_MODEL_SOURCE_IDS, [
     'seedance.seedance25ApiModel',
+    'seedance.flashApiModel',
     'seedance.apiModel',
     'seedance.fastApiModel',
+    'seedance.miniApiModel',
   ]);
   assert.equal(isSeedanceApiModelSourceId('seedance.seedance25ApiModel'), true);
   assert.equal(isSeedanceApiModelSourceId('seedance.apiModel'), true);

@@ -1,6 +1,6 @@
 import modelCatalogConfig from '../config/modelCatalog.json' with { type: 'json' };
 import type { ApiSettings, CustomProviderModelConfig, ModelSourceId, PromptLanguage } from '../types.ts';
-import { getSeedanceApiModelLabelForSourceId, normalizeSeedanceModelVersion } from '../features/seedance/modelVersions.ts';
+import { getSeedanceApiModelLabelForSourceId, normalizeSeedanceModelVersion, SEEDANCE_API_MODEL_SOURCE_IDS, SEEDANCE_API_MODELS, getSeedanceApiModelKeyForModelSourceId, isSeedanceApiModelSourceId } from '../features/seedance/modelVersions.ts';
 import { loadPersistedAppState, savePersistedAppState } from '../features/app/services/appStateStore.ts';
 
 export const API_SETTINGS_STATE_KEY = 'api_settings';
@@ -143,6 +143,7 @@ const ROLE_BY_SOURCE_ID: Record<Exclude<ModelSourceId, ''>, ModelRole> = {
   'gemini.proVideoModel': 'video',
   'volcengine.textModel': 'text',
   'volcengine.imageModel': 'image',
+  'volcengine.seedream55ImageModel': 'image',
   'volcengine.videoModel': 'video',
   'openai.imageModel': 'image',
   'aliyun.fastVideoModel': 'video',
@@ -150,6 +151,8 @@ const ROLE_BY_SOURCE_ID: Record<Exclude<ModelSourceId, ''>, ModelRole> = {
   'seedance.seedance25ApiModel': 'video',
   'seedance.apiModel': 'video',
   'seedance.fastApiModel': 'video',
+  'seedance.miniApiModel': 'video',
+  'seedance.flashApiModel': 'video',
 };
 
 export const defaultApiSettings: ApiSettings = {
@@ -165,6 +168,7 @@ export const defaultApiSettings: ApiSettings = {
     customModels: [],
   },
   volcengine: {
+    seedream55ImageModel: 'doubao-seedream-5-5-261028',
     enabled: true,
     apiKey: '',
     baseUrl: DEFAULT_VOLCENGINE_BASE_URL,
@@ -199,6 +203,8 @@ export const defaultApiSettings: ApiSettings = {
     customModels: [],
   },
   seedance: {
+    miniApiModel: SEEDANCE_API_MODELS.mini.modelId,
+    flashApiModel: SEEDANCE_API_MODELS.flash.modelId,
     enabled: true,
     seedance25ApiModel: 'doubao-seedance-2-5-260628',
     apiModel: 'doubao-seedance-2-0-260128',
@@ -238,6 +244,7 @@ const MODEL_SOURCE_META: Record<Exclude<ModelSourceId, ''>, { label: string; pro
   'gemini.proVideoModel': { label: '高质量视频模型', providerLabel: MODEL_PROVIDER_CATALOG.gemini.label },
   'volcengine.textModel': { label: '文本模型', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
   'volcengine.imageModel': { label: '图像模型', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
+  'volcengine.seedream55ImageModel': { label: 'Seedream 5.5', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
   'volcengine.videoModel': { label: '视频模型', providerLabel: MODEL_PROVIDER_CATALOG.volcengine.label },
   'openai.imageModel': { label: '图像模型', providerLabel: MODEL_PROVIDER_CATALOG.openai.label },
   'aliyun.fastVideoModel': { label: '快速视频模型', providerLabel: MODEL_PROVIDER_CATALOG.aliyun?.label || '阿里云' },
@@ -245,12 +252,14 @@ const MODEL_SOURCE_META: Record<Exclude<ModelSourceId, ''>, { label: string; pro
   'seedance.seedance25ApiModel': { label: 'Seedance 2.5', providerLabel: '火山引擎 Ark' },
   'seedance.apiModel': { label: 'Seedance 2.0', providerLabel: '火山引擎 Ark' },
   'seedance.fastApiModel': { label: 'Seedance 2.0 Fast', providerLabel: '火山引擎 Ark' },
+  'seedance.miniApiModel': { label: 'Seedance 2.0 Mini', providerLabel: '火山引擎 Ark' },
+  'seedance.flashApiModel': { label: 'Seedance 2.5 Flash', providerLabel: '火山引擎 Ark' },
 };
 
 const ROLE_SOURCE_IDS: Record<ModelRole, ModelSourceId[]> = {
   text: ['gemini.textModel', 'volcengine.textModel'],
-  image: ['gemini.imageModel', 'gemini.proImageModel', 'volcengine.imageModel', 'openai.imageModel'],
-  video: ['gemini.fastVideoModel', 'gemini.proVideoModel', 'volcengine.videoModel', 'aliyun.fastVideoModel', 'minimax.videoModel'],
+  image: ['gemini.imageModel', 'gemini.proImageModel', 'volcengine.imageModel', 'volcengine.seedream55ImageModel', 'openai.imageModel'],
+  video: ['gemini.fastVideoModel', 'gemini.proVideoModel', 'volcengine.videoModel', 'aliyun.fastVideoModel', 'minimax.videoModel', ...SEEDANCE_API_MODEL_SOURCE_IDS],
 };
 
 export const DEFAULT_MODEL_ROLE_META: Record<ModelRole, { title: string; description: string }> = {
@@ -374,16 +383,10 @@ function readModelSource(settings: ApiSettings, sourceId: ModelSourceId): string
     return '';
   }
 
-  if (sourceId === 'seedance.apiModel') {
-    return settings.seedance.apiModel.trim();
-  }
-
-  if (sourceId === 'seedance.seedance25ApiModel') {
-    return settings.seedance.seedance25ApiModel.trim();
-  }
-
-  if (sourceId === 'seedance.fastApiModel') {
-    return settings.seedance.fastApiModel.trim();
+  const seedanceKey = getSeedanceApiModelKeyForModelSourceId(sourceId);
+  if (seedanceKey) {
+    const definition = SEEDANCE_API_MODELS[seedanceKey];
+    return (settings.seedance[definition.settingKey] ?? definition.modelId).trim();
   }
 
   const [provider, field] = sourceId.split('.') as ['gemini' | 'volcengine' | 'openai' | 'aliyun' | 'minimax', string];
@@ -597,6 +600,7 @@ function normalizeApiSettings(settings: ApiSettings): ApiSettings {
       promptLanguage: normalizedVolcenginePromptLanguage,
       textModel: normalizeVolcengineModelValue('text', settings.volcengine.textModel, settings),
       imageModel: normalizeVolcengineModelValue('image', settings.volcengine.imageModel, settings),
+      seedream55ImageModel: typeof settings.volcengine.seedream55ImageModel === 'string' ? settings.volcengine.seedream55ImageModel.trim() : defaultApiSettings.volcengine.seedream55ImageModel,
       videoModel: normalizeVolcengineModelValue('video', settings.volcengine.videoModel, settings),
     },
     openai: {
@@ -630,6 +634,8 @@ function normalizeApiSettings(settings: ApiSettings): ApiSettings {
         : defaultApiSettings.minimax.videoModel,
     },
     seedance: {
+      miniApiModel: typeof settings.seedance?.miniApiModel === 'string' ? settings.seedance.miniApiModel.trim() : SEEDANCE_API_MODELS.mini.modelId,
+      flashApiModel: typeof settings.seedance?.flashApiModel === 'string' ? settings.seedance.flashApiModel.trim() : SEEDANCE_API_MODELS.flash.modelId,
       enabled: settings.seedance?.enabled !== false,
       seedance25ApiModel: typeof settings.seedance?.seedance25ApiModel === 'string' && settings.seedance.seedance25ApiModel.trim()
         ? settings.seedance.seedance25ApiModel.trim()
@@ -750,7 +756,7 @@ export function getModelSourceDisplayValue(settings: ApiSettings, sourceId: Mode
     return '';
   }
 
-  if (sourceId === 'seedance.seedance25ApiModel' || sourceId === 'seedance.apiModel' || sourceId === 'seedance.fastApiModel') {
+  if (isSeedanceApiModelSourceId(sourceId)) {
     return `${getSeedanceApiModelLabelForSourceId(sourceId)} (${value})`;
   }
 
@@ -773,6 +779,7 @@ export function getModelSourceOptions(settings: ApiSettings, role: ModelRole): M
 export function getModelSourceOptionsForSelection(settings: ApiSettings, role: ModelRole, includeDisabledProviders: boolean): ModelSourceOption[] {
   return ROLE_SOURCE_IDS[role]
     .map((sourceId) => {
+      if (sourceId.startsWith('seedance.') && !includeDisabledProviders && (!settings.volcengine.enabled || settings.seedance.enabled === false)) return null;
       if (sourceId.startsWith('volcengine.') && !includeDisabledProviders && !settings.volcengine.enabled) {
         return null;
       }

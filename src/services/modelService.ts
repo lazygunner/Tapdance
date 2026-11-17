@@ -163,6 +163,18 @@ export async function generateBriefWithModel(idea: string, modelName: string, us
   );
 }
 
+export async function generateTextWithModel(prompt: string, modelName: string, useMockMode: boolean = false, sourceId: ModelSourceId = 'gemini.textModel'): Promise<string> {
+  return withModelLog(
+    'generateText',
+    sourceId,
+    modelName,
+    { prompt, useMockMode },
+    () => isVolcengineSource(sourceId)
+      ? volcengineService.generateTextWithModel(prompt, modelName, useMockMode)
+      : geminiService.generateTextWithModel(prompt, modelName, useMockMode),
+  );
+}
+
 export async function generateFastVideoPlanWithModel(input: FastVideoInput, modelName: string, useMockMode: boolean = false, sourceId: ModelSourceId = 'gemini.textModel'): Promise<FastVideoPlan> {
   return withModelLog(
     'generateFastVideoPlan',

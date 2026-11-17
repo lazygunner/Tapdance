@@ -3,6 +3,7 @@ import { resequenceShots } from '../../creativeFlow/utils/creativeFlowHelpers.ts
 import { normalizeFastVideoProject } from '../../fastVideoFlow/services/fastFlowMappers.ts';
 import { normalizeVideoEditProject } from '../../videoEditing/services/videoEditProject.ts';
 import type { Project, Shot } from '../../../types.ts';
+import { normalizeCanvasFlow } from '../../infiniteCanvas/types.ts';
 import { inferProjectType, normalizeProjectCreatedAt } from './projectLifecycle.ts';
 
 export function normalizeProjectRecord(value: Partial<Project>): Project {
@@ -31,6 +32,7 @@ export function normalizeProjectRecord(value: Partial<Project>): Project {
     shots: Array.isArray(value.shots) ? resequenceShots(value.shots as Shot[]) : [],
     fastFlow: normalizeFastVideoProject(value.fastFlow),
     videoEditFlow: normalizeVideoEditProject(value.videoEditFlow),
+    canvasFlow: normalizeCanvasFlow(value.canvasFlow),
   };
 }
 
@@ -57,6 +59,7 @@ export function toProjectListEntry(value: Partial<Project>): Project {
         raw: undefined,
       },
     },
+    canvasFlow: normalized.canvasFlow,
   };
 }
 

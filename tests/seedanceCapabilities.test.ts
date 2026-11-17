@@ -32,7 +32,7 @@ test('Seedance 2.5 exposes 30 second, 30/10/10 references and MOV capability', (
   assert.equal(profile.maxImages, 30);
   assert.equal(profile.maxVideos, 10);
   assert.equal(profile.maxAudios, 10);
-  assert.deepEqual(profile.resolutions, ['480p', '720p']);
+  assert.deepEqual(profile.resolutions, ['480p', '720p', '1080p']);
   assert.deepEqual(profile.outputFormats, ['mp4', 'mov']);
 });
 
@@ -58,7 +58,7 @@ test('Seedance 2.5 video edit is normalized to adaptive ratio and automatic dura
   assert.equal(normalized.options.duration, -1);
 });
 
-test('Seedance 2.5 rejects 1080p and still rejects pure audio input', () => {
+test('Seedance 2.5 accepts 1080p and pure audio while 2.0 still needs visuals', () => {
   const draft = createDraft({
     baseTemplateId: 'audio_guided',
     assets: [{
@@ -72,8 +72,9 @@ test('Seedance 2.5 rejects 1080p and still rejects pure audio input', () => {
     options: { ...createDraft().options, resolution: '1080p' },
   });
   const validation = validateSeedanceDraft(draft, 'seedance25');
-  assert.equal(validation.errors.some((error) => error.includes('仅输入音频无效')), true);
-  assert.equal(validation.errors.some((error) => error.includes('不支持 1080p')), true);
+  assert.equal(validation.errors.some((error) => error.includes('仅输入音频无效')), false);
+  assert.equal(validateSeedanceDraft(draft, 'standard').errors.some((error) => error.includes('仅输入音频无效')), true);
+  assert.equal(validation.errors.some((error) => error.includes('不支持 1080p')), false);
 });
 
 test('compiled 2.5 request carries MOV output format', () => {

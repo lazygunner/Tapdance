@@ -255,6 +255,9 @@ export function StudioSelect({
   panelMinWidth = 0,
   triggerLabelClassName,
   optionLabelClassName,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
+  'aria-describedby': ariaDescribedBy,
 }: StudioSelectProps) {
   const options = useMemo(() => extractSelectOptions(children), [children]);
   const isControlled = value !== undefined;
@@ -386,6 +389,9 @@ export function StudioSelect({
         autoFocus={autoFocus}
         type="button"
         disabled={disabled}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        aria-describedby={ariaDescribedBy}
         aria-haspopup="listbox"
         aria-expanded={open}
         data-open={open}

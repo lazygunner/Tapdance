@@ -18,9 +18,11 @@ export interface SeedanceCapabilityProfile {
   maxTotalVideoDurationSec: number;
   maxTotalAudioDurationSec: number;
   minMediaDurationSec: number;
+  supportsAudioOnly: boolean;
 }
 
 const LEGACY_PROFILE = {
+  supportsAudioOnly: false,
   maxDurationSec: 15,
   resolutions: ['480p', '720p', '1080p'],
   outputFormats: ['mp4'],
@@ -36,9 +38,10 @@ const LEGACY_PROFILE = {
 export const SEEDANCE_CAPABILITIES: Record<SeedanceApiModelKey, SeedanceCapabilityProfile> = {
   seedance25: {
     key: 'seedance25',
+    supportsAudioOnly: true,
     label: 'Seedance 2.5',
     maxDurationSec: 30,
-    resolutions: ['480p', '720p'],
+    resolutions: ['480p', '720p', '1080p'],
     outputFormats: ['mp4', 'mov'],
     maxImages: 30,
     maxVideos: 10,
@@ -49,7 +52,14 @@ export const SEEDANCE_CAPABILITIES: Record<SeedanceApiModelKey, SeedanceCapabili
     maxTotalAudioDurationSec: 30,
   },
   standard: { key: 'standard', label: 'Seedance 2.0', ...LEGACY_PROFILE },
-  fast: { key: 'fast', label: 'Seedance 2.0 Fast', ...LEGACY_PROFILE },
+  fast: { key: 'fast', label: 'Seedance 2.0 Fast', ...LEGACY_PROFILE, resolutions: ['480p', '720p'] },
+  mini: { key: 'mini', label: 'Seedance 2.0 Mini', ...LEGACY_PROFILE, resolutions: ['480p', '720p'] },
+  flash: {
+    key: 'flash', label: 'Seedance 2.5 Flash', supportsAudioOnly: true,
+    maxDurationSec: 30, resolutions: ['480p', '720p'], outputFormats: ['mp4', 'mov'],
+    maxImages: 10, maxVideos: 5, maxAudios: 5, maxMediaDurationSec: 30,
+    maxTotalVideoDurationSec: 30, maxTotalAudioDurationSec: 30, minMediaDurationSec: 2,
+  },
 };
 
 export function getSeedanceCapabilities(modelKey: SeedanceApiModelKey) {
@@ -57,7 +67,7 @@ export function getSeedanceCapabilities(modelKey: SeedanceApiModelKey) {
 }
 
 export function isSeedance25(modelKey: SeedanceApiModelKey) {
-  return modelKey === 'seedance25';
+  return modelKey === 'seedance25' || modelKey === 'flash';
 }
 
 export function getSeedanceTemplateOptionConstraints(templateId: SeedanceBaseTemplateId, modelKey: SeedanceApiModelKey) {

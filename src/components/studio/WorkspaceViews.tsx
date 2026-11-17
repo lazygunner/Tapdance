@@ -52,7 +52,8 @@ export type WorkspaceView =
   | 'fastStoryboard'
   | 'fastDirector'
   | 'fastVideo'
-  | 'videoEdit';
+  | 'videoEdit'
+  | 'infiniteCanvas';
 
 export type WorkspaceThemeMode = 'light' | 'dark';
 export type WorkspaceHomeViewMode = 'projects' | 'groups';
@@ -71,12 +72,13 @@ type NavItem = {
   icon: LucideIcon;
 };
 
-type SupportedWorkspaceProjectType = 'creative-video' | 'fast-video' | 'video-edit';
+type SupportedWorkspaceProjectType = 'creative-video' | 'fast-video' | 'video-edit' | 'infinite-canvas';
 
 const PROJECT_UI_TYPE_BY_PROJECT_TYPE: Record<ProjectType, SupportedWorkspaceProjectType> = {
   'creative-video': 'creative-video',
   'fast-video': 'fast-video',
   'video-edit': 'video-edit',
+  'infinite-canvas': 'infinite-canvas',
 };
 
 function getWorkspaceProjectType(projectType: ProjectType): SupportedWorkspaceProjectType {
@@ -146,6 +148,17 @@ const PROJECT_META: Record<SupportedWorkspaceProjectType, {
     inactiveNavClassName: 'border-transparent text-[var(--studio-muted)] hover:border-white/8 hover:bg-white/5 hover:text-[var(--studio-text)]',
     completedLineClassName: 'studio-accent-line-indigo',
   },
+  'infinite-canvas': {
+    label: '无限画布',
+    subtitle: '自由编排文字、图片、音频与视频',
+    eyebrow: 'Infinite Canvas',
+    icon: PanelsTopLeft,
+    chipClassName: 'studio-accent-chip-emerald',
+    accentTextClassName: 'studio-accent-text-emerald',
+    activeNavClassName: 'studio-accent-chip-emerald shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
+    inactiveNavClassName: 'border-transparent text-[var(--studio-muted)] hover:border-white/8 hover:bg-white/5 hover:text-[var(--studio-text)]',
+    completedLineClassName: 'studio-accent-line-emerald',
+  },
 };
 
 const NAV_ITEMS_BY_PROJECT: Record<SupportedWorkspaceProjectType, NavItem[]> = {
@@ -165,6 +178,9 @@ const NAV_ITEMS_BY_PROJECT: Record<SupportedWorkspaceProjectType, NavItem[]> = {
   'video-edit': [
     { view: 'videoEdit', label: '编辑视频', icon: Scissors },
   ],
+  'infinite-canvas': [
+    { view: 'infiniteCanvas', label: '无限画布', icon: PanelsTopLeft },
+  ],
 };
 
 const HOME_ENTRY_COPY: Record<SupportedWorkspaceProjectType, { title: string; description: string; cornerBadge?: string }> = {
@@ -182,6 +198,11 @@ const HOME_ENTRY_COPY: Record<SupportedWorkspaceProjectType, { title: string; de
     title: '对现有视频新增、移除或替换',
     description: '上传一段视频，精确描述编辑对象与目标，使用 Seedance 2.5 保持原有镜头、主体与背景的一致性。',
     cornerBadge: '2.5',
+  },
+  'infinite-canvas': {
+    title: '自由编排文字、图片、音频与视频',
+    description: '在一张无限画布上搭建创作流程，连接节点并让 AI 逐步生成内容。',
+    cornerBadge: 'New',
   },
 };
 
@@ -749,7 +770,7 @@ type HomeWorkspaceProps = {
   renderProjectCard: (project: Project) => ReactNode;
 };
 
-const HOME_ENTRY_TYPES: SupportedWorkspaceProjectType[] = ['fast-video', 'video-edit', 'creative-video'];
+const HOME_ENTRY_TYPES: SupportedWorkspaceProjectType[] = ['infinite-canvas', 'fast-video', 'video-edit', 'creative-video'];
 
 type HomeTelemetryTone = 'sky' | 'violet' | 'emerald' | 'amber';
 

@@ -295,6 +295,13 @@ IMPORTANT: All output values MUST be in Simplified Chinese (简体中文).
 Return ONLY a JSON object with keys: theme, style, characters, scenes, events, mood, duration, aspectRatio, platform. aspectRatio must be one of 16:9, 9:16, 1:1, 4:3.`);
 }
 
+export async function generateTextWithModel(prompt: string, modelName: string, useMockMode: boolean = false): Promise<string> {
+  if (useMockMode) {
+    return `Mock response: ${prompt.slice(0, 180)}`;
+  }
+  return chatText(modelName || getVolcengineConfig().textModel, prompt);
+}
+
 export async function generateFastVideoPlanWithModel(input: FastVideoInput, modelName: string, useMockMode: boolean = false): Promise<FastVideoPlan> {
   if (useMockMode) {
     return createFallbackFastVideoPlan(input);
@@ -531,7 +538,10 @@ export async function generateStoryboardImage(prompt: string, aspectRatio: Visua
   ]);
   const referenceImages = collectReferenceImages(normalizedReferenceAssets, normalizedBaseImage);
   const canUseReferenceImage = supportsSeedreamReferenceImage(modelName);
-  const finalPrompt = appendReferencePrompt(prompt, normalizedReferenceAssets, normalizedBaseImage);
+  const referencePrompt = appendReferencePrompt(prompt, normalizedReferenceAssets, normalizedBaseImage);
+  const finalPrompt = /seedream[-.]5[-.]5/i.test(modelName)
+    ? `${referencePrompt}，画面比例${aspectRatio}`
+    : referencePrompt;
   const imageField = canUseReferenceImage && referenceImages.length > 0
     ? (referenceImages.length === 1 ? referenceImages[0] : referenceImages)
     : undefined;

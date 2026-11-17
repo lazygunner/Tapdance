@@ -1,3 +1,5 @@
+import { isSeedanceApiModelKey } from '../../seedance/modelVersions.ts';
+import { getSeedanceCapabilities } from '../../seedance/capabilities.ts';
 import type {
   FastReferenceAudio,
   FastReferenceAudioType,
@@ -589,9 +591,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
   const executionExecutor = value?.executionConfig?.executor === 'cli' || value?.executionConfig?.executor === 'ark' || value?.executionConfig?.executor === 'aliyun' || value?.executionConfig?.executor === 'minimax'
     ? value.executionConfig.executor
     : base.executionConfig.executor;
-  const executionApiModelKey = value?.executionConfig?.apiModelKey === 'seedance25'
-    ? 'seedance25'
-    : value?.executionConfig?.apiModelKey === 'fast' ? 'fast' : value?.executionConfig?.apiModelKey === 'standard' ? 'standard' : base.executionConfig.apiModelKey;
+  const executionApiModelKey = isSeedanceApiModelKey(value?.executionConfig?.apiModelKey) ? value.executionConfig.apiModelKey : base.executionConfig.apiModelKey;
   const normalizedReferenceImages = normalizeReferenceImages(input.referenceImages, typeof legacyInput.referenceImageUrl === 'string' ? legacyInput.referenceImageUrl : '');
   const normalizedCharacters = normalizePlanCharacters(value?.characters);
   const normalizedScenes = Array.isArray(value?.scenes)
@@ -647,7 +647,7 @@ export function normalizeFastVideoProject(value?: NormalizableFastVideoProject |
       referenceAudios: normalizeReferenceAudios(input.referenceAudios),
       aspectRatio: normalizeFastVideoAspectRatio(input.aspectRatio),
       durationSec: Number.isFinite(input.durationSec)
-        ? Math.max(4, Math.min(executionApiModelKey === 'seedance25' ? 30 : 15, Number(input.durationSec)))
+        ? Math.max(4, Math.min(getSeedanceCapabilities(executionApiModelKey).maxDurationSec, Number(input.durationSec)))
         : base.input.durationSec,
       preferredSceneCount: input.preferredSceneCount === 1 || input.preferredSceneCount === 2 || input.preferredSceneCount === 'auto'
         ? input.preferredSceneCount

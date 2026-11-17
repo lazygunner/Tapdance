@@ -1,3 +1,5 @@
+import { isSeedance25 } from '../../seedance/capabilities.ts';
+import { SEEDANCE_API_MODEL_KEYS, getSeedanceApiModelDefinition } from '../../seedance/modelVersions.ts';
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type LucideIcon, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Circle, Clock3, Image as ImageIcon, Play, Plus, RefreshCw, ScanText, Search, Video, Volume2, X } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -1621,7 +1623,7 @@ export function FastVideoView({
   const activeTemplateDescription = getSeedanceTemplateDescription(seedanceDraft.baseTemplateId, activeModelKey);
   const modelCapabilities = getSeedanceCapabilities(activeModelKey);
   const templateConstraints = getSeedanceTemplateOptionConstraints(seedanceDraft.baseTemplateId, activeModelKey);
-  const availableTemplateIds = executionConfig.executor === 'ark' && executionConfig.apiModelKey === 'seedance25'
+  const availableTemplateIds = executionConfig.executor === 'ark' && isSeedance25(executionConfig.apiModelKey)
     ? Object.keys(SEEDANCE_TEMPLATE_REGISTRY) as SeedanceBaseTemplateId[]
     : FAST_FLOW_TEMPLATE_IDS;
   const costEstimate = getSeedanceCostEstimate(input, seedanceDraft, executionConfig);
@@ -2055,7 +2057,7 @@ export function FastVideoView({
                 className: 'sm:col-span-6',
                 valueClassName: 'break-words leading-5',
               })}
-              {renderSummaryCard('计费单价', costEstimate.pricingUnit === 'second' ? `${formatCny(costEstimate.unitPrice)} / 秒` : `${formatCny(costEstimate.unitPrice)} / 百万tokens`, {
+              {renderSummaryCard('计费单价', !costEstimate.pricingAvailable ? '未配置单价' : costEstimate.pricingUnit === 'second' ? `${formatCny(costEstimate.unitPrice)} / 秒` : `${formatCny(costEstimate.unitPrice)} / 百万tokens`, {
                 tone: 'amber',
                 infoContent: costEstimate.billingLabel,
                 className: costEstimate.pricingUnit === 'second' ? 'sm:col-span-5' : 'sm:col-span-4',
@@ -2072,7 +2074,7 @@ export function FastVideoView({
                   </>
                 ),
               }) : null}
-              {renderSummaryCard('预估费用', formatCny(costEstimate.estimatedCost), {
+              {renderSummaryCard('预估费用', costEstimate.pricingAvailable ? formatCny(costEstimate.estimatedCost) : '暂不估算', {
                 tone: 'amber',
                 className: costEstimate.pricingUnit === 'second' ? 'sm:col-span-5' : 'sm:col-span-5',
               })}
@@ -2117,7 +2119,7 @@ export function FastVideoView({
                     value={executionConfig.apiModelKey}
                     onChange={(event) => {
                       const apiModelKey = event.target.value as Props['executionConfig']['apiModelKey'];
-                      const baseTemplateId = apiModelKey === 'seedance25' || FAST_FLOW_TEMPLATE_IDS.includes(seedanceDraft.baseTemplateId)
+                      const baseTemplateId = isSeedance25(apiModelKey) || FAST_FLOW_TEMPLATE_IDS.includes(seedanceDraft.baseTemplateId)
                         ? seedanceDraft.baseTemplateId
                         : 'multi_image_reference';
                       onUpdateExecutionConfig({ apiModelKey });
@@ -2129,9 +2131,7 @@ export function FastVideoView({
                     triggerLabelClassName="whitespace-normal break-words pr-1 text-xs leading-4"
                     optionLabelClassName="whitespace-normal break-words pr-1 text-xs leading-4"
                   >
-                    <option value="seedance25">Seedance 2.5</option>
-                    <option value="standard">Seedance 2.0</option>
-                    <option value="fast">Seedance 2.0 Fast</option>
+                    {SEEDANCE_API_MODEL_KEYS.map((key) => <option key={key} value={key}>{getSeedanceApiModelDefinition(key).label}</option>)}
                   </StudioSelect>
                 </label>
               ) : executionConfig.executor === 'aliyun' ? (

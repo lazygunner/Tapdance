@@ -1,0 +1,68 @@
+/* Ported from NiegeIP studio prompt and parameter components. */
+.creation-prompt-mention-editor { position: relative; min-width: 0; }
+.creation-prompt-mention-editor__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 128px;
+  max-height: 128px;
+  overflow: auto;
+  padding: 24px 25px;
+  outline: 0;
+  color: var(--studio-text);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.creation-prompt-mention-editor__input { user-select: text; -webkit-user-select: text; overscroll-behavior: contain; }
+.creation-prompt-mention-editor__input:empty::before { content: attr(data-placeholder); color: var(--studio-text); pointer-events: none; }
+.creation-prompt-mention { display: inline-flex; box-sizing: border-box; height: 26px; max-width: 100%; align-items: center; gap: 5px; margin: 0 2px; padding: 1px 7px 1px 3px; border: 1px solid var(--studio-surface-contrast); border-radius: 7px; color: var(--studio-text); background: var(--studio-surface-contrast); font-size: 12px; line-height: 22px; vertical-align: middle; user-select: none; }
+.creation-prompt-mention__label { min-width: 0; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.creation-prompt-mention--video { border-color: var(--studio-surface-contrast); color: var(--studio-text); background: var(--studio-surface-contrast); }
+.creation-prompt-mention--audio { border-color: var(--studio-surface-contrast); color: var(--studio-text); background: var(--studio-surface-contrast); }
+.creation-prompt-mention img, .creation-prompt-mention video { width: 22px; height: 22px; flex: 0 0 auto; border-radius: 4px; object-fit: cover; }
+.creation-prompt-mention__icon { display: inline-flex; flex: 0 0 auto; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 4px; color: var(--studio-text); background: var(--studio-surface-contrast); font-size: 12px; }
+.creation-prompt-mention-panel { position: absolute; z-index: 40; top: calc(100% - 1px); left: 16px; right: 16px; display: grid; max-height: 240px; overflow: auto; padding: 6px; border: 1px solid var(--studio-text); border-radius: 12px; background: var(--studio-text); box-shadow: 0 14px 32px var(--studio-surface-contrast); }
+.creation-prompt-mention-panel button { display: flex; min-width: 0; align-items: center; gap: 9px; padding: 7px; border: 0; border-radius: 8px; color: var(--studio-text); background: transparent; text-align: left; cursor: pointer; }
+.creation-prompt-mention-panel button:hover, .creation-prompt-mention-panel button:focus-visible, .creation-prompt-mention-panel button.is-active { outline: 0; color: var(--studio-text); background: var(--studio-text); }
+.creation-prompt-mention-panel__preview { display: inline-flex; width: 38px; height: 32px; flex: 0 0 auto; align-items: center; justify-content: center; overflow: hidden; border-radius: 6px; color: var(--studio-text); background: var(--studio-text); }
+.creation-prompt-mention-panel__preview--video { color: var(--studio-text); background: var(--studio-text); }
+.creation-prompt-mention-panel__preview--audio { color: var(--studio-text); background: var(--studio-text); }
+.creation-prompt-mention-panel__preview img, .creation-prompt-mention-panel__preview video { width: 100%; height: 100%; object-fit: cover; }
+.creation-prompt-mention-panel__text { display: grid; min-width: 0; max-width: 30ch; gap: 2px; }
+.creation-prompt-mention-panel__text strong, .creation-prompt-mention-panel__text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.creation-prompt-mention-panel__text strong { font-size: 12px; font-weight: 650; }
+.creation-prompt-mention-panel__text small { color: var(--studio-text); font-size: 12px; }
+.creation-prompt-mention-panel__empty { padding: 10px; color: var(--studio-text); font-size: 12px; }
+.creation-parameter-panel { position: fixed; z-index: 1000; box-sizing: border-box; width: min(344px, calc(100vw - 16px)); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--studio-text); border-radius: 16px; color: var(--studio-text); background: var(--studio-text); box-shadow: 0 12px 32px var(--studio-text); outline: none; }
+.creation-parameter-panel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; }
+.creation-parameter-panel header button { display: grid; place-items: center; padding: 4px; border: 0; color: var(--studio-text); background: transparent; cursor: pointer; }
+.creation-parameter-panel fieldset { min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
+.creation-parameter-panel legend { margin-bottom: 8px; padding: 0; color: var(--studio-text); font-size: 12px; }
+.creation-parameter-panel__choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.creation-parameter-panel__choices button { display: flex; min-width: 0; min-height: 32px; flex: 1 1 0; align-items: center; justify-content: center; gap: 6px; padding: 6px; border: 1px solid var(--studio-text); border-radius: 8px; color: var(--studio-text); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.creation-parameter-panel__choices button[aria-pressed="true"] { border-color: var(--studio-text); color: var(--studio-text); background: var(--studio-text); }
+.creation-parameter-panel__ratios .creation-parameter-panel__choices { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.creation-parameter-panel__ratios button { min-height: 64px; flex-direction: column; }
+.creation-parameter-panel__ratio-icon { display: grid; height: 18px; place-items: center; }
+.creation-parameter-panel__duration { display: flex; align-items: center; gap: 12px; }
+.creation-parameter-panel__duration input { min-width: 0; flex: 1; accent-color: var(--studio-text); }
+.creation-parameter-panel__duration output { min-width: 48px; padding: 4px; border-radius: 6px; background: var(--studio-text); text-align: center; font-size: 12px; }
+.creation-parameter-panel__audio { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.creation-parameter-panel__audio input { accent-color: var(--studio-text); }
+.creation-parameter-panel button:focus-visible, .creation-parameter-panel input:focus-visible { outline: 2px solid var(--studio-text); outline-offset: 2px; }
+.creation-prompt-mention-editor__input { color: var(--studio-text); }
+.creation-prompt-mention-editor__input:empty::before { color: var(--studio-dim); }
+.creation-prompt-mention { color: var(--studio-accent-emerald-text); background: var(--studio-accent-emerald-bg); border-color: var(--studio-accent-emerald-border); }
+.creation-prompt-mention-panel { z-index: 1200; color: var(--studio-text); border-color: var(--studio-border-strong); background: var(--studio-surface-contrast); box-shadow: var(--studio-panel-shadow); }
+.creation-prompt-mention-panel button { color: var(--studio-text); }
+.creation-prompt-mention-panel button:hover, .creation-prompt-mention-panel button.is-active { color: var(--studio-text); background: var(--studio-field); }
+.creation-prompt-mention-panel__text small, .creation-prompt-mention-panel__empty { color: var(--studio-muted); }
+.creation-prompt-mention-panel__preview { color: var(--studio-accent-emerald-text); background: var(--studio-field); }
+.creation-parameter-panel { color: var(--studio-text); border-color: var(--studio-border-strong); background: var(--studio-surface-contrast); box-shadow: var(--studio-panel-shadow); }
+.creation-parameter-panel legend { color: var(--studio-muted); }
+.creation-parameter-panel__choices button { color: var(--studio-muted); border-color: var(--studio-border); }
+.creation-parameter-panel__choices button[aria-pressed="true"] { color: var(--studio-accent-emerald-text); border-color: var(--studio-accent-emerald-border); background: var(--studio-accent-emerald-bg); }
+.creation-parameter-panel__duration output { background: var(--studio-field); }
+.creation-parameter-panel button:focus-visible, .creation-parameter-panel input:focus-visible { outline-color: var(--studio-accent-emerald-text); }

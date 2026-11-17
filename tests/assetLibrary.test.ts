@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createEmptyFastVideoProject } from '../src/features/fastVideoFlow/services/fastFlowMappers.ts';
 import { createEmptyVideoEditProject } from '../src/features/videoEditing/services/videoEditProject.ts';
+import { createEmptyCanvasFlow } from '../src/features/infiniteCanvas/types.ts';
 import { applyLibraryItemUrlToProject, buildAssetLibraryStatusItems, countProjectMediaItems } from '../src/features/assetLibrary/utils/assetLibraryItems.ts';
 import { saveMediaToAssetLibrary } from '../src/services/assetLibrary.ts';
 import type { Project } from '../src/types.ts';
@@ -26,6 +27,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     shots: [],
     fastFlow: createEmptyFastVideoProject(),
     videoEditFlow: createEmptyVideoEditProject(),
+    canvasFlow: createEmptyCanvasFlow(),
     ...overrides,
   };
 }
@@ -198,4 +200,12 @@ test('asset library includes image creation outputs', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
     }],
   }]), { total: 1, images: 1, videos: 0 });
+});
+
+test('asset library writes a persisted URL back to its canvas node', () => {
+  const project = createProject();
+  project.canvasFlow.nodes.push({ id: 'node:with:colon', type: 'image', x: 0, y: 0, width: 360, height: 300, title: '画布图片', content: '', mediaUrl: 'blob:temporary', mimeType: 'image/png', status: 'completed', error: '' });
+  const saved = applyLibraryItemUrlToProject(project, `${project.id}:canvas:node:with:colon`, '/assets/persisted.png');
+  assert.equal(saved.canvasFlow.nodes[0].mediaUrl, '/assets/persisted.png');
+  assert.equal(project.canvasFlow.nodes[0].mediaUrl, 'blob:temporary');
 });

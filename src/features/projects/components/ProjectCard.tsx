@@ -1,4 +1,4 @@
-import { Clapperboard, Film, Image as ImageIcon, PlaySquare, Scissors, Trash2, Users, Video } from 'lucide-react';
+import { Clapperboard, Film, Image as ImageIcon, PanelsTopLeft, PlaySquare, Scissors, Trash2, Users, Video } from 'lucide-react';
 
 import { collectProjectPreviewImages } from '../../../services/projectGroups.ts';
 import type { Project } from '../../../types.ts';
@@ -24,22 +24,29 @@ export function ProjectCard({
 }: ProjectCardProps) {
   const isCreativeCard = project.projectType === 'creative-video';
   const isEditCard = project.projectType === 'video-edit';
+  const isCanvasCard = project.projectType === 'infinite-canvas';
   const projectName = project.name.trim() || '未命名项目';
   const previewImages = collectProjectPreviewImages(project);
   const cardBorderClass = isCreativeCard
     ? 'border-zinc-800 hover:border-indigo-500/50'
     : isEditCard
       ? 'border-zinc-800 hover:border-violet-500/50'
+      : isCanvasCard
+        ? 'border-zinc-800 hover:border-emerald-500/50'
       : 'border-zinc-800 hover:border-sky-500/50';
   const badgeClass = isCreativeCard
     ? 'studio-accent-chip-indigo'
     : isEditCard
       ? 'studio-accent-chip-indigo'
+      : isCanvasCard
+        ? 'studio-accent-chip-emerald'
       : 'studio-accent-chip-sky';
   const nameClass = isCreativeCard
     ? 'text-white group-hover:text-indigo-400'
     : isEditCard
       ? 'text-white group-hover:text-violet-300'
+      : isCanvasCard
+        ? 'text-white group-hover:text-emerald-300'
       : 'text-white group-hover:text-sky-300';
 
   return (
@@ -59,7 +66,7 @@ export function ProjectCard({
       <div className="relative mb-5 pr-10">
         <div className="min-w-0">
           <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${badgeClass}`}>
-            {isCreativeCard ? <Clapperboard className="w-3.5 h-3.5" /> : isEditCard ? <Scissors className="w-3.5 h-3.5" /> : <PlaySquare className="w-3.5 h-3.5" />}
+            {isCreativeCard ? <Clapperboard className="w-3.5 h-3.5" /> : isEditCard ? <Scissors className="w-3.5 h-3.5" /> : isCanvasCard ? <PanelsTopLeft className="w-3.5 h-3.5" /> : <PlaySquare className="w-3.5 h-3.5" />}
             {projectTypeLabel}
           </div>
           <div className="mt-4 flex items-center gap-3">
@@ -124,6 +131,11 @@ export function ProjectCard({
           <>
             <span className="flex items-center gap-1"><Scissors className="w-3 h-3" /> {project.videoEditFlow.operation === 'add' ? '新增' : project.videoEditFlow.operation === 'remove' ? '移除' : '替换'}</span>
             <span className="flex items-center gap-1"><Video className="w-3 h-3" /> {project.videoEditFlow.task.videoUrl ? '已完成' : project.videoEditFlow.task.taskId ? '已提交' : '未提交'}</span>
+          </>
+        ) : isCanvasCard ? (
+          <>
+            <span className="flex items-center gap-1"><PanelsTopLeft className="w-3 h-3" /> {project.canvasFlow?.nodes.length || 0} 节点</span>
+            <span className="flex items-center gap-1"><Video className="w-3 h-3" /> {project.canvasFlow?.edges.length || 0} 连接</span>
           </>
         ) : (
           <>

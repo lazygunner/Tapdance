@@ -1,7 +1,7 @@
 {
   "name": "tapdance-ai-director-workbench",
   "private": true,
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "AI director workbench for planning storyboards, prompts, visual assets, and video generation tasks.",
   "repository": {
     "type": "git",
@@ -64,7 +64,7 @@
     "@types/three": "^0.184.1",
     "autoprefixer": "^10.4.21",
     "electron": "^34.0.0",
-    "electron-builder": "^26.8.1",
+    "electron-builder": "26.16.1",
     "electron-vite": "^3.1.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
